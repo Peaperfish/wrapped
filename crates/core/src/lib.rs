@@ -6,3 +6,4 @@ pub mod settings;
 pub mod collector;
 pub mod presence;
 pub mod collectors;
+pub mod store;
