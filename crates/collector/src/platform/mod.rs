@@ -1,13 +1,15 @@
 //! Platform layer: everything OS-specific lives below this module.
 //!
-//! Contract each platform implements (macOS now, Windows in Milestone 9):
+//! Each platform provides the same functions (macOS now, Windows in
+//! Milestone 9):
 //! * `data_dir()`: where `wrapped.db` lives.
-//! * an event source that turns OS signals into
-//!   [`wrapped_core::SystemEvent`]s and feeds them to the engine on one
-//!   thread (lands in Phase B).
+//! * `run_collector(db, debug)`: the tray app. Turns OS signals into
+//!   [`wrapped_core::SystemEvent`]s and feeds them to the engine on one thread.
+//! * `running_pid(db)` / `request_flush(db)`: find / ask a running collector
+//!   to flush now.
+//! * `login(cmd)`: launch-at-login `enable` / `disable` / `status`.
 //!
-//! Core logic never imports from here, and nothing here makes tracking
-//! decisions: it only translates OS signals.
+//! Nothing here makes tracking decisions: it only translates OS signals.
 
 #[cfg(target_os = "macos")]
 mod macos;

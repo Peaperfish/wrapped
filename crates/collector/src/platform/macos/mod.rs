@@ -1,0 +1,255 @@
+//! macOS platform layer.
+//!
+//! Everything runs on the main thread inside `NSApplication`'s run loop: OS
+//! notifications and the minute timer are delivered on the main queue, the
+//! tray menu acts on the main thread, and signals are forwarded to the main
+//! queue by a dedicated `sigwait` thread. The engine therefore lives in a
+//! main-thread `thread_local` and is never shared across threads.
+//!
+//! Permissions: none. No Accessibility, Input Monitoring or Screen Recording,
+//! no event taps or keyboard hooks. Idle time comes from
+//! `CGEventSourceSecondsSinceLastEventType`, display assertions from
+//! `IOPMCopyAssertionsByProcess`, everything else from notifications.
+
+mod lock;
+mod login;
+mod signals;
+mod sources;
+mod tray;
+
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::SystemTime;
+
+use objc2::MainThreadMarker;
+use objc2::runtime::ProtocolObject;
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use wrapped_core::store::FlushReport;
+use wrapped_core::{Clock, Engine, Store, SystemClock, SystemEvent, collectors};
+
+pub use login::login;
+
+/// Gap between idle ticks (with no sleep in between) above which a warning is
+/// printed even without debug logging. The timer interval is 60 s.
+const TICK_GAP_WARN_SECS: f64 = 90.0;
+
+/// `~/Library/Application Support/Wrapped`
+pub fn data_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support/Wrapped"))
+}
+
+fn lock_path(db: &Path) -> PathBuf {
+    db.with_extension("lock")
+}
+
+pub fn running_pid(db: &Path) -> Option<i32> {
+    lock::running_pid(&lock_path(db))
+}
+
+/// Ask a running collector to flush now (SIGUSR1).
+pub fn request_flush(db: &Path) -> Option<i32> {
+    let pid = running_pid(db)?;
+    (unsafe { libc::kill(pid, libc::SIGUSR1) } == 0).then_some(pid)
+}
+
+/// Timestamped line on stderr.
+pub(crate) fn log(msg: &str) {
+    eprintln!("[{}] {msg}", SystemClock.now().to_rfc3339());
+}
+
+/// Bytes this process has written to disk, as counted by the kernel (the
+/// figure Activity Monitor shows in Disk → Bytes Written).
+pub(crate) fn process_disk_bytes_written() -> Option<u64> {
+    let mut info: libc::rusage_info_v2 = unsafe { std::mem::zeroed() };
+    let rc = unsafe {
+        libc::proc_pid_rusage(
+            std::process::id() as i32,
+            libc::RUSAGE_INFO_V2,
+            (&mut info as *mut libc::rusage_info_v2).cast(),
+        )
+    };
+    (rc == 0).then_some(info.ri_diskio_byteswritten)
+}
+
+struct State {
+    engine: Engine,
+    debug: bool,
+    db: PathBuf,
+    last_tick: Option<SystemTime>,
+    slept_since_tick: bool,
+    last_disk_bytes: u64,
+}
+
+thread_local! {
+    static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
+}
+
+/// Run `f` with the collector state; `None` after shutdown.
+fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> Option<R> {
+    STATE.with(|s| s.borrow_mut().as_mut().map(f))
+}
+
+impl State {
+    /// Run an engine operation; in debug mode, describe any flush it caused.
+    fn measured(
+        &mut self,
+        what: &str,
+        op: impl FnOnce(&mut Engine) -> wrapped_core::store::Result<Option<FlushReport>>,
+    ) {
+        match op(&mut self.engine) {
+            Ok(Some(report)) if self.debug => self.log_flush(what, &report),
+            Ok(_) => {}
+            Err(e) => log(&format!("error during {what}: {e}")),
+        }
+    }
+
+    fn log_flush(&mut self, what: &str, r: &FlushReport) {
+        let wal = std::fs::metadata(self.db.with_extension("db-wal"))
+            .map(|m| m.len())
+            .unwrap_or(0);
+        let disk = process_disk_bytes_written().unwrap_or(0);
+        let delta = disk.saturating_sub(self.last_disk_bytes);
+        self.last_disk_bytes = disk;
+        log(&format!(
+            "flush ({what}): {} sessions written, {} deleted, {} samples, {} day(s) recomputed, \
+             {} metric rows changed | kernel-counted disk bytes written by this process: \
+             +{delta} since last flush log, {disk} total | WAL file size {wal} bytes",
+            r.sessions_written,
+            r.sessions_deleted,
+            r.samples_written,
+            r.days_recomputed,
+            r.metric_rows_changed
+        ));
+    }
+}
+
+/// Feed one OS event to the engine.
+pub(crate) fn deliver(ev: SystemEvent) {
+    let is_tick = matches!(ev, SystemEvent::IdleTick { .. });
+    with_state(|st| {
+        if matches!(ev, SystemEvent::WillSleep | SystemEvent::DidWake) {
+            st.slept_since_tick = true;
+        }
+        if is_tick {
+            let now = SystemTime::now();
+            if let Some(prev) = st.last_tick {
+                let gap = now
+                    .duration_since(prev)
+                    .map(|d| d.as_secs_f64())
+                    .unwrap_or(f64::NAN);
+                let note = if st.slept_since_tick {
+                    " (sleep/wake in between)"
+                } else {
+                    ""
+                };
+                if st.debug {
+                    log(&format!("tick gap {gap:.1}s since previous tick{note}"));
+                }
+                if !st.slept_since_tick && gap > TICK_GAP_WARN_SECS {
+                    log(&format!(
+                        "WARNING: idle tick arrived {gap:.1}s after the previous one with no \
+                         sleep in between (expected ~60 s; App Nap / timer coalescing?)"
+                    ));
+                }
+            }
+            st.last_tick = Some(now);
+            st.slept_since_tick = false;
+        }
+        let name = ev.name();
+        st.measured(name, |e| e.handle(ev));
+    });
+    if is_tick {
+        tray::refresh();
+    }
+}
+
+/// Flush now (SIGUSR1).
+pub(crate) fn flush_now() {
+    with_state(|st| st.measured("SIGUSR1", |e| e.flush().map(Some)));
+}
+
+/// Stop collectors and write everything. Runs once, from
+/// `applicationWillTerminate:` (Quit menu, SIGTERM/SIGINT, logout).
+pub(crate) fn shutdown() {
+    let st = STATE.with(|s| s.borrow_mut().take());
+    if let Some(mut st) = st {
+        match st.engine.shutdown() {
+            Ok(r) => {
+                if st.debug {
+                    st.log_flush("shutdown", &r);
+                }
+                log("collector stopped; all data written");
+            }
+            Err(e) => log(&format!("error during shutdown flush: {e}")),
+        }
+    }
+}
+
+pub fn run_collector(db: &Path, debug: bool) -> i32 {
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("wrapped-collector: must run on the main thread");
+        return 1;
+    };
+    let _lock = match lock::acquire(&lock_path(db)) {
+        Ok(l) => l,
+        Err(lock::LockError::Held(pid)) => {
+            eprintln!("wrapped-collector: already running (pid {pid})");
+            return 1;
+        }
+        Err(lock::LockError::Io(e)) => {
+            eprintln!("wrapped-collector: cannot create lock file: {e}");
+            return 1;
+        }
+    };
+    // Before any other thread exists, so only the signal thread receives them.
+    signals::install();
+
+    let engine = Store::open(db)
+        .and_then(|store| Engine::new(store, Arc::new(SystemClock), collectors::builtin()));
+    let mut engine = match engine {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("wrapped-collector: cannot open {}: {e}", db.display());
+            return 1;
+        }
+    };
+    if debug {
+        engine.set_logger(log);
+    }
+    log(&format!(
+        "collector started (pid {}), database {}, recovered {} open session(s), collectors: {}{}",
+        std::process::id(),
+        db.display(),
+        engine.recovered_sessions(),
+        engine.running_collectors().join(", "),
+        if engine.is_paused() { ", PAUSED" } else { "" }
+    ));
+    STATE.with(|s| {
+        *s.borrow_mut() = Some(State {
+            engine,
+            debug,
+            db: db.to_path_buf(),
+            last_tick: None,
+            slept_since_tick: false,
+            last_disk_bytes: process_disk_bytes_written().unwrap_or(0),
+        })
+    });
+
+    let app = NSApplication::sharedApplication(mtm);
+    // Menu-bar only: no Dock icon, no app menu.
+    app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+    let delegate = tray::Delegate::new(mtm, data_dir_of(db));
+    app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
+    tray::install(&delegate, mtm);
+    let _sources = sources::install();
+    sources::send_initial_state();
+    app.run();
+    // `run` only returns if the app is stopped without terminating.
+    shutdown();
+    0
+}
+
+fn data_dir_of(db: &Path) -> PathBuf {
+    db.parent().map(Path::to_path_buf).unwrap_or_default()
+}
