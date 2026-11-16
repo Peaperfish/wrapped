@@ -15,4 +15,8 @@ macro_rules! register {
     };
 }
 
-register!(app_usage::AppUsage, active_idle::ActiveIdle);
+register!(
+    app_usage::AppUsage,
+    active_idle::ActiveIdle,
+    git::Git,
+);
