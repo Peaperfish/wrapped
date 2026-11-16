@@ -442,18 +442,20 @@ impl Store {
         }
 
         for s in samples {
-            tx.execute(
-                "INSERT INTO samples(collector, metric, time_ms, time_off, value)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(collector, metric, time_ms) DO UPDATE SET value = excluded.value",
-                params![
-                    s.collector,
-                    s.metric,
-                    s.time.utc_ms,
-                    s.time.offset_min,
-                    s.value
-                ],
-            )?;
+            tx.prepare_cached(
+                "INSERT INTO samples(collector, metric, time_ms, time_off, value, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(collector, metric, time_ms) DO UPDATE SET
+                    value = excluded.value, data = excluded.data",
+            )?
+            .execute(params![
+                s.collector,
+                s.metric,
+                s.time.utc_ms,
+                s.time.offset_min,
+                s.value,
+                s.data
+            ])?;
             report.samples_written += 1;
             // A sample describes up to MAX_SAMPLE_WINDOW_MS before its time.
             let start = s.time.plus_ms(-MAX_SAMPLE_WINDOW_MS);
@@ -752,33 +754,61 @@ fn day_items(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<V
 
 /// Samples of `collector` whose local time is on `date` or up to
 /// [`MAX_SAMPLE_WINDOW_MS`] after it, sorted by time then metric.
+///
+/// Looked up metric by metric (the primary key is (collector, metric,
+/// time)), so a day's rollup reads only that day's rows however much history
+/// is stored.
 fn day_samples(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<Vec<DaySample>> {
     let day0 = local_midnight_ms(date);
     let day1 = day0 + MS_PER_DAY;
+    let mut metrics: Vec<String> = Vec::new();
+    {
+        let mut next = tx.prepare_cached(
+            "SELECT min(metric) FROM samples WHERE collector = ?1 AND metric > ?2",
+        )?;
+        let mut after = String::new();
+        while let Some(m) =
+            next.query_row(params![collector, after], |r| r.get::<_, Option<String>>(0))?
+        {
+            after.clone_from(&m);
+            metrics.push(m);
+        }
+    }
     let mut stmt = tx.prepare_cached(
-        "SELECT metric, time_ms, time_off, value FROM samples
-         WHERE collector = ?1 AND time_ms >= ?2 AND time_ms < ?3",
-    )?;
-    let rows = stmt.query_map(
-        params![
-            collector,
-            day0 - OFFSET_MARGIN_MS,
-            day1 + MAX_SAMPLE_WINDOW_MS + OFFSET_MARGIN_MS
-        ],
-        |r| {
-            Ok(DaySample {
-                metric: r.get(0)?,
-                time: Timestamp::new(r.get(1)?, r.get(2)?),
-                value: r.get(3)?,
-            })
-        },
+        "SELECT time_ms, time_off, value, data FROM samples
+         WHERE collector = ?1 AND metric = ?2 AND time_ms >= ?3 AND time_ms < ?4",
     )?;
     let mut out = Vec::new();
-    for row in rows {
-        let s = row?;
-        let local = s.time.local_ms();
-        if local >= day0 && local < day1 + MAX_SAMPLE_WINDOW_MS {
-            out.push(s);
+    for metric in metrics {
+        let rows = stmt.query_map(
+            params![
+                collector,
+                metric,
+                day0 - OFFSET_MARGIN_MS,
+                day1 + MAX_SAMPLE_WINDOW_MS + OFFSET_MARGIN_MS
+            ],
+            |r| {
+                Ok((
+                    Timestamp::new(r.get(0)?, r.get(1)?),
+                    r.get::<_, f64>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )?;
+        for row in rows {
+            let (time, value, data) = row?;
+            let local = time.local_ms();
+            if local < day0 || local >= day1 + MAX_SAMPLE_WINDOW_MS {
+                continue;
+            }
+            out.push(DaySample {
+                metric: metric.clone(),
+                time,
+                value,
+                data: data
+                    .and_then(|d| serde_json::from_str(&d).ok())
+                    .unwrap_or(serde_json::Value::Null),
+            });
         }
     }
     out.sort_by(|a, b| (a.time.utc_ms, &a.metric).cmp(&(b.time.utc_ms, &b.metric)));

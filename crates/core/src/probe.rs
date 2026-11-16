@@ -25,22 +25,8 @@ impl PressureLevel {
         }
     }
 
-    /// Stored sample value (0, 1, 2).
-    pub fn code(self) -> u8 {
-        match self {
-            Self::Normal => 0,
-            Self::Warning => 1,
-            Self::Critical => 2,
-        }
-    }
-
-    pub fn from_code(code: f64) -> Option<Self> {
-        match code as i64 {
-            0 => Some(Self::Normal),
-            1 => Some(Self::Warning),
-            2 => Some(Self::Critical),
-            _ => None,
-        }
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|l| l.key() == key)
     }
 }
 

@@ -102,20 +102,48 @@ impl H {
             self.tick();
         }
     }
-    /// (utc ms, metric, value) of every stored sample, after a flush.
+    /// Every stored reading flattened to (utc ms, value name, value), after a
+    /// flush. Checks that each reading is exactly one `reading` row.
     fn samples(&mut self) -> Vec<(i64, String, f64)> {
         self.e.flush().unwrap();
         let conn = self.e.store().conn();
         let mut st = conn
             .prepare(
-                "SELECT time_ms, metric, value FROM samples WHERE collector = ?1
+                "SELECT time_ms, metric, value, data FROM samples WHERE collector = ?1
                  ORDER BY time_ms, metric",
             )
             .unwrap();
-        st.query_map([NAME], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        let rows: Vec<(i64, String, f64, String)> = st
+            .query_map([NAME], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
             .unwrap()
             .map(Result::unwrap)
-            .collect()
+            .collect();
+        let mut out = Vec::new();
+        for (t, metric, secs, data) in rows {
+            assert_eq!(metric, "reading");
+            let d: serde_json::Value = serde_json::from_str(&data).unwrap();
+            let pressure = match d["p"].as_str().unwrap() {
+                "normal" => 0.0,
+                "warning" => 1.0,
+                "critical" => 2.0,
+                p => panic!("pressure {p}"),
+            };
+            out.push((t, "secs".to_string(), secs));
+            for (name, key) in [
+                ("bytes_read", "r"),
+                ("bytes_written", "w"),
+                ("swap_in_bytes", "si"),
+                ("swap_out_bytes", "so"),
+                ("compressed_bytes", "c"),
+            ] {
+                // Swap is left out when zero.
+                let v = d.get(key).map(|v| v.as_f64().unwrap());
+                assert!(v.is_some() || key.starts_with('s'), "{key} missing");
+                out.push((t, name.to_string(), v.unwrap_or(0.0)));
+            }
+            out.push((t, "pressure".to_string(), pressure));
+        }
+        out
     }
     fn sample_values(&mut self, metric: &str) -> Vec<f64> {
         self.samples()

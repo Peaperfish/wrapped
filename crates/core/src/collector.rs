@@ -144,6 +144,8 @@ pub struct DaySample {
     pub metric: String,
     pub time: Timestamp,
     pub value: f64,
+    /// Further values of the same reading (`Null` if none).
+    pub data: serde_json::Value,
 }
 
 /// Everything a collector needs to compute one local day of metrics.
@@ -231,6 +233,8 @@ pub struct SampleRecord {
     pub metric: String,
     pub time: Timestamp,
     pub value: f64,
+    /// Further values of the same reading (JSON object text), if any.
+    pub data: Option<String>,
 }
 
 /// One item emitted by a scanned collector.
@@ -707,12 +711,24 @@ impl Sink {
 
     /// Record one periodic sample (for counter-style collectors).
     pub fn sample(&self, metric: &str, time: Timestamp, value: f64) {
+        self.push_sample(metric, time, value, None);
+    }
+
+    /// Record one sample carrying several values: `value` plus `data`, a JSON
+    /// object with the rest. One row per reading instead of one per value
+    /// keeps a flush to a single appended page.
+    pub fn sample_with(&self, metric: &str, time: Timestamp, value: f64, data: String) {
+        self.push_sample(metric, time, value, Some(data));
+    }
+
+    fn push_sample(&self, metric: &str, time: Timestamp, value: f64, data: Option<String>) {
         let mut b = self.shared.buffer.lock().expect("buffer lock");
         b.samples.push(SampleRecord {
             collector: self.collector,
             metric: metric.to_string(),
             time,
             value,
+            data,
         });
     }
 

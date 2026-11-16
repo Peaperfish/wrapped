@@ -49,15 +49,27 @@ pub const BOOT_TOLERANCE_MS: i64 = MS_PER_SEC;
 /// Faster than any internal SSD or swap: a larger delta is a counter reset.
 pub const MAX_BYTES_PER_SEC: u64 = 32 * 1024 * 1024 * 1024;
 
-/// Sample metric names (one row each per reading).
-pub mod sample {
-    pub const SECS: &str = "secs";
-    pub const BYTES_READ: &str = "bytes_read";
-    pub const BYTES_WRITTEN: &str = "bytes_written";
-    pub const SWAP_IN: &str = "swap_in_bytes";
-    pub const SWAP_OUT: &str = "swap_out_bytes";
-    pub const PRESSURE: &str = "pressure";
-    pub const COMPRESSED: &str = "compressed_bytes";
+/// The sample metric: one row per reading. `value` is the awake seconds the
+/// reading covers; `data` holds the rest with short keys (bytes; see [`key`]),
+/// e.g. `{"r":48066560,"w":30089216,"c":1428439040,"p":"normal"}`. Swap keys
+/// are left out when zero. Short keys keep rows small: fewer B-tree page
+/// splits per day (see DEVIATIONS.md, write budget).
+pub const SAMPLE_METRIC: &str = "reading";
+
+/// Keys of a reading's `data` object.
+pub mod key {
+    /// Disk bytes read in the window.
+    pub const READ: &str = "r";
+    /// Disk bytes written in the window.
+    pub const WRITTEN: &str = "w";
+    /// Swap-in bytes in the window (absent = 0).
+    pub const SWAP_IN: &str = "si";
+    /// Swap-out bytes in the window (absent = 0).
+    pub const SWAP_OUT: &str = "so";
+    /// Compressed memory bytes at the reading.
+    pub const COMPRESSED: &str = "c";
+    /// Pressure level at the reading: normal | warning | critical.
+    pub const PRESSURE: &str = "p";
 }
 
 /// One recorded reading: the deltas since the previous one and the state now.
@@ -76,52 +88,49 @@ pub struct Tick {
 
 impl Tick {
     fn emit(&self, out: &Sink) {
-        let p = f64::from(self.pressure.code());
-        for (metric, v) in [
-            (sample::SECS, self.secs),
-            (sample::BYTES_READ, self.bytes_read),
-            (sample::BYTES_WRITTEN, self.bytes_written),
-            (sample::SWAP_IN, self.swap_in),
-            (sample::SWAP_OUT, self.swap_out),
-            (sample::PRESSURE, p),
-            (sample::COMPRESSED, self.compressed),
-        ] {
-            out.sample(metric, self.time, v);
-        }
+        let mut data = serde_json::Map::new();
+        let mut put = |k: &str, v: f64| {
+            // Zero swap is the common case: leave it out (absent = 0).
+            if v != 0.0 || !k.starts_with('s') {
+                data.insert(k.into(), serde_json::json!(v));
+            }
+        };
+        put(key::READ, self.bytes_read);
+        put(key::WRITTEN, self.bytes_written);
+        put(key::SWAP_IN, self.swap_in);
+        put(key::SWAP_OUT, self.swap_out);
+        put(key::COMPRESSED, self.compressed);
+        data.insert(key::PRESSURE.into(), self.pressure.key().into());
+        out.sample_with(
+            SAMPLE_METRIC,
+            self.time,
+            self.secs,
+            serde_json::Value::Object(data).to_string(),
+        );
     }
 
-    /// Reassemble ticks from stored sample rows (sorted by time). A tick
-    /// without its `secs` or pressure row is ignored.
+    /// Reassemble ticks from stored sample rows. Rows of other metrics, or
+    /// without a known pressure level, are ignored.
     pub fn from_samples(samples: &[DaySample]) -> Vec<Tick> {
-        let mut out = Vec::new();
-        let mut i = 0;
-        while i < samples.len() {
-            let t = samples[i].time;
-            let mut vals: BTreeMap<&str, f64> = BTreeMap::new();
-            while i < samples.len() && samples[i].time.utc_ms == t.utc_ms {
-                vals.insert(samples[i].metric.as_str(), samples[i].value);
-                i += 1;
-            }
-            let (Some(secs), Some(pressure)) = (
-                vals.get(sample::SECS),
-                vals.get(sample::PRESSURE)
-                    .and_then(|p| PressureLevel::from_code(*p)),
-            ) else {
-                continue;
-            };
-            let g = |k: &str| vals.get(k).copied().unwrap_or(0.0);
-            out.push(Tick {
-                time: t,
-                secs: *secs,
-                bytes_read: g(sample::BYTES_READ),
-                bytes_written: g(sample::BYTES_WRITTEN),
-                swap_in: g(sample::SWAP_IN),
-                swap_out: g(sample::SWAP_OUT),
-                pressure,
-                compressed: g(sample::COMPRESSED),
-            });
-        }
-        out
+        samples
+            .iter()
+            .filter(|s| s.metric == SAMPLE_METRIC)
+            .filter_map(|s| {
+                let d = &s.data;
+                let g = |k: &str| d.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
+                let pressure = PressureLevel::from_key(d.get(key::PRESSURE)?.as_str()?)?;
+                Some(Tick {
+                    time: s.time,
+                    secs: s.value,
+                    bytes_read: g(key::READ),
+                    bytes_written: g(key::WRITTEN),
+                    swap_in: g(key::SWAP_IN),
+                    swap_out: g(key::SWAP_OUT),
+                    pressure,
+                    compressed: g(key::COMPRESSED),
+                })
+            })
+            .collect()
     }
 }
 
