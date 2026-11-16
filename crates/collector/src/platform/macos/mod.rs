@@ -9,8 +9,11 @@
 //! Permissions: none. No Accessibility, Input Monitoring or Screen Recording,
 //! no event taps or keyboard hooks. Idle time comes from
 //! `CGEventSourceSecondsSinceLastEventType`, display assertions from
-//! `IOPMCopyAssertionsByProcess`, everything else from notifications.
+//! `IOPMCopyAssertionsByProcess`, everything else from notifications. Disk
+//! and memory counters (Disk & Memory collector) come from IOKit, Mach VM
+//! statistics and sysctl (see `counters.rs`).
 
+mod counters;
 mod lock;
 mod login;
 mod scan;
@@ -31,6 +34,7 @@ use wrapped_core::store::FlushReport;
 use wrapped_core::time::{MS_PER_DAY, Timestamp};
 use wrapped_core::{Clock, Engine, Store, SystemClock, SystemEvent, collectors};
 
+pub use counters::disk_memory;
 pub use login::login;
 pub use scan::{children_cpu_secs, hold_db_lock, scan_hooks, usage};
 
@@ -268,6 +272,7 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
     };
     engine.set_own_app_id(own_app_id());
     engine.set_scan_hooks(scan_hooks());
+    engine.set_probe(Arc::new(counters::MacProbe));
     engine.set_waker(Arc::new(|| DispatchQueue::main().exec_async(poll_scans)));
     if debug {
         engine.set_logger(log);
