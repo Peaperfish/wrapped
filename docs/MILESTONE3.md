@@ -190,4 +190,10 @@ on `m3-scratch.db`, then SIGTERM:
 - **Pressure** is the level at the reading, credited to the 5 minutes before
   it; a short warning spike between readings is not seen.
 - **24 h awake** exceeds the ~2 MB/day guideline (see above).
+- **A cancelled shutdown** (`WillPowerOff` then nothing) leaves the awake
+  stretch closed until the next tick: under a minute of awake time is not
+  counted in the next sample.
+- **Zero swap is stored**: `swap_in_bytes` / `swap_out_bytes` are written
+  (as 0) for every day with samples, so "no swap that day" is distinguishable
+  from "not measured".
 - **Windows**: stub only (`None`); Milestone 9.
