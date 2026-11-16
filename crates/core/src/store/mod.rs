@@ -18,6 +18,7 @@
 //! WITHOUT ROWID tables clustered on (collector, start) and (date, collector,
 //! ...) plus diff-only metric updates keep a typical flush to ~3–4 pages.
 
+pub mod export;
 pub mod migrations;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
