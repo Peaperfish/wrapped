@@ -1,9 +1,24 @@
 //! Wrapped core: everything that is not platform code.
+//!
+//! * [`event`]: the system event vocabulary the platform layer produces.
+//! * [`collector`]: the plugin trait, the [`collector::Sink`] and buffer.
+//! * [`presence`]: the shared idle / sleep / lock state machine.
+//! * [`collectors`]: the built-in collectors and their registration list.
+//! * [`store`]: SQLite schema, migrations, batched writes and daily rollups.
+//! * [`engine`]: routes events, owns the flush policy, pause and settings.
 
-pub mod time;
-pub mod event;
-pub mod settings;
 pub mod collector;
-pub mod presence;
 pub mod collectors;
+pub mod engine;
+pub mod event;
+pub mod presence;
+pub mod settings;
 pub mod store;
+pub mod time;
+
+pub use collector::{Collector, CollectorInfo, Kind, MetricDef, Sink};
+pub use engine::Engine;
+pub use event::SystemEvent;
+pub use settings::{Pause, Settings};
+pub use store::Store;
+pub use time::{Clock, ManualClock, SystemClock, Timestamp};
