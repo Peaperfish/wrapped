@@ -376,6 +376,19 @@ fn nothing_while_paused_and_resume_rebaselines() {
 }
 
 #[test]
+fn turned_off_while_paused_samples_again_after_resume() {
+    let mut h = H::at(9, 0);
+    h.tick();
+    h.e.set_pause(wrapped_core::Pause::Indefinite).unwrap();
+    h.e.disable_collector(NAME, true).unwrap();
+    h.e.set_pause(wrapped_core::Pause::Off).unwrap();
+    h.e.enable_collector(NAME).unwrap();
+    h.minutes(1, MB); // baseline
+    h.minutes(5, MB);
+    assert_eq!(h.sample_values("bytes_written"), vec![5e6]);
+}
+
+#[test]
 fn pressure_seconds_add_up_to_sampled_time() {
     let mut h = H::at(9, 0);
     h.tick();

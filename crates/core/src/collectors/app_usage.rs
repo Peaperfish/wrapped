@@ -59,6 +59,9 @@ impl Collector for AppUsage {
 
     fn start(&mut self, out: Sink) {
         self.out = Some(out);
+        // A pause flag from before a stop is stale: the engine sends `Paused`
+        // right after starting a collector if tracking is paused.
+        self.paused = false;
     }
 
     fn on_event(&mut self, ev: &SystemEvent) {

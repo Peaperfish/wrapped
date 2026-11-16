@@ -257,6 +257,9 @@ impl Collector for DiskMemory {
 
     fn start(&mut self, out: Sink) {
         self.out = Some(out);
+        // Stale after a stop: the engine sends `Paused` right after starting
+        // a collector if tracking is paused.
+        self.paused = false;
         self.base = None;
         self.awake_ms = 0;
         self.awake_from = None;
