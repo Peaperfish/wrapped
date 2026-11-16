@@ -2,8 +2,15 @@
 //!
 //! Records per commit only: author time (UTC + the commit's own author
 //! offset, whose local date decides the day), the repository folder name and
-//! the commit hash (dedupe key, so the same commit in two clones counts once).
-//! Never code, diffs, messages, file names, line counts or paths.
+//! an id. Never code, diffs, messages, file names, line counts, paths or
+//! commit hashes.
+//!
+//! The id is a hash of (author email, author time in seconds, author offset,
+//! first line of the message), not the commit hash, so the same work counts
+//! once across clones, rebases (including `--force-rebase`), amends that keep
+//! the message, and cherry-picks: all of these keep the author fields. The
+//! message line only goes into the hash; it is never stored or logged.
+//! Rewording a commit's first line makes it count again.
 //!
 //! Uses the `git` command line: two short-lived processes per repository per
 //! scan (`for-each-ref`, then `log` only if a ref moved), so nothing to compile
@@ -138,13 +145,17 @@ enum RepoOutcome {
     Cancelled,
 }
 
-/// Parse one `log` line: `<hash>\t<unix secs>\t<YYYY-MM-DD HH:MM:SS +HHMM>\t<email>`.
-fn parse_line(line: &str) -> Option<(&str, Timestamp, &str)> {
+/// One commit from `git log`: (id, author time, author email).
+///
+/// Line format: `<unix secs>\t<YYYY-MM-DD HH:MM:SS +HHMM>\t<email>\t<subject>`
+/// (the subject is last, so tabs inside it are harmless).
+fn parse_line(line: &str) -> Option<(String, Timestamp, &str)> {
     let mut it = line.splitn(4, '\t');
-    let hash = it.next()?;
-    let secs: i64 = it.next()?.parse().ok()?;
+    let secs_s = it.next()?;
+    let secs: i64 = secs_s.parse().ok()?;
     let iso = it.next()?;
     let email = it.next()?;
+    let subject = it.next().unwrap_or("");
     let tz = iso.rsplit(' ').next()?;
     let sign = match tz.as_bytes().first()? {
         b'+' => 1,
@@ -152,14 +163,23 @@ fn parse_line(line: &str) -> Option<(&str, Timestamp, &str)> {
         _ => return None,
     };
     let (h, m): (i32, i32) = (tz.get(1..3)?.parse().ok()?, tz.get(3..5)?.parse().ok()?);
-    if hash.len() < 40 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return None;
-    }
+    let offset = sign * (h * 60 + m);
     Some((
-        hash,
-        Timestamp::new(secs * MS_PER_SEC, sign * (h * 60 + m)),
+        commit_id(email, secs, offset, subject),
+        Timestamp::new(secs * MS_PER_SEC, offset),
         email,
     ))
+}
+
+/// Identity of a piece of work: survives clone, rebase, amend (same message)
+/// and cherry-pick, which all keep the author email, time and offset.
+fn commit_id(email: &str, secs: i64, offset_min: i32, subject: &str) -> String {
+    let key = format!(
+        "{}\0{secs}\0{offset_min}\0{}",
+        email.to_ascii_lowercase(),
+        subject.trim_end()
+    );
+    scan::hash128_hex(key.as_bytes())
 }
 
 fn scan_repo(
@@ -206,7 +226,7 @@ fn scan_repo(
         "--no-color",
         "--ignore-missing",
         "--stdin",
-        "--format=%H%x09%at%x09%ai%x09%ae",
+        "--format=%at%x09%ai%x09%ae%x09%s",
     ])
     .stdin(Stdio::piped())
     .stdout(Stdio::piped());
@@ -247,13 +267,13 @@ fn scan_repo(
             cancelled = true;
             break;
         }
-        let Some((hash, t, email)) = parse_line(&line) else {
+        let Some((id, t, email)) = parse_line(&line) else {
             continue;
         };
         read += 1;
         if emails.iter().any(|e| e.eq_ignore_ascii_case(email)) {
             matched += 1;
-            out.item(hash.to_string(), t, true, attrs.clone());
+            out.item(id, t, true, attrs.clone());
         }
     }
     if cancelled {
@@ -424,14 +444,19 @@ mod tests {
 
     #[test]
     fn parses_log_line() {
-        let (h, t, e) = parse_line(
-            "0123456789abcdef0123456789abcdef01234567\t1763300000\t2025-11-16 21:33:20 +0800\tMe@x.org",
-        )
-        .unwrap();
-        assert_eq!(h.len(), 40);
+        let (id, t, e) =
+            parse_line("1763300000\t2025-11-16 21:33:20 +0800\tMe@x.org\tFix\tthe thing").unwrap();
+        assert_eq!(id.len(), 32);
         assert_eq!(t.offset_min, 480);
         assert_eq!(t.utc_ms, 1_763_300_000_000);
         assert_eq!(e, "Me@x.org");
+        // Email case does not matter; subject, time and offset do.
+        let same = parse_line("1763300000\t2025-11-16 21:33:20 +0800\tme@X.org\tFix\tthe thing");
+        assert_eq!(same.unwrap().0, id);
+        let reworded = parse_line("1763300000\t2025-11-16 21:33:20 +0800\tme@x.org\tFix it");
+        assert_ne!(reworded.unwrap().0, id);
+        let other_off = parse_line("1763300000\t2025-11-16 22:33:20 +0900\tme@x.org\tFix\tthe thing");
+        assert_ne!(other_off.unwrap().0, id);
         assert!(parse_line("garbage").is_none());
     }
 

@@ -25,8 +25,13 @@ Accepted differences from the design doc are in [DEVIATIONS.md](DEVIATIONS.md).
   (`.git` dir or file) and bare repos (`*.git`), and per repo runs
   `git for-each-ref` (ref tips), then, only if the tips changed,
   `git log --stdin` with the new tips and `^` the tips seen last time. Stored
-  per commit: hash (dedupe id), author time with the author's own offset, repo
-  folder name. Only commits whose author email is in `git.author_emails`.
+  per commit: an id, author time with the author's own offset, repo folder
+  name. Only commits whose author email is in `git.author_emails`. The id
+  hashes (author email, author time in seconds, author offset, first line of
+  the message), so clones, rebases (`--force-rebase` too), amends that keep
+  the message and cherry-picks count once; the message line only goes into
+  the hash and is never stored or logged. Commit hashes are kept only as the
+  ref tips in `scan_state` (the incremental watermark).
 - **Photos** (`collectors/photos.rs`, `scan/exif.rs`): walks
   `photos.folders` (same rules, plus `*.photoslibrary`), files with an
   extension in `photos.extensions`. Unchanged files (same salted path hash,
@@ -98,7 +103,9 @@ wrapped-collector stats 2026-11-14
   `git config`, which can trigger it.
 - A git `log` that prints nothing for a long time (huge first scan of a big
   repo) only notices a cancel at its next output line.
-- Commit counts include merges, and a rebased commit counts again (new hash).
+- Commit counts include merges. Rewording a commit's first line (reword,
+  `commit --amend -m`) makes it count again; two commits with the same
+  author, second, offset and first line count once.
 - A RAW and JPEG of the same shot count once only if the camera writes the
   same make, model, serial, time and subsec into both.
 - Burst shots without sub-second time or image number in the same second

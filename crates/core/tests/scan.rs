@@ -239,6 +239,139 @@ fn git_same_commit_in_two_clones_counts_once() {
     assert_eq!(metric_sum(&e, "git", "commits"), 3.0);
 }
 
+/// Run git with a fixed committer (rebase / amend / cherry-pick need one).
+/// The author is never set here, so rewriting keeps the original author.
+fn git_as_committer(dir: &Path, args: &[&str]) {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_COMMITTER_NAME", "C")
+        .env("GIT_COMMITTER_EMAIL", "c@example.com")
+        .env("GIT_COMMITTER_DATE", "2026-11-19T12:00:00+00:00")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn rev(dir: &Path, r: &str) -> String {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-parse", r])
+        .output()
+        .unwrap();
+    String::from_utf8(out.stdout).unwrap().trim().to_string()
+}
+
+fn my_items(e: &Engine) -> i64 {
+    count(e, "SELECT count(*) FROM items WHERE collector='git'")
+}
+
+#[test]
+fn git_force_rebase_onto_moved_base_counts_once() {
+    let t = Tmp::new("rebase");
+    let a = t.0.join("repo");
+    init_repo(&a);
+    commit(&a, "other@example.com", "2026-11-15T09:00:00+08:00", "base");
+    git(&a, &["checkout", "-q", "-b", "feature"]);
+    for (i, h) in [10, 11, 12].iter().enumerate() {
+        commit(
+            &a,
+            "me@example.com",
+            &format!("2026-11-16T{h}:00:00+08:00"),
+            &format!("f{i}"),
+        );
+    }
+    let c = clock();
+    let mut e = git_engine(&c, &t.0);
+    scan(&mut e, "git");
+    assert_eq!(my_items(&e), 3);
+    let before = rev(&a, "feature");
+    git(&a, &["checkout", "-q", "main"]);
+    commit(
+        &a,
+        "other@example.com",
+        "2026-11-17T09:00:00+08:00",
+        "moved base",
+    );
+    git(&a, &["checkout", "-q", "feature"]);
+    git_as_committer(
+        &a,
+        &["rebase", "-q", "main", "--force-rebase", "-x", "true"],
+    );
+    assert_ne!(rev(&a, "feature"), before, "new hashes");
+    // Keep the old commits reachable too, as a backup branch would.
+    git(&a, &["branch", "old-feature", &before]);
+    let r = scan(&mut e, "git");
+    assert_eq!(
+        n(&r, "commits_matched"),
+        3,
+        "the rebased commits are read as new"
+    );
+    assert_eq!(my_items(&e), 3);
+    assert_eq!(metric_sum(&e, "git", "commits"), 3.0);
+}
+
+#[test]
+fn git_amend_without_edit_counts_once() {
+    let t = Tmp::new("amend");
+    let a = t.0.join("repo");
+    init_repo(&a);
+    commit(&a, "me@example.com", "2026-11-16T10:00:00+08:00", "work");
+    let c = clock();
+    let mut e = git_engine(&c, &t.0);
+    scan(&mut e, "git");
+    std::fs::write(a.join("f.txt"), "x").unwrap();
+    git(&a, &["add", "f.txt"]);
+    let before = rev(&a, "HEAD");
+    git_as_committer(
+        &a,
+        &["commit", "-q", "--amend", "--no-edit", "--no-gpg-sign"],
+    );
+    assert_ne!(rev(&a, "HEAD"), before);
+    scan(&mut e, "git");
+    assert_eq!(my_items(&e), 1);
+}
+
+#[test]
+fn git_cherry_pick_counts_once() {
+    let t = Tmp::new("pick");
+    let a = t.0.join("repo");
+    init_repo(&a);
+    commit(&a, "other@example.com", "2026-11-15T09:00:00+08:00", "base");
+    git(&a, &["branch", "release"]);
+    commit(&a, "me@example.com", "2026-11-16T10:00:00+08:00", "fix");
+    let fix = rev(&a, "HEAD");
+    git(&a, &["checkout", "-q", "release"]);
+    git_as_committer(&a, &["cherry-pick", "--allow-empty", &fix]);
+    assert_ne!(rev(&a, "release"), fix);
+    let c = clock();
+    let mut e = git_engine(&c, &t.0);
+    let r = scan(&mut e, "git");
+    assert_eq!(n(&r, "commits_matched"), 2);
+    assert_eq!(my_items(&e), 1);
+}
+
+#[test]
+fn git_two_commits_in_the_same_second_count_twice() {
+    let t = Tmp::new("same-sec");
+    let a = t.0.join("repo");
+    init_repo(&a);
+    commit(&a, "me@example.com", "2026-11-16T10:00:00+08:00", "one");
+    commit(&a, "me@example.com", "2026-11-16T10:00:00+08:00", "two");
+    let c = clock();
+    let mut e = git_engine(&c, &t.0);
+    scan(&mut e, "git");
+    assert_eq!(my_items(&e), 2);
+}
+
 #[test]
 fn git_incremental_scan_reads_only_new_commits() {
     let t = Tmp::new("git3");

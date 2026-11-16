@@ -35,7 +35,7 @@ design doc itself is left as written.
   `sessions` (no duration, and the primary key is a start time, which two
   photos or commits can share) nor `samples` (no dedupe id, one numeric value,
   no attributes). Primary key `(collector, id)` with `INSERT OR IGNORE` makes
-  re-reading idempotent (same commit in two clones, RAW+JPEG pair, moved
+  re-reading idempotent (same commit in two clones or rebased, RAW+JPEG pair, moved
   file); an index on `(collector, time_ms)` serves the daily rollup.
   `time_off` is NULL when the source had no UTC offset (photo without
   OffsetTimeOriginal); `time_ms` then holds the camera's naive local time.
@@ -65,10 +65,17 @@ design doc itself is left as written.
 
 ## Git and photos collectors (§7)
 
-- Git counts commits by **author** email and author time (rebases keep it);
-  merges count. Refs read: `refs/heads`, `refs/tags`, `refs/remotes`
-  (not stashes, notes or a detached HEAD). A rebased or cherry-picked commit
-  has a new hash and counts again.
+- Git counts commits by **author** email and author time; merges count. Refs
+  read: `refs/heads`, `refs/tags`, `refs/remotes` (not stashes, notes or a
+  detached HEAD).
+- A git item's id is not the commit hash but a hash of (author email,
+  author time in seconds, author offset, first line of the message), so a
+  rebase (including `--force-rebase`), an amend that keeps the message, a
+  cherry-pick and a second clone all count once. The message line only goes
+  into the hash; it is never stored or logged. Limit: rewording a commit's
+  first line makes it count again. Commit hashes are not stored as item data;
+  the only ones kept are the ref tips in git's `scan_state` (the incremental
+  watermark: the next scan excludes commits reachable from them).
 - Photos: files with no capture date, no EXIF, or an unsupported format are
   skipped and reported (`skipped_no_date`, `skipped_no_exif`,
   `skipped_unsupported`). Burst shots in the same second with no
