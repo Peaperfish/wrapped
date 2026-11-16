@@ -926,6 +926,28 @@ mod tests {
     }
 
     #[test]
+    fn upgrade_from_v2_keeps_samples_and_adds_data_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &migrations::MIGRATIONS[..2] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute(
+            "INSERT INTO samples(collector, metric, time_ms, time_off, value)
+             VALUES ('x', 'm', 1000, 60, 2.5)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(migrations::migrate(&mut conn).unwrap(), 3);
+        let row: (f64, Option<String>) = conn
+            .query_row("SELECT value, data FROM samples", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(row, (2.5, None));
+    }
+
+    #[test]
     fn refuses_newer_schema() {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "user_version", 999).unwrap();

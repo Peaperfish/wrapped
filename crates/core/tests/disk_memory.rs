@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use wrapped_core::collectors;
 use wrapped_core::probe::{DiskMemoryReading, PressureLevel, SystemProbe};
 use wrapped_core::time::MS_PER_MIN;
-use wrapped_core::{Engine, ManualClock, Store, SystemEvent};
+use wrapped_core::{Clock, Engine, ManualClock, Store, SystemEvent};
 
 const CST: i32 = 480; // UTC+8
 const NAME: &str = "disk_memory";
@@ -406,7 +406,6 @@ fn pressure_seconds_add_up_to_sampled_time() {
     // Sampled time = wall time from the baseline (09:00) to the last sample.
     let last = h.samples().last().unwrap().0;
     let start = ManualClock::at_local(2026, 11, 16, 9, 0, 0, CST);
-    use wrapped_core::Clock;
     assert!(close(sampled, (last - start.now().utc_ms) as f64 / 1000.0));
 }
 
@@ -529,4 +528,18 @@ fn utc_offset_change_uses_each_samples_own_offset() {
         5e6
     ));
     assert!(h.metrics_of("2026-11-17").is_empty());
+}
+
+#[test]
+fn export_includes_reading_data() {
+    let mut h = H::at(9, 0);
+    h.tick();
+    h.minutes(5, MB);
+    h.samples();
+    let mut buf = Vec::new();
+    h.e.store().export_json(&mut buf, h.c.now()).unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&buf).unwrap();
+    let text = v.to_string();
+    assert!(text.contains("\"reading\""), "{text}");
+    assert!(text.contains("\"w\":5000000"), "{text}");
 }
