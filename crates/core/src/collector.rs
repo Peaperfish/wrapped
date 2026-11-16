@@ -10,6 +10,7 @@ use std::time::Duration;
 use chrono::NaiveDate;
 
 use crate::event::SystemEvent;
+use crate::probe::{DiskMemoryReading, NoProbe, SystemProbe};
 use crate::settings::Settings;
 use crate::time::{Clock, MS_PER_HOUR, MS_PER_SEC, Timestamp};
 
@@ -40,6 +41,7 @@ pub struct CollectorInfo {
 pub enum Unit {
     Seconds,
     Count,
+    Bytes,
 }
 
 /// One metric a collector contributes to `daily_metrics`.
@@ -131,6 +133,19 @@ impl DayItem {
     }
 }
 
+/// Longest stretch of time one sample may describe: a sample at `t` covers
+/// at most `[t - MAX_SAMPLE_WINDOW_MS, t]`. Bounds which days a sample can
+/// touch and how far past a day its rollup has to look.
+pub const MAX_SAMPLE_WINDOW_MS: i64 = MS_PER_HOUR;
+
+/// One stored sample near the day being rolled up.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DaySample {
+    pub metric: String,
+    pub time: Timestamp,
+    pub value: f64,
+}
+
 /// Everything a collector needs to compute one local day of metrics.
 #[derive(Debug, Clone)]
 pub struct DayInput<'a> {
@@ -139,6 +154,11 @@ pub struct DayInput<'a> {
     pub slices: &'a [Slice],
     /// This collector's items whose local date is `date`, sorted by time.
     pub items: &'a [DayItem],
+    /// This collector's samples whose time falls on `date` or up to
+    /// [`MAX_SAMPLE_WINDOW_MS`] after it (local time, the sample's own offset),
+    /// sorted by time then metric. The collector decides which part of each
+    /// sample belongs to the day.
+    pub samples: &'a [DaySample],
 }
 
 /// The plugin trait. Adding a collector = one new file in `collectors/` plus
@@ -181,6 +201,10 @@ pub trait Collector: Send {
     }
     /// Stop collecting; must close anything open at the current time.
     fn stop(&mut self);
+    /// The collector's stored data was just deleted while it keeps running:
+    /// forget anything that would carry pre-delete time into new records
+    /// (e.g. a counter baseline).
+    fn on_data_deleted(&mut self) {}
     fn metrics(&self) -> Vec<MetricDef>;
     /// Compute this collector's `daily_metrics` rows for one local day.
     fn rollup(&self, day: &DayInput<'_>) -> Vec<MetricValue>;
@@ -372,6 +396,11 @@ pub(crate) struct Shared {
     pub(crate) wake_sent: AtomicBool,
     /// An engine drains this buffer (standalone sinks have no writer).
     pub(crate) has_writer: AtomicBool,
+    /// System counters (set by the platform layer; none by default).
+    pub(crate) probe: RwLock<Arc<dyn SystemProbe>>,
+    /// Between `WillSleep` and `DidWake` (the engine's view; dark-wake ticks
+    /// arrive while this is set).
+    pub(crate) asleep: AtomicBool,
 }
 
 impl Shared {
@@ -385,6 +414,8 @@ impl Shared {
             waker: RwLock::new(None),
             wake_sent: AtomicBool::new(false),
             has_writer: AtomicBool::new(false),
+            probe: RwLock::new(Arc::new(NoProbe)),
+            asleep: AtomicBool::new(false),
         })
     }
 
@@ -596,6 +627,28 @@ impl Sink {
 
     pub fn now(&self) -> Timestamp {
         self.shared.clock.now()
+    }
+
+    /// Read the disk and memory counters now (`None` if the platform has none).
+    pub fn read_disk_memory(&self) -> Option<DiskMemoryReading> {
+        let probe = self.shared.probe.read().expect("probe lock").clone();
+        probe.disk_memory()
+    }
+
+    /// Replace the probe behind this sink's buffer (tests / standalone use).
+    pub fn set_probe(&self, probe: Arc<dyn SystemProbe>) {
+        *self.shared.probe.write().expect("probe lock") = probe;
+    }
+
+    /// True between `WillSleep` and `DidWake` as seen by the engine: a tick
+    /// now comes from a dark wake (macOS maintenance wake).
+    pub fn system_asleep(&self) -> bool {
+        self.shared.asleep.load(Ordering::SeqCst)
+    }
+
+    /// Set the asleep flag (standalone sinks; the engine sets it itself).
+    pub fn set_system_asleep(&self, asleep: bool) {
+        self.shared.asleep.store(asleep, Ordering::SeqCst);
     }
 
     pub fn settings(&self) -> Arc<Settings> {

@@ -31,6 +31,7 @@ use crate::collector::{
     Buffer, Collector, Kind, SCAN_FLUSH_AT, ScanCtx, ScanHooks, ScanUpdate, Shared, Sink, Waker,
 };
 use crate::event::SystemEvent;
+use crate::probe::SystemProbe;
 use crate::settings::{KEY_PAUSE, Pause, Settings};
 use crate::store::{Batch, Error, FlushReport, Result, Store};
 use crate::time::{Clock, MS_PER_DAY, MS_PER_MIN, Timestamp};
@@ -169,6 +170,11 @@ impl Engine {
         *self.shared.waker.write().expect("waker lock") = Some(w);
     }
 
+    /// System counters for the Disk & Memory collector (platform layer).
+    pub fn set_probe(&mut self, probe: Arc<dyn SystemProbe>) {
+        *self.shared.probe.write().expect("probe lock") = probe;
+    }
+
     pub fn set_scan_hooks(&mut self, hooks: ScanHooks) {
         self.scan_hooks = hooks;
     }
@@ -237,17 +243,8 @@ impl Engine {
         if matches!(ev, SystemEvent::WillSleep | SystemEvent::WillPowerOff) {
             self.cancel_scans(None, false);
         }
-        let own = matches!(&ev, SystemEvent::FrontApp { bundle_id, .. }
-            if self.own_app_id.as_deref() == Some(bundle_id.as_str()));
-        if own {
-            self.log(|| "event FrontApp <own app, ignored>".to_string());
-        } else {
-            if matches!(ev, SystemEvent::FrontApp { .. }) {
-                self.last_front = Some(ev.clone());
-            }
-            self.dispatch(&ev);
-        }
-
+        // Update the asleep state first, so collectors handling this event
+        // (disk_memory skips dark-wake ticks) see the engine's current view.
         let now = self.now();
         match &ev {
             SystemEvent::WillSleep => self.asleep_since_ms = Some(now.utc_ms),
@@ -267,6 +264,20 @@ impl Engine {
             }
             _ => {}
         }
+        self.shared
+            .asleep
+            .store(self.asleep_since_ms.is_some(), Ordering::SeqCst);
+        let own = matches!(&ev, SystemEvent::FrontApp { bundle_id, .. }
+            if self.own_app_id.as_deref() == Some(bundle_id.as_str()));
+        if own {
+            self.log(|| "event FrontApp <own app, ignored>".to_string());
+        } else {
+            if matches!(ev, SystemEvent::FrontApp { .. }) {
+                self.last_front = Some(ev.clone());
+            }
+            self.dispatch(&ev);
+        }
+
         if now.utc_ms < self.last_flush_ms {
             self.last_flush_ms = now.utc_ms; // wall clock moved backwards
         }
@@ -697,6 +708,9 @@ impl Engine {
             if let Some(o) = b.open.get_mut(name) {
                 o.start = now;
             }
+        }
+        if self.slots[i].running {
+            self.slots[i].collector.on_data_deleted();
         }
         self.store.delete_collector_data(name)
     }

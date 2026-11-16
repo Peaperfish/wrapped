@@ -29,8 +29,8 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::collector::{
-    DayInput, DayItem, FileStamp, ItemRecord, MetricValue, OpenSession, SampleRecord, ScanUpdate,
-    SessionRecord, Slice,
+    DayInput, DayItem, DaySample, FileStamp, ItemRecord, MAX_SAMPLE_WINDOW_MS, MetricValue,
+    OpenSession, SampleRecord, ScanUpdate, SessionRecord, Slice,
 };
 use crate::settings::{Settings, SettingsError, collector_enabled_key};
 use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_midnight_ms};
@@ -455,6 +455,9 @@ impl Store {
                 ],
             )?;
             report.samples_written += 1;
+            // A sample describes up to MAX_SAMPLE_WINDOW_MS before its time.
+            let start = s.time.plus_ms(-MAX_SAMPLE_WINDOW_MS);
+            touch_days(&mut touched, s.collector, start, s.time.utc_ms + 1);
         }
 
         for it in items {
@@ -747,6 +750,41 @@ fn day_items(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<V
     Ok(out)
 }
 
+/// Samples of `collector` whose local time is on `date` or up to
+/// [`MAX_SAMPLE_WINDOW_MS`] after it, sorted by time then metric.
+fn day_samples(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<Vec<DaySample>> {
+    let day0 = local_midnight_ms(date);
+    let day1 = day0 + MS_PER_DAY;
+    let mut stmt = tx.prepare_cached(
+        "SELECT metric, time_ms, time_off, value FROM samples
+         WHERE collector = ?1 AND time_ms >= ?2 AND time_ms < ?3",
+    )?;
+    let rows = stmt.query_map(
+        params![
+            collector,
+            day0 - OFFSET_MARGIN_MS,
+            day1 + MAX_SAMPLE_WINDOW_MS + OFFSET_MARGIN_MS
+        ],
+        |r| {
+            Ok(DaySample {
+                metric: r.get(0)?,
+                time: Timestamp::new(r.get(1)?, r.get(2)?),
+                value: r.get(3)?,
+            })
+        },
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        let s = row?;
+        let local = s.time.local_ms();
+        if local >= day0 && local < day1 + MAX_SAMPLE_WINDOW_MS {
+            out.push(s);
+        }
+    }
+    out.sort_by(|a, b| (a.time.utc_ms, &a.metric).cmp(&(b.time.utc_ms, &b.metric)));
+    Ok(out)
+}
+
 /// Recompute and diff-write one day's metrics for one collector.
 fn recompute_day(
     tx: &Transaction<'_>,
@@ -757,22 +795,25 @@ fn recompute_day(
 ) -> Result<usize> {
     let slices = day_slices(tx, collector, date, max_session_ms)?;
     let items = day_items(tx, collector, date)?;
-    let fresh: BTreeMap<(String, String), f64> = if slices.is_empty() && items.is_empty() {
-        BTreeMap::new()
-    } else {
-        let input = DayInput {
-            date,
-            slices: &slices,
-            items: &items,
+    let samples = day_samples(tx, collector, date)?;
+    let fresh: BTreeMap<(String, String), f64> =
+        if slices.is_empty() && items.is_empty() && samples.is_empty() {
+            BTreeMap::new()
+        } else {
+            let input = DayInput {
+                date,
+                slices: &slices,
+                items: &items,
+                samples: &samples,
+            };
+            match rollup(collector, &input) {
+                Some(rows) => rows
+                    .into_iter()
+                    .map(|m| ((m.metric.to_string(), m.key), m.value))
+                    .collect(),
+                None => return Ok(0), // unknown collector: leave its rows alone
+            }
         };
-        match rollup(collector, &input) {
-            Some(rows) => rows
-                .into_iter()
-                .map(|m| ((m.metric.to_string(), m.key), m.value))
-                .collect(),
-            None => return Ok(0), // unknown collector: leave its rows alone
-        }
-    };
     let date_s = date.to_string();
     let existing: BTreeMap<(String, String), f64> = {
         let mut stmt = tx.prepare_cached(
