@@ -18,6 +18,8 @@ const MB: u64 = 1_000_000;
 struct Fake {
     r: Arc<Mutex<DiskMemoryReading>>,
     reads: Arc<AtomicUsize>,
+    /// Reads fail (return None) while set.
+    fail: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Fake {
@@ -33,6 +35,7 @@ impl Fake {
                 compressed_bytes: 1_000 * MB,
             })),
             reads: Arc::new(AtomicUsize::new(0)),
+            fail: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
     fn with(&self, f: impl FnOnce(&mut DiskMemoryReading)) {
@@ -55,6 +58,9 @@ impl Fake {
 impl SystemProbe for Fake {
     fn disk_memory(&self) -> Option<DiskMemoryReading> {
         self.reads.fetch_add(1, Ordering::SeqCst);
+        if self.fail.load(Ordering::SeqCst) {
+            return None;
+        }
         Some(*self.r.lock().unwrap())
     }
 }
@@ -555,4 +561,59 @@ fn export_includes_reading_data() {
     let text = v.to_string();
     assert!(text.contains("\"reading\""), "{text}");
     assert!(text.contains("\"w\":5000000"), "{text}");
+}
+
+#[test]
+fn failed_reads_keep_the_baseline_and_the_window_is_capped_at_an_hour() {
+    let mut h = H::at(22, 30);
+    h.tick(); // baseline 22:30
+    h.p.fail.store(true, Ordering::SeqCst);
+    h.minutes(180, MB); // three hours of failed reads, past midnight
+    assert!(h.samples().is_empty());
+    h.p.fail.store(false, Ordering::SeqCst);
+    h.minutes(1, MB); // 01:31: one reading for the whole gap
+    assert_eq!(h.sample_values("secs"), vec![3600.0]);
+    assert_eq!(h.sample_values("bytes_written"), vec![181e6]);
+    // The capped window (00:31–01:31) lies on the 17th only.
+    assert_eq!(h.metric("2026-11-17", "bytes_written", ""), Some(181e6));
+    assert!(h.metrics_of("2026-11-16").is_empty());
+}
+
+#[test]
+fn compressed_average_is_weighted_by_time() {
+    let mut h = H::at(9, 0);
+    h.tick();
+    h.minutes(5, MB); // 300 s at 1,000 MB
+    h.minutes(2, MB);
+    h.ev(SystemEvent::WillSleep);
+    h.c.advance_secs(3600);
+    h.ev(SystemEvent::DidWake);
+    h.c.advance_secs(30);
+    h.p.with(|r| r.compressed_bytes = 4_000 * MB);
+    h.tick(); // 150 s (120 before sleep + 30 after) at 4,000 MB
+    assert_eq!(h.sample_values("secs"), vec![300.0, 150.0]);
+    // (1000 * 300 + 4000 * 150) / 450 = 2000, not the plain mean 2500.
+    let avg = h.metric("2026-11-16", "compressed_avg_bytes", "").unwrap();
+    assert!(close(avg, 2_000e6), "{avg}");
+    assert_eq!(
+        h.metric("2026-11-16", "compressed_peak_bytes", ""),
+        Some(4_000e6)
+    );
+}
+
+#[test]
+fn delete_during_a_dark_wake_does_not_count_the_sleep_as_awake() {
+    let mut h = H::at(9, 0);
+    h.tick();
+    h.minutes(5, MB);
+    h.ev(SystemEvent::WillSleep);
+    h.c.advance_secs(600);
+    h.tick_input(9_000.0); // dark wake
+    h.e.delete_collector_data(NAME).unwrap();
+    h.c.advance_secs(3000);
+    h.ev(SystemEvent::DidWake);
+    h.c.advance_secs(300);
+    h.tick();
+    // Awake since the wake only: 300 s, not the 50 minutes of sleep.
+    assert_eq!(h.sample_values("secs"), vec![300.0]);
 }

@@ -181,7 +181,9 @@ impl DiskMemory {
             .read_disk_memory()
             .map(|reading| Base { reading, at: now });
         self.awake_ms = 0;
-        self.awake_from = Some(now);
+        // Called from a dark-wake tick (delete via settings reload): the
+        // awake stretch starts at the next wake, not now.
+        self.awake_from = (!out.system_asleep()).then_some(now);
     }
 
     fn close_awake_stretch(&mut self, now: Timestamp) {
@@ -251,8 +253,8 @@ impl Collector for DiskMemory {
             description: "System-wide disk bytes read and written, swap in and out, memory \
                           pressure and compressed memory, sampled every 5 minutes while awake.",
             permissions: "None",
-            cost: "One counter read every 5 minutes while awake; ~0% CPU. Under 1 MB per day \
-                   on disk.",
+            cost: "One counter read every 5 minutes while awake; ~0% CPU. About 0.6 MB per \
+                   day on disk (about 1.1 MB if awake around the clock).",
             default_on: false,
         }
     }
@@ -350,7 +352,9 @@ pub fn rollup_ticks(ticks: &[Tick], day0: i64) -> Vec<MetricValue> {
     let (mut peak, mut weighted, mut weight, mut sum, mut n) = (0.0f64, 0.0, 0.0, 0.0, 0u32);
     for t in ticks {
         let we = t.time.local_ms();
-        let win = (t.secs * MS_PER_SEC as f64).round() as i64;
+        // The store only recomputes days within MAX_SAMPLE_WINDOW_MS of a
+        // sample, so no window may be longer (the collector caps it too).
+        let win = ((t.secs * MS_PER_SEC as f64).round() as i64).min(MAX_SAMPLE_WINDOW_MS);
         let ws = we - win;
         let (cs, ce) = (ws.max(day0), we.min(day1));
         // Share of the sample that falls in this day. A zero-length window
