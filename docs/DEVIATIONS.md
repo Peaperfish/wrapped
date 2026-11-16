@@ -138,6 +138,20 @@ design doc itself is left as written.
   30 min), which risks up to ~30 min of disk samples on a crash, not activity
   data.
 
+## Stats engine (§9, §11; Milestone 4)
+
+- `MetricDef` has `agg` (`Sum`, `Max`, `Mean` of the days with a value) next
+  to `unit` (`Seconds`, `Count`, `Bytes`), so ranges combine every metric
+  without knowing the collector.
+- Stats read `daily_metrics` for totals, series, top-N, comparisons and time
+  of day; records that need exact times (longest session, latest night) read
+  `sessions`. "Latest night" counts activity before 05:00 as the previous
+  day's night; "longest session" joins pieces split only by a UTC offset
+  change and belongs to the date it started.
+- Percent change from a previous value of zero is reported as none (both
+  zero: 0 %).
+- `Store::open_read_only` for reading another database without migrating it.
+
 ## Metric definitions
 
 - `app_usage/app_switches`: number of sessions that start exactly where the
