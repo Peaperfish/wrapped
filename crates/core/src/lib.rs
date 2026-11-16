@@ -4,6 +4,7 @@
 //! * [`collector`]: the plugin trait, the [`collector::Sink`] and buffer.
 //! * [`presence`]: the shared idle / sleep / lock state machine.
 //! * [`collectors`]: the built-in collectors and their registration list.
+//! * [`scan`]: folder walk, hashing and bounded EXIF reading for scanned collectors.
 //! * [`store`]: SQLite schema, migrations, batched writes and daily rollups.
 //! * [`engine`]: routes events, owns the flush policy, pause and settings.
 
@@ -12,6 +13,7 @@ pub mod collectors;
 pub mod engine;
 pub mod event;
 pub mod presence;
+pub mod scan;
 pub mod settings;
 pub mod store;
 pub mod time;

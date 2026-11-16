@@ -9,6 +9,7 @@ publish = false
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+kamadak-exif = "0.6"
 rusqlite = { version = "0.43", features = ["bundled"] }
 serde_json = "1"
 
