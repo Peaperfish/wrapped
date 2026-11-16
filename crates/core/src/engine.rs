@@ -188,8 +188,9 @@ impl Engine {
         };
         match self.store.flush(&closed, &open, &samples, now, &rollup) {
             Ok(r) => {
+                // Success is logged by the caller (the platform layer adds
+                // byte counts); failures are logged here.
                 self.last_flush_ms = now.utc_ms;
-                self.log(|| format!("flush {r:?}"));
                 Ok(r)
             }
             Err(e) => {
