@@ -506,6 +506,7 @@ name = "wrapped-core"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "libc",
  "rusqlite",
  "serde_json",
 ]
