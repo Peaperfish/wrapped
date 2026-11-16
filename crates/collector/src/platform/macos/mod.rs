@@ -214,6 +214,7 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
             return 1;
         }
     };
+    engine.set_own_app_id(own_app_id());
     if debug {
         engine.set_logger(log);
     }
@@ -252,4 +253,13 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
 
 fn data_dir_of(db: &Path) -> PathBuf {
     db.parent().map(Path::to_path_buf).unwrap_or_default()
+}
+
+/// This app's identifier: the main bundle's id, or the packaged default when
+/// running as a bare binary.
+fn own_app_id() -> String {
+    objc2_foundation::NSBundle::mainBundle()
+        .bundleIdentifier()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "io.github.peaperfish.wrapped".to_string())
 }

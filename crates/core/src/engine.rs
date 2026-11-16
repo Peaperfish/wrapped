@@ -35,6 +35,7 @@ pub struct Engine {
     last_flush_ms: i64,
     flush_interval_ms: i64,
     last_front: Option<SystemEvent>,
+    own_app_id: Option<String>,
     recovered: usize,
     log: Option<Logger>,
 }
@@ -72,6 +73,7 @@ impl Engine {
             last_flush_ms: now.utc_ms,
             flush_interval_ms: FLUSH_INTERVAL_MS,
             last_front: None,
+            own_app_id: None,
             recovered,
             log: None,
         };
@@ -82,6 +84,13 @@ impl Engine {
     /// Debug logger (off unless set).
     pub fn set_logger(&mut self, log: impl Fn(&str) + Send + 'static) {
         self.log = Some(Box::new(log));
+    }
+
+    /// The collector's own app identifier (supplied by the platform layer).
+    /// FrontApp events for it are ignored: no session change, no switch, no
+    /// activity evidence, so the previous app's session simply continues.
+    pub fn set_own_app_id(&mut self, id: impl Into<String>) {
+        self.own_app_id = Some(id.into());
     }
 
     pub fn set_flush_interval_ms(&mut self, ms: i64) {
@@ -132,10 +141,16 @@ impl Engine {
                 Err(e) => self.log(|| format!("settings reload failed: {e}")),
             }
         }
-        if matches!(ev, SystemEvent::FrontApp { .. }) {
-            self.last_front = Some(ev.clone());
+        let own = matches!(&ev, SystemEvent::FrontApp { bundle_id, .. }
+            if self.own_app_id.as_deref() == Some(bundle_id.as_str()));
+        if own {
+            self.log(|| "event FrontApp <own app, ignored>".to_string());
+        } else {
+            if matches!(ev, SystemEvent::FrontApp { .. }) {
+                self.last_front = Some(ev.clone());
+            }
+            self.dispatch(&ev);
         }
-        self.dispatch(&ev);
 
         let now = self.now();
         if now.utc_ms < self.last_flush_ms {

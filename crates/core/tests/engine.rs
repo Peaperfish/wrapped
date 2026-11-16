@@ -131,6 +131,47 @@ fn app_switch_sequence_and_metrics() {
     assert!(h.sessions(AI).is_empty());
 }
 
+const OWN: &str = "com.own.app";
+
+#[test]
+fn own_app_front_event_is_ignored() {
+    let mut h = H::new();
+    h.e.set_own_app_id(OWN);
+    h.app("com.a");
+    h.active_for(2);
+    h.app(OWN);
+    h.active_for(1);
+    h.app("com.a");
+    h.active_for(1);
+    h.adv(30);
+    assert_eq!(
+        h.sessions(AU),
+        vec![s("com.a", "09:00:00", "09:04:30", true)]
+    );
+    assert_eq!(h.metric(DAY, AU, "app_switches", ""), Some(0.0));
+    assert_eq!(h.metric(DAY, AU, "app_secs", OWN), None);
+}
+
+#[test]
+fn own_app_then_other_app_ends_session_at_the_other_app() {
+    let mut h = H::new();
+    h.e.set_own_app_id(OWN);
+    h.app("com.a");
+    h.active_for(2);
+    h.app(OWN);
+    h.active_for(1);
+    h.app("com.b");
+    h.adv(30);
+    assert_eq!(
+        h.sessions(AU),
+        vec![
+            s("com.a", "09:00:00", "09:03:00", false),
+            s("com.b", "09:03:00", "09:03:30", true),
+        ]
+    );
+    assert_eq!(h.metric(DAY, AU, "app_switches", ""), Some(1.0));
+}
+
 #[test]
 fn duplicate_front_app_events_do_not_split() {
     let mut h = H::new();
