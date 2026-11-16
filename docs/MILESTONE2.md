@@ -50,6 +50,10 @@ Accepted differences from the design doc are in [DEVIATIONS.md](DEVIATIONS.md).
   counters and the process's wall/CPU time, disk bytes read/written, peak
   physical footprint and database size. With a collector running on the same
   database it asks that collector to scan at its next tick instead.
+  `wrapped-collector git emails` lists every author email in `git.folders`
+  with its distinct commit count (same identity as scans) and repos, marking
+  the ones in `git.author_emails`; read-only, prints to the terminal only, so
+  you can pick old addresses to add with `settings set git.author_emails`.
 
 ## Running it
 
@@ -61,6 +65,7 @@ wrapped-collector settings set photos.folders '["~/Pictures", "/Volumes/Card/DCI
 wrapped-collector scan git
 wrapped-collector scan photos
 wrapped-collector stats 2026-11-14
+wrapped-collector git emails                                   # which emails to count
 ```
 
 ## Decisions
@@ -82,8 +87,8 @@ wrapped-collector stats 2026-11-14
   `iso6709parse`, and grows its buffer up to 1 GB. So: JPEG segments are
   walked by seeking to the APP1 Exif segment; HEIF goes through
   `kamadak-exif`'s ISOBMFF reader on a capped reader; TIFF raws are read as a
-  256 KB window (extended to cover the Exif IFD if IFD0 points further, never
-  past 2 MB) and parsed with `continue_on_error`. Every read goes through a
+  64 KB window, extended only as far as IFD0, the Exif IFD and the values of
+  the kept tags reach (never past 2 MB), and parsed with `continue_on_error`. Every read goes through a
   counting reader that refuses to pass the 2 MB cap.
 - **Shot id** = SipHash-2-4 ×2 (128 bits, fixed keys, implemented in
   `scan/mod.rs` so ids never change with a library version) of make, model,
@@ -95,6 +100,29 @@ wrapped-collector stats 2026-11-14
 - **Day of a commit** = local date in the author's own offset; **day of a
   photo** = OffsetTimeOriginal's local date, otherwise the camera time as
   written (stored with `time_off` NULL).
+
+## Measurements (release build, scratch database, 2026-11-16)
+
+`~/code`: 6 repositories (860 folders walked). `~/Pictures`: 2,551 photo files
+(2,217 ARW, 228 JPG, 106 DNG). Numbers from `wrapped-collector scan` (kernel
+counters via `proc_pid_rusage`, CPU via `getrusage`), one run each.
+
+| Scan | Window | Wall | CPU (process + git) | Disk bytes read | Peak footprint | Result |
+|---|---|---|---|---|---|---|
+| git, first | | 66.9 s | 0.28 + 0.72 s | 110,592 | 3.5 MB | 15,522 commits read, 77 matched, 57 stored |
+| git, incremental | | 19.9 s | 0.14 + 0.20 s | 0 | 3.2 MB | 6 repos unchanged |
+| photos, first (before) | 256 KB | 15.4 s | 1.47 s | 619,667,456 | 5.6 MB | 2,486 parsed, 64 no date, 1 no EXIF → 2,349 shots |
+| photos, first (after) | 64 KB | 4.0 s | 0.83 s | 159,907,840 | 5.4 MB | identical: 2,349 shots, 64 no date, 1 no EXIF, same top cameras / lenses |
+| photos, incremental | | 2.5 s | 0.21 s | 0 | 3.4 MB | 2,551 unchanged |
+
+- Git wall time is background throttling, not work: the same walk at normal
+  priority takes 0.03 s; as a background process 4.5–22.7 s.
+- After the window change a Sony ARW (Exif IFD ~5 KB in) costs exactly the
+  64 KB first read; reads are now ~64 KB × raw files. The "before" run was the
+  first ever read of those files, the "after" run came later in the same day,
+  so cache state may differ; the bytes-read figure is what the scan asked for
+  either way (the collector's own count: 613,854,854 → 157,633,961).
+- Scratch database after both collectors: 840 KB.
 
 ## Known limitations
 
