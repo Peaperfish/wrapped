@@ -873,3 +873,39 @@ fn delete_clears_items_scan_state_and_file_cache() {
     assert_eq!(count(&e, "SELECT count(*) FROM scan_state"), 0);
     assert!(e.start_scan("git").is_err());
 }
+
+#[test]
+fn git_email_report_aggregates_across_repos_and_clones() {
+    let t = Tmp::new("emails");
+    let a = alpha(&t.0);
+    git(&t.0, &["clone", "-q", a.to_str().unwrap(), "beta"]);
+    let g = t.0.join("gamma");
+    init_repo(&g);
+    commit(
+        &g,
+        "old@example.com",
+        "2024-01-01T09:00:00+00:00",
+        "old work",
+    );
+    commit(
+        &g,
+        "me@example.com",
+        "2026-11-18T09:00:00+08:00",
+        "new work",
+    );
+    let r = wrapped_core::collectors::git::author_email_report(&[t.0.to_str().unwrap().into()]);
+    let got: Vec<(String, usize, Vec<String>)> = r
+        .into_iter()
+        .map(|s| (s.email, s.commits, s.repos.into_iter().collect()))
+        .collect();
+    let v = |x: &[&str]| x.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(
+        got,
+        vec![
+            // Mixed-case "Me@Example.com" merges in; clone copies count once.
+            ("me@example.com".into(), 4, v(&["alpha", "beta", "gamma"])),
+            ("old@example.com".into(), 1, v(&["gamma"])),
+            ("other@example.com".into(), 1, v(&["alpha", "beta"])),
+        ]
+    );
+}

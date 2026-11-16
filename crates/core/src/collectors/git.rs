@@ -291,6 +291,73 @@ fn scan_repo(
     }
 }
 
+/// One author email found in the repositories (see [`author_email_report`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmailStat {
+    /// Lowercased.
+    pub email: String,
+    /// Distinct commits, with the same identity scans use (clones, rebases and
+    /// cherry-picks count once).
+    pub commits: usize,
+    /// Repository folder names.
+    pub repos: BTreeSet<String>,
+}
+
+/// Read-only survey for choosing `git.author_emails`: every author email in
+/// the repositories under `folders` (same walk and refs as a scan), most
+/// commits first. Stores nothing.
+pub fn author_email_report(folders: &[String]) -> Vec<EmailStat> {
+    let roots: Vec<PathBuf> = folders.iter().filter_map(|f| expand_home(f)).collect();
+    let mut by_email: BTreeMap<String, (BTreeSet<String>, BTreeSet<String>)> = BTreeMap::new();
+    scan::walk(
+        &roots,
+        Rules::default(),
+        |dir| {
+            let Some((repo, name)) = repo_at(dir) else {
+                return Flow::Continue;
+            };
+            let mut cmd = git(&repo);
+            cmd.args([
+                "log",
+                "--no-color",
+                "--branches",
+                "--tags",
+                "--remotes",
+                "--format=%at%x09%ai%x09%ae%x09%s",
+            ])
+            .stdout(Stdio::piped());
+            if let Ok(mut child) = cmd.spawn() {
+                if let Some(out) = child.stdout.take() {
+                    for line in BufReader::new(out).lines().map_while(Result::ok) {
+                        if let Some((id, _, email)) = parse_line(&line) {
+                            let e = by_email.entry(email.to_lowercase()).or_default();
+                            e.0.insert(id);
+                            e.1.insert(name.clone());
+                        }
+                    }
+                }
+                let _ = child.wait();
+            }
+            if repo.join(".git").exists() {
+                Flow::Continue
+            } else {
+                Flow::SkipDir
+            }
+        },
+        |_, _| Flow::Continue,
+    );
+    let mut out: Vec<EmailStat> = by_email
+        .into_iter()
+        .map(|(email, (ids, repos))| EmailStat {
+            email,
+            commits: ids.len(),
+            repos,
+        })
+        .collect();
+    out.sort_by(|a, b| b.commits.cmp(&a.commits).then(a.email.cmp(&b.email)));
+    out
+}
+
 impl Collector for Git {
     fn info(&self) -> CollectorInfo {
         CollectorInfo {

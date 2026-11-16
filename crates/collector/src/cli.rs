@@ -26,6 +26,7 @@ USAGE
   wrapped-collector export --csv <dir>      everything, one CSV per table
   wrapped-collector --version               print crate version and build (git hash)
   wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
+  wrapped-collector git emails             list author emails in git.folders (read-only)
   wrapped-collector flush                 ask the running collector to flush now
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
@@ -78,6 +79,7 @@ pub fn main() -> i32 {
         ["stats", day] => stats(&db, day),
         ["sessions"] => sessions(&db, "today"),
         ["sessions", day] => sessions(&db, day),
+        ["git", "emails"] => git_emails(&db),
         ["scan"] => scan(&db, "all"),
         ["scan", what] => scan(&db, what),
         ["export", "--json", path] => export(&db, true, path),
@@ -290,6 +292,42 @@ fn sessions(db: &std::path::Path, day: &str) -> CliResult {
             r.key,
             if r.open { " *" } else { "" }
         );
+    }
+    Ok(())
+}
+
+/// Every author email in the configured git folders, for choosing
+/// `git.author_emails`. Prints only; stores nothing.
+fn git_emails(db: &std::path::Path) -> CliResult {
+    let (s, _) = Store::open(db)?.load_settings()?;
+    let mine = s.git_author_emails.clone().unwrap_or_default();
+    println!(
+        "author emails in {} (* = in git.author_emails; commits counted as scans count them)",
+        s.git_folders.join(", ")
+    );
+    let report = collectors::git::author_email_report(&s.git_folders);
+    let width = report
+        .iter()
+        .map(|r| r.email.len())
+        .max()
+        .unwrap_or(5)
+        .max(5);
+    println!("  {:<width$} {:>8}  repos", "email", "commits");
+    for r in &report {
+        let mark = if mine.contains(&r.email) { '*' } else { ' ' };
+        let repos: Vec<&str> = r.repos.iter().map(String::as_str).collect();
+        println!(
+            "{mark} {:<width$} {:>8}  {}",
+            r.email,
+            r.commits,
+            repos.join(", ")
+        );
+    }
+    for m in mine
+        .iter()
+        .filter(|m| !report.iter().any(|r| &r.email == *m))
+    {
+        println!("* {m:<width$} {:>8}  (not found)", 0);
     }
     Ok(())
 }
