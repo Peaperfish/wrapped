@@ -22,7 +22,8 @@ USAGE
   wrapped-collector sessions [today|YYYY-MM-DD]  session rows for a local day
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
-  wrapped-collector flush                   ask the running collector to flush now
+  wrapped-collector --version               print crate version and build (git hash)
+  wrapped-collector flush                 ask the running collector to flush now
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
 SETTINGS (values are JSON; a bare word is taken as a string)
@@ -48,6 +49,10 @@ pub fn main() -> i32 {
         } else {
             args.push(a);
         }
+    }
+    if matches!(args.as_slice(), ["--version" | "-V" | "version"]) {
+        println!("{}", version_line());
+        return 0;
     }
     let Some(db) = db_path() else {
         eprintln!("wrapped-collector: no data directory on this platform; set WRAPPED_DB");
@@ -88,6 +93,16 @@ pub fn main() -> i32 {
             1
         }
     }
+}
+
+/// `wrapped-collector <crate version> (<build id>)`; the build id is the short
+/// git hash, plus `-dirty` for uncommitted changes.
+fn version_line() -> String {
+    format!(
+        "wrapped-collector {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("WRAPPED_BUILD_ID")
+    )
 }
 
 type CliResult = Result<(), Box<dyn std::error::Error>>;
