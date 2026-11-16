@@ -3,9 +3,10 @@
 //!
 //!     cargo test -p wrapped-core --release --test write_budget -- --ignored --nocapture
 //!
-//! Simulated day: 16 h awake, the front app changes every 3 minutes among 15
-//! apps, a 20-minute idle break every 4 hours, flushes on the normal 10-minute
-//! policy, then a full checkpoint.
+//! Simulated day: the front app changes every 3 minutes among 15 apps, a
+//! 20-minute idle break every 4 hours, flushes on the normal 10-minute policy,
+//! then a full checkpoint. Four runs: 16 h and 24 h awake, each without and
+//! with the Disk & Memory collector (fake counters; 192 / 288 samples).
 //!
 //! Reported separately:
 //! * WAL bytes: everything appended to the WAL during the day (auto-checkpoint
@@ -25,9 +26,30 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
+use wrapped_core::probe::{DiskMemoryReading, PressureLevel, SystemProbe};
 use wrapped_core::{Engine, ManualClock, Store, SystemEvent, collectors};
+
+/// Counters that grow by a varying amount on every read.
+struct GrowingCounters(Mutex<DiskMemoryReading>);
+
+impl SystemProbe for GrowingCounters {
+    fn disk_memory(&self) -> Option<DiskMemoryReading> {
+        let mut r = self.0.lock().unwrap();
+        let n = r.disk_bytes_written / 4096 % 97;
+        r.disk_bytes_read += 3_000_000 + n * 40_960;
+        r.disk_bytes_written += 1_500_000 + n * 4_096;
+        r.swap_out_bytes += n * 16_384 % 3;
+        r.compressed_bytes = 1_000_000_000 + n * 1_000_000;
+        r.pressure = if n.is_multiple_of(13) {
+            PressureLevel::Warning
+        } else {
+            PressureLevel::Normal
+        };
+        Some(*r)
+    }
+}
 
 #[cfg(target_os = "macos")]
 fn process_disk_bytes_written() -> Option<u64> {
@@ -65,14 +87,27 @@ fn wal_pages(wal: &Path) -> (usize, usize, usize) {
     (frames, pages.len(), page_size)
 }
 
-#[test]
-#[ignore]
-fn one_simulated_day() {
-    let dir = std::env::temp_dir().join(format!("wrapped-write-budget-{}", std::process::id()));
+struct Run {
+    flushes: u32,
+    sessions: i64,
+    samples: i64,
+    wal_bytes: u64,
+    frames: usize,
+    checkpoint_bytes: u64,
+    distinct: usize,
+    kernel: Option<u64>,
+}
+
+fn simulate(hours: i64, disk_memory: bool) -> Run {
+    let dir = std::env::temp_dir().join(format!(
+        "wrapped-write-budget-{}-{hours}-{disk_memory}",
+        std::process::id()
+    ));
     let _ = std::fs::remove_dir_all(&dir);
     let path = dir.join("wrapped.db");
     let wal = dir.join("wrapped.db-wal");
-    let c = ManualClock::at_local(2026, 11, 16, 7, 0, 0, 480);
+    let start_hour = if hours >= 24 { 0 } else { 7 };
+    let c = ManualClock::at_local(2026, 11, 16, start_hour, 0, 0, 480);
 
     let store = Store::open(&path).unwrap();
     let checkpoint = |s: &Store| {
@@ -84,7 +119,21 @@ fn one_simulated_day() {
         .conn()
         .pragma_update(None, "wal_autocheckpoint", 0)
         .unwrap();
+    if disk_memory {
+        store
+            .set_setting("collector.disk_memory.enabled", "true")
+            .unwrap();
+    }
     let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap();
+    e.set_probe(Arc::new(GrowingCounters(Mutex::new(DiskMemoryReading {
+        boot_time_ms: 1_790_000_000_000,
+        disk_bytes_read: 10_000_000_000,
+        disk_bytes_written: 5_000_000_000,
+        swap_in_bytes: 0,
+        swap_out_bytes: 0,
+        pressure: PressureLevel::Normal,
+        compressed_bytes: 1_000_000_000,
+    }))));
     checkpoint(e.store()); // exclude schema creation from the day's numbers
     let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     assert_eq!(size(&wal), 0);
@@ -92,7 +141,7 @@ fn one_simulated_day() {
 
     let mut flushes = 0u32;
     let mut minute = 0i64;
-    while minute < 16 * 60 {
+    while minute < hours * 60 {
         if minute % 3 == 0 {
             e.handle(SystemEvent::FrontApp {
                 bundle_id: format!("com.example.app{}", (minute / 3) % 15),
@@ -126,37 +175,47 @@ fn one_simulated_day() {
     let checkpoint_bytes = (distinct * page_size) as u64;
     checkpoint(e.store());
     let proc_after = process_disk_bytes_written();
-    let sessions: i64 = e
-        .store()
-        .conn()
-        .query_row("SELECT count(*) FROM sessions", [], |r| r.get(0))
-        .unwrap();
-    let mb = |b: u64| b as f64 / 1_048_576.0;
-
-    println!("flushes:              {flushes}");
-    println!("sessions stored:      {sessions}");
-    println!(
-        "WAL bytes:            {wal_bytes} ({:.2} MB; {frames} frames, {:.1} frames/flush)",
-        mb(wal_bytes),
-        frames as f64 / f64::from(flushes)
-    );
-    println!(
-        "checkpoint bytes:     {checkpoint_bytes} ({:.2} MB; {distinct} distinct pages x {page_size})",
-        mb(checkpoint_bytes)
-    );
-    println!(
-        "total:                {} ({:.2} MB/day)",
-        wal_bytes + checkpoint_bytes,
-        mb(wal_bytes + checkpoint_bytes)
-    );
-    match (proc_before, proc_after) {
-        (Some(a), Some(b)) => println!(
-            "kernel ri_diskio_byteswritten delta for this test process: {} ({:.2} MB)",
-            b - a,
-            mb(b - a)
-        ),
-        _ => println!("kernel per-process write counter: not available on this OS"),
-    }
+    let count = |sql: &str| -> i64 { e.store().conn().query_row(sql, [], |r| r.get(0)).unwrap() };
+    let run = Run {
+        flushes,
+        sessions: count("SELECT count(*) FROM sessions"),
+        samples: count("SELECT count(DISTINCT time_ms) FROM samples"),
+        wal_bytes,
+        frames,
+        checkpoint_bytes,
+        distinct,
+        kernel: proc_before.zip(proc_after).map(|(a, b)| b - a),
+    };
     drop(e);
     let _ = std::fs::remove_dir_all(&dir);
+    run
+}
+
+#[test]
+#[ignore]
+fn one_simulated_day() {
+    let mb = |b: u64| b as f64 / 1_048_576.0;
+    println!(
+        "{:<26} {:>7} {:>8} {:>13} {:>11} {:>13} {:>13} {:>13}",
+        "run", "flushes", "samples", "WAL bytes", "frames/fl", "checkpoint", "total", "kernel"
+    );
+    for (hours, dm) in [(16, false), (16, true), (24, false), (24, true)] {
+        let r = simulate(hours, dm);
+        let total = r.wal_bytes + r.checkpoint_bytes;
+        println!(
+            "{:<26} {:>7} {:>8} {:>13} {:>11.1} {:>13} {:>13} {:>13}",
+            format!(
+                "{hours} h awake, disk_memory {}",
+                if dm { "on" } else { "off" }
+            ),
+            r.flushes,
+            r.samples,
+            r.wal_bytes,
+            r.frames as f64 / f64::from(r.flushes),
+            format!("{} ({}p)", r.checkpoint_bytes, r.distinct),
+            format!("{total} ({:.2} MB)", mb(total)),
+            r.kernel.map_or("n/a".to_string(), |k| format!("{k}")),
+        );
+        assert!(r.sessions > 0);
+    }
 }
