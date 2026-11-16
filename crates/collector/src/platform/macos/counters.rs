@@ -97,8 +97,11 @@ fn dict_u64(dict: &AnyObject, key: &str) -> Option<u64> {
 }
 
 fn dict_string(dict: &AnyObject, key: &str) -> Option<String> {
-    let v = dict_get(dict, key)?.cast::<NSString>();
-    Some(unsafe { (*v).to_string() })
+    let v = dict_get(dict, key)?;
+    // Only read it as a string if it is one (a registry value of another
+    // type would crash when sent string messages).
+    let obj: &AnyObject = unsafe { &*v };
+    Some(obj.downcast_ref::<NSString>()?.to_string())
 }
 
 /// Whether a block storage driver sits on an internal, non-removable device.

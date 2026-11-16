@@ -89,8 +89,8 @@ pub const MIGRATIONS: &[&str] = &[
     "#,
     // v3: several values per sample row (Milestone 3).
     //
-    // The Disk & Memory collector records six values per reading. As six
-    // `samples` rows they land in six separate parts of the (collector,
+    // The Disk & Memory collector records seven values per reading. As seven
+    // `samples` rows they land in seven separate parts of the (collector,
     // metric, time) B-tree, so every flush dirtied ~7 extra 4 KB pages
     // (measured 3.9 MB/day for 16 h awake against a 1-2 MB budget). One row
     // per reading, the other values in `data`, appends to a single leaf page.
