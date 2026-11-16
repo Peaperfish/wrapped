@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Milestone 1 core (`crates/core`): collector plugin trait, system event bus, presence state machine, app usage and active/idle collectors, SQLite storage with migrations, batched writer, daily metric rollups, tracking settings.
 - `crates/collector` binary with a cfg-gated platform module (replaces the `crates/wrapped` placeholder).
+- macOS collector app: native tray (pause / resume / open data folder / quit, no Dock icon), NSWorkspace and lock/unlock notifications, minute idle check with display-sleep assertions, flush on sleep / power-off / quit / SIGTERM / SIGINT, single-instance lock.
+- Launch at login via `SMAppService` and `scripts/macos/bundle.sh` (ad-hoc signed `Wrapped.app`).
+- Temporary CLI: `settings`, `stats`, `sessions`, `export --json/--csv`, `flush`, `login`; `--debug` / `WRAPPED_DEBUG=1` event, tick-gap and flush logging.
+- `docs/MILESTONE1.md` (build, install, decisions, limitations, verification checklist) and `docs/DEVIATIONS.md`.
 - Milestone 0 spike (macOS): front app, idle and sleep/wake tracking, in `spikes/`.
 - Design doc in `docs/DESIGN.md`.
 - Project files for a public repository: README, dual MIT/Apache-2.0 license, contributing guide, security policy, code of conduct, issue and PR templates, Dependabot and CI.

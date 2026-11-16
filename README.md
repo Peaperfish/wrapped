@@ -2,7 +2,7 @@
 
 A local-only desktop app that tracks how you use your computer and turns it into a dashboard, a live hardware tab, and Spotify-Wrapped-style recaps.
 
-> **Status: early development, not usable yet.** Milestone 0 (a spike) is done; there is nothing to install.
+> **Status: early development.** The Milestone 1 collector runs on macOS (tray icon, no UI yet); see [docs/MILESTONE1.md](docs/MILESTONE1.md).
 
 *Wrapped is a working name and may change. This project is not affiliated with Spotify.*
 
@@ -72,14 +72,15 @@ The collector is a plain Rust process with a native tray icon (no web view) and 
 
 ## Build from source
 
-TODO: there is no buildable app yet. Planned:
+Requires Rust stable (via rustup) and macOS 13+ for the collector.
 
 ```sh
-# TODO: prerequisites (Rust stable via rustup, Tauri prerequisites)
-# TODO: cargo build --release
-# TODO: run the collector
-# TODO: run the dashboard
+cargo build --release -p wrapped-collector
+./target/release/wrapped-collector            # tray icon; records to ~/Library/Application Support/Wrapped
+./target/release/wrapped-collector help       # temporary CLI: settings, stats, sessions, export
 ```
+
+To install with launch at login, see [docs/MILESTONE1.md](docs/MILESTONE1.md#install-with-launch-at-login).
 
 To try the Milestone 0 spike (macOS only), see [spikes/README.md](spikes/README.md).
 
