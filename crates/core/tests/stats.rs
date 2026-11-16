@@ -812,3 +812,20 @@ fn read_only_open_changes_nothing() {
     assert_eq!(std::fs::read(&path).unwrap(), before);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn latest_night_sees_a_long_session_that_started_well_before_the_range() {
+    let mut s = store_with(ALL);
+    let (d0, d2) = (d("2026-11-08"), d("2026-11-10"));
+    let mut p = Pending::default();
+    // 36 h without a break (e.g. an app on the active-without-input list),
+    // from 20:00 on the 8th to 08:00 on the 10th.
+    p.session("app_usage", "com.a", at(d0, 20, 0, CST), at(d2, 8, 0, CST));
+    p.flush(&mut s, at(d2, 9, 0, CST));
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let rec = st.records(DateRange::day(d2)).unwrap();
+    let n = rec.latest_night.unwrap();
+    assert_eq!((n.night, n.clock_min), (d2, 8 * 60));
+    // It started on the 8th, so it is not the 10th's longest session.
+    assert_eq!(rec.longest_session, None);
+}
