@@ -4,3 +4,4 @@ pub mod time;
 pub mod event;
 pub mod settings;
 pub mod collector;
+pub mod presence;
