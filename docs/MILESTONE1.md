@@ -137,6 +137,12 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 - **Settings are re-read from the database on every tick**, so CLI changes
   apply within a minute without IPC.
 - **Excluded apps** are recorded nowhere: no rows, and redacted in the debug log.
+- **The collector ignores itself.** The platform layer passes its own app id
+  (main bundle id, falling back to `io.github.peaperfish.wrapped`) to the
+  engine. `FrontApp` events for it (e.g. opening the tray menu) are dropped:
+  no session starts or ends, no app switch, no activity evidence, so the
+  previous app's session continues. Other menu-bar apps are still recorded;
+  exclude them in settings if unwanted.
 
 ## Known limitations
 
@@ -175,8 +181,9 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 ### Not verified live (covered by unit tests only, or not at all)
 
 - Display-only sleep (display off, system awake) via `pmset displaysleepnow`.
-- Tray Pause / Resume menu items (pause logic itself is unit-tested).
-- Launch at login with the ad-hoc-signed bundle (`login enable`, login after logout).
+- Launch at login: `login enable` printed enabled and `Wrapped.app` started
+  at 16:06:52 with the menu-bar icon and no Dock icon (2026-11-16); login after
+  logout is not yet verified.
 - Sleep via the Apple menu; power-off / logout flush path; behaviour on battery.
 - Windows CI job with this code.
 
@@ -190,9 +197,9 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 | Lock (Ctrl+Cmd+Q) | `ScreenLocked` + `loginwindow` ended the session; the Mac also slept; one `locked` period (3 m 03 s) until `ScreenUnlocked`; `loginwindow` never recorded as an app. `screensDidSleep` / `screensDidWake` fired (unconfirmed in M0). |
 | `pmset displaysleepnow` | Skipped. |
 | Lid close ~30 s | `WillSleep` flushed and ended the session; `sleep` 15:56:29–15:57:19. A tick fired 5 s after `WillSleep` reporting input from before it; correctly not treated as a return. |
-| Tray Pause / Resume | Skipped. |
+| Tray Pause / Resume | Paused 16:09:34, resumed 16:10:12 (2026-11-16); no rows recorded while paused. |
 | `stats today` | `screen_time_secs` 1482 = sum of `app_secs` = sum of hour buckets; `away_secs` 689 = idle 456 + locked 183 + sleep 49 over 4 periods. |
-| Launch at login | Skipped. |
+| Launch at login | `login enable` printed enabled; `Wrapped.app` started 16:06:52, menu-bar icon, no Dock icon. Logout/login not yet verified. |
 | Resources after 36 min | Footprint 11.0 → 11.3 MB; RSS 70,976 → 65,584 KB; CPU 0:00.24; tick gaps 59.9–65.0 s without sleep, 0 warnings. |
 
 ## Overnight + workday verification
