@@ -254,28 +254,32 @@ fn active_without_input_app_uses_longer_timeout() {
         .unwrap();
     h.tick(0.0); // reload settings
     h.app("com.apple.Preview");
-    for m in 1..=29 {
+    h.adv(60);
+    h.tick(25.0); // last input 09:00:35
+    for m in 2..=30 {
         h.adv(60);
-        h.tick(60.0 * m as f64);
+        h.tick(60.0 * m as f64 - 25.0);
     }
-    // 29 min without input in a reading app: still active.
+    // 09:30: 29m25s without input in a reading app: still active.
     assert_eq!(
         h.sessions(AU),
-        vec![s("com.apple.Preview", "09:00:00", "09:29:00", true)]
+        vec![s("com.apple.Preview", "09:00:00", "09:30:00", true)]
     );
-    // 30 min: idle, backdated to the app switch (last evidence of use).
+    // 09:31 tick sees 30m25s: the 30-minute timeout ran out at 09:30:35.
+    // The session ends there: not at the tick (09:31), not at last input.
     h.adv(60);
-    h.tick(1800.0);
-    assert!(
-        h.sessions(AU).is_empty(),
-        "reading time with no input at all is not provable"
+    h.tick(1825.0);
+    assert_eq!(
+        h.sessions(AU),
+        vec![s("com.apple.Preview", "09:00:00", "09:30:35", false)]
     );
     assert_eq!(
         h.sessions(AI),
-        vec![s("idle", "09:00:00", "09:30:00", true)]
+        vec![s("idle", "09:30:35", "09:31:00", true)]
     );
 
-    // An ordinary app goes idle at the normal 180 s threshold.
+    // An ordinary app goes idle at the normal 180 s threshold, backdated to
+    // the last input.
     let mut h = H::new();
     h.e.store()
         .set_setting("active_without_input.apps", r#"["com.apple.Preview"]"#)
@@ -290,6 +294,31 @@ fn active_without_input_app_uses_longer_timeout() {
     assert_eq!(
         h.sessions(AU),
         vec![s("com.other", "09:00:00", "09:00:30", false)]
+    );
+}
+
+#[test]
+fn awi_timeout_counts_from_last_evidence_not_last_input() {
+    // Switching to the reading app is evidence of use even with no input since.
+    let mut h = H::new();
+    h.e.store()
+        .set_setting("active_without_input.apps", r#"["com.apple.Preview"]"#)
+        .unwrap();
+    h.tick(0.0);
+    h.app("com.a");
+    h.adv(120);
+    h.app("com.apple.Preview"); // 09:02, last input was 09:00
+    for m in 3..=32 {
+        h.adv(60);
+        h.tick(60.0 * m as f64);
+    }
+    // 09:32: 32 min since input, but only 30 since the switch: idle at 09:32:00.
+    assert_eq!(
+        h.sessions(AU),
+        vec![
+            s("com.a", "09:00:00", "09:02:00", false),
+            s("com.apple.Preview", "09:02:00", "09:32:00", false),
+        ]
     );
 }
 

@@ -10,13 +10,19 @@
 //! * Sleep, display sleep, screen lock, and the lock screen / screensaver
 //!   being in front all mean away. Power-off halts tracking.
 //!
-//! Timing accuracy: idle is only checked on the ~60 s tick, so when idle is
-//! detected the transition is backdated to the moment of last evidence of use
-//! (last input, last app switch, or the last tick where a display assertion
-//! was held). Returning from idle is only noticed at the next tick (or the next
-//! app switch / unlock / wake event), and is placed at the last input seen at
-//! that tick, so the start of the first session after an idle period can be up
-//! to ~60 s late.
+//! Where idle starts. "Last evidence of use" is the latest of: last input, an
+//! app switch, wake / unlock / resume, or a tick where a display assertion was
+//! held.
+//! * Normal apps: idle is only checked on the ~60 s tick, so when it is
+//!   detected the transition is backdated to the last evidence of use.
+//! * Apps on the "active without input" list: not backdated. The session ends
+//!   at last evidence of use + that list's timeout (the moment the longer
+//!   timeout ran out), which is neither the tick time nor the last input.
+//!   Time spent reading with no input is therefore kept, up to the timeout.
+//!
+//! Returning from idle is only noticed at the next tick (or the next app
+//! switch / unlock / wake event), and is placed at the last input seen at that
+//! tick, so the first session after an idle period can start up to ~60 s late.
 
 use crate::event::{AwayReason, SystemEvent, away_app_reason};
 use crate::settings::Settings;
@@ -225,9 +231,14 @@ impl Presence {
         }
         self.last_tick_ms = Some(now.utc_ms);
 
-        let timeout = match &self.front {
-            Some(f) if s.is_active_without_input(&f.key()) => s.active_without_input_timeout_secs,
-            _ => s.idle_threshold_secs,
+        let awi = self
+            .front
+            .as_ref()
+            .is_some_and(|f| s.is_active_without_input(&f.key()));
+        let timeout = if awi {
+            s.active_without_input_timeout_secs
+        } else {
+            s.idle_threshold_secs
         };
 
         if secs < f64::from(timeout) {
@@ -264,15 +275,24 @@ impl Presence {
             if gap {
                 self.asleep = None;
             }
+            let evidence = last_input
+                .max(self.last_activity_ms.unwrap_or(i64::MIN))
+                .max(floor);
             if self.idle {
                 steps.push(self.step(now));
+            } else if awi {
+                let end = evidence + i64::from(timeout) * MS_PER_SEC;
+                if end > now.utc_ms {
+                    // Non-input evidence (e.g. a programmatic app switch) is
+                    // still within the timeout: not idle yet.
+                    steps.push(self.step(now));
+                } else {
+                    self.idle = true;
+                    steps.push(self.step(now.with_utc_ms(end.max(floor))));
+                }
             } else {
                 self.idle = true;
-                let at = last_input
-                    .max(self.last_activity_ms.unwrap_or(i64::MIN))
-                    .max(floor)
-                    .min(now.utc_ms);
-                steps.push(self.step(now.with_utc_ms(at)));
+                steps.push(self.step(now.with_utc_ms(evidence.min(now.utc_ms))));
             }
         }
         steps
