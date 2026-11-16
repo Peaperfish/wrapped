@@ -19,4 +19,5 @@ register!(
     app_usage::AppUsage,
     active_idle::ActiveIdle,
     git::Git,
+    photos::Photos,
 );
