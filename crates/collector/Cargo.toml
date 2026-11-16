@@ -1,0 +1,14 @@
+[package]
+name = "wrapped-collector"
+version = "0.1.0"
+description = "Wrapped background collector: tray icon, platform event sources and the batched writer"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+wrapped-core = { path = "../core" }
+
+[lints]
+workspace = true
