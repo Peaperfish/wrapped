@@ -85,6 +85,8 @@ pub struct Engine {
     scan_hooks: ScanHooks,
     scan_cancel_after: Option<u64>,
     reports: Vec<ScanReport>,
+    /// Settings fingerprints already checked against the store.
+    fingerprints: BTreeMap<&'static str, String>,
 }
 
 impl Engine {
@@ -129,6 +131,7 @@ impl Engine {
             scan_hooks: ScanHooks::default(),
             scan_cancel_after: None,
             reports: Vec::new(),
+            fingerprints: BTreeMap::new(),
         };
         e.shared.has_writer.store(true, Ordering::SeqCst);
         e.apply_settings(settings)?;
@@ -724,6 +727,35 @@ impl Engine {
             });
         }
         self.settings = new;
+        self.sync_scan_fingerprints()
+    }
+
+    /// A running scanned collector whose counting rule changed (git author
+    /// emails added or removed) starts over: its data, incremental state and
+    /// metrics are deleted, so the next tick (or `scan`) reads everything again
+    /// and counts exactly what the new rule says.
+    fn sync_scan_fingerprints(&mut self) -> Result<()> {
+        for i in 0..self.slots.len() {
+            let slot = &self.slots[i];
+            if !slot.running || slot.collector.kind() != Kind::Scanned {
+                continue;
+            }
+            let Some(fp) = slot.collector.scan_fingerprint(&self.settings) else {
+                continue;
+            };
+            let name = slot.name;
+            if self.fingerprints.get(name) == Some(&fp) {
+                continue;
+            }
+            if self.store.scan_fingerprint(name)?.as_deref() != Some(fp.as_str()) {
+                self.log(|| {
+                    format!("{name}: counting settings changed; data reset for a full rescan")
+                });
+                self.delete_collector_data(name)?;
+                self.store.set_scan_fingerprint(name, &fp)?;
+            }
+            self.fingerprints.insert(name, fp);
+        }
         Ok(())
     }
 }

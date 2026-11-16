@@ -385,6 +385,17 @@ impl Collector for Git {
         Some(Box::new(Git))
     }
 
+    fn scan_fingerprint(&self, s: &Settings) -> Option<String> {
+        Some(match &s.git_author_emails {
+            Some(list) => {
+                let mut l = list.clone();
+                l.sort();
+                format!("emails:{}", l.join(","))
+            }
+            None => "emails:(git config --global user.email)".to_string(),
+        })
+    }
+
     fn enable_defaults(&self, s: &Settings) -> Vec<(String, String)> {
         if s.git_author_emails.is_some() {
             return Vec::new();

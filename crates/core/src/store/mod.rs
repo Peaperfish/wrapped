@@ -39,6 +39,7 @@ use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_
 const OFFSET_MARGIN_MS: i64 = 15 * MS_PER_HOUR;
 const KEY_MAX_SESSION: &str = "internal.max_session_ms";
 const SCAN_REQUEST_PREFIX: &str = "internal.scan_request.";
+const SCAN_FINGERPRINT_PREFIX: &str = "internal.scan_fingerprint.";
 
 #[derive(Debug)]
 pub enum Error {
@@ -303,6 +304,45 @@ impl Store {
             })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
+    }
+
+    /// The stored settings fingerprint of a scanned collector (see
+    /// `Collector::scan_fingerprint`).
+    pub fn scan_fingerprint(&self, collector: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                [format!("{SCAN_FINGERPRINT_PREFIX}{collector}")],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn set_scan_fingerprint(&self, collector: &str, fp: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![format!("{SCAN_FINGERPRINT_PREFIX}{collector}"), fp],
+        )?;
+        Ok(())
+    }
+
+    /// If the fingerprint differs from the stored one (or none is stored),
+    /// delete the collector's data and incremental state and store the new
+    /// fingerprint. Returns true if there was anything to reset. For use when
+    /// no engine runs on this database (an engine does this itself).
+    pub fn sync_scan_fingerprint(&mut self, collector: &str, fp: &str) -> Result<bool> {
+        let prev = self.scan_fingerprint(collector)?;
+        if prev.as_deref() == Some(fp) {
+            return Ok(false);
+        }
+        let had_data = prev.is_some()
+            || self.item_count(collector)? > 0
+            || self.scan_info(collector)? != ScanInfo::default();
+        self.delete_collector_data(collector)?;
+        self.set_scan_fingerprint(collector, fp)?;
+        Ok(had_data)
     }
 
     /// Ask a running collector (another process) to scan `collector` soon.

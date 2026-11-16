@@ -51,6 +51,12 @@ design doc itself is left as written.
   `scan_files`).
 - Pending on-demand scan requests from the CLI to a running collector are
   `internal.scan_request.<collector>` rows in `settings`.
+- `Collector::scan_fingerprint(&Settings)` added, stored as
+  `internal.scan_fingerprint.<collector>` in `settings`. When it changes (git:
+  the author email list), the collector's items, scan state and daily metrics
+  are deleted so the next scan re-reads everything under the new rule; done
+  by `settings set` when no collector runs, otherwise by the running
+  collector at its next tick (and by `scan` on startup).
 - `settings` holds one bookkeeping row, `internal.max_session_ms` (longest
   session ever stored), which bounds how far back a day's rollup has to look.
   Keys starting with `internal.` are not user settings.

@@ -167,6 +167,13 @@ pub trait Collector: Send {
     fn scanner(&self) -> Option<Box<dyn Collector>> {
         None
     }
+    /// Scanned collectors: a fingerprint of the settings that decide *what*
+    /// is counted (git: author emails). When it changes, the engine deletes
+    /// the collector's data and incremental state so the next scan re-reads
+    /// everything under the new rule. `None` = no such settings.
+    fn scan_fingerprint(&self, _settings: &Settings) -> Option<String> {
+        None
+    }
     /// Settings to store explicitly when the collector is turned on, given the
     /// current settings (e.g. git's author emails). Empty by default.
     fn enable_defaults(&self, _settings: &Settings) -> Vec<(String, String)> {

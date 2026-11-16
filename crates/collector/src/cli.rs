@@ -181,7 +181,35 @@ fn settings_set(db: &std::path::Path, key: &str, value: &str) -> CliResult {
             }
         }
     }
-    if platform::running_pid(db).is_some() {
+    let running = platform::running_pid(db).is_some();
+    // A changed counting rule (git author emails) resets that collector's data
+    // so the next scan reads its full history again.
+    let (s, _) = store.load_settings()?;
+    let mut store = store;
+    for c in collectors::builtin() {
+        let i = c.info();
+        if !s.collector_enabled(i.name, i.default_on) {
+            continue;
+        }
+        let Some(fp) = c.scan_fingerprint(&s) else {
+            continue;
+        };
+        if store.scan_fingerprint(i.name)?.as_deref() == Some(fp.as_str()) {
+            continue;
+        }
+        if running {
+            println!(
+                "({}: the running collector resets its data and rescans everything at its next tick)",
+                i.name
+            );
+        } else if store.sync_scan_fingerprint(i.name, &fp)? {
+            println!(
+                "({}: data reset; the next scan reads the full history)",
+                i.name
+            );
+        }
+    }
+    if running {
         println!("(the running collector picks this up at its next minute tick)");
     }
     Ok(())

@@ -54,6 +54,12 @@ Accepted differences from the design doc are in [DEVIATIONS.md](DEVIATIONS.md).
   with its distinct commit count (same identity as scans) and repos, marking
   the ones in `git.author_emails`; read-only, prints to the terminal only, so
   you can pick old addresses to add with `settings set git.author_emails`.
+- **Changing `git.author_emails`** (adding or removing an address) resets
+  git's data and incremental state, so the next scan reads the full history
+  again and counts exactly the listed addresses; setting the same list again
+  changes nothing. `git.folders` needs no reset (a new repo has no watermark;
+  a removed one simply stops being scanned), and no photos setting changes
+  how a shot is identified or counted.
 
 ## Running it
 

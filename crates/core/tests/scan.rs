@@ -10,7 +10,7 @@ use wrapped_core::engine::ScanReport;
 use wrapped_core::scan::exif::fixture::{self, Shot};
 use wrapped_core::scan::exif::{Capped, HARD_CAP, HEAD_WINDOW, MetaError, read_meta};
 use wrapped_core::time::MS_PER_HOUR;
-use wrapped_core::{Clock, Engine, ManualClock, Store, SystemEvent, collectors};
+use wrapped_core::{Clock, Collector, Engine, ManualClock, Store, SystemEvent, collectors};
 
 // ---------- harness ----------
 
@@ -908,4 +908,86 @@ fn git_email_report_aggregates_across_repos_and_clones() {
             ("other@example.com".into(), 1, v(&["alpha", "beta"])),
         ]
     );
+}
+
+fn set_emails(e: &mut Engine, json: &str) {
+    e.store().set_setting("git.author_emails", json).unwrap();
+    tick(e); // the running collector picks it up (and rescans if needed)
+    e.wait_scans().unwrap();
+}
+
+#[test]
+fn changing_author_emails_rescans_history() {
+    let t = Tmp::new("emails-change");
+    let r = t.0.join("repo");
+    init_repo(&r);
+    commit(&r, "b@example.com", "2025-03-01T09:00:00+00:00", "old b 1");
+    commit(&r, "b@example.com", "2025-03-02T09:00:00+00:00", "old b 2");
+    commit(&r, "me@example.com", "2026-11-16T09:00:00+00:00", "a");
+    let c = clock();
+    let mut e = git_engine(&c, &t.0); // [me@example.com]
+    scan(&mut e, "git");
+    assert_eq!(metric_sum(&e, "git", "commits"), 1.0);
+    assert_eq!(metric(&e, "2025-03-01", "git", "commits", ""), None);
+
+    // (a) add B: the older commits under B are now counted.
+    c.advance_ms(60_000);
+    set_emails(&mut e, r#"["me@example.com", "b@example.com"]"#);
+    assert_eq!(metric_sum(&e, "git", "commits"), 3.0);
+    assert_eq!(metric(&e, "2025-03-01", "git", "commits", ""), Some(1.0));
+    assert_eq!(my_items(&e), 3);
+
+    // (b) remove B again: its commits leave items and daily_metrics.
+    c.advance_ms(60_000);
+    set_emails(&mut e, r#"["me@example.com"]"#);
+    assert_eq!(my_items(&e), 1);
+    assert_eq!(metric_sum(&e, "git", "commits"), 1.0);
+    assert_eq!(metric(&e, "2025-03-01", "git", "commits", ""), None);
+
+    // (c) the same list again (any order / case): no reset, no rescan.
+    let last = e.last_scan_ms("git").unwrap();
+    c.advance_ms(60_000);
+    set_emails(&mut e, r#"["ME@example.com"]"#);
+    assert_eq!(e.last_scan_ms("git").unwrap(), last);
+    assert_eq!(my_items(&e), 1);
+}
+
+#[test]
+fn email_change_made_offline_resets_on_next_start() {
+    let t = Tmp::new("emails-offline");
+    let r = t.0.join("repo");
+    init_repo(&r);
+    commit(&r, "b@example.com", "2025-03-01T09:00:00+00:00", "old b");
+    commit(&r, "me@example.com", "2026-11-16T09:00:00+00:00", "a");
+    let path = t.0.join("w.db");
+    let c = clock();
+    let settings = |s: &Store| {
+        s.set_setting("collector.git.enabled", "true").unwrap();
+        s.set_setting("git.folders", &json_list(&t.0)).unwrap();
+        s.set_setting("git.author_emails", r#"["me@example.com"]"#)
+            .unwrap();
+    };
+    {
+        let s = Store::open(&path).unwrap();
+        settings(&s);
+        let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin()).unwrap();
+        scan(&mut e, "git");
+        assert_eq!(my_items(&e), 1);
+    }
+    // Changed while no collector runs (CLI `settings set`): the store resets.
+    let mut s = Store::open(&path).unwrap();
+    s.set_setting("git.author_emails", r#"["me@example.com","b@example.com"]"#)
+        .unwrap();
+    let fp = collectors::git::Git
+        .scan_fingerprint(&s.load_settings().unwrap().0)
+        .unwrap();
+    assert!(s.sync_scan_fingerprint("git", &fp).unwrap());
+    assert!(
+        !s.sync_scan_fingerprint("git", &fp).unwrap(),
+        "same list: no reset"
+    );
+    assert_eq!(s.item_count("git").unwrap(), 0);
+    let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin()).unwrap();
+    scan(&mut e, "git");
+    assert_eq!(my_items(&e), 2);
 }
