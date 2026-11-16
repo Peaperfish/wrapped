@@ -26,12 +26,15 @@ use objc2::MainThreadMarker;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use wrapped_core::store::FlushReport;
+use wrapped_core::time::{MS_PER_DAY, Timestamp};
 use wrapped_core::{Clock, Engine, Store, SystemClock, SystemEvent, collectors};
 
 pub use login::login;
 
-/// Gap between idle ticks (with no sleep in between) above which a warning is
-/// printed even without debug logging. The timer interval is 60 s.
+/// Gap between idle ticks (with no sleep in between, system awake) above which
+/// a warning is printed even without debug logging. The timer interval is 60 s.
+/// Ticks between `WillSleep` and `DidWake` come from dark wakes (maintenance
+/// wakes, which send no wake notification) and are logged as such instead.
 const TICK_GAP_WARN_SECS: f64 = 90.0;
 
 /// `~/Library/Application Support/Wrapped`
@@ -78,7 +81,15 @@ struct State {
     db: PathBuf,
     last_tick: Option<SystemTime>,
     slept_since_tick: bool,
+    /// From `WillSleep` until `DidWake`: a tick now is a dark-wake tick.
+    asleep_since: Option<Timestamp>,
     last_disk_bytes: u64,
+}
+
+/// Local wall-clock "HH:MM:SS".
+fn hms(t: Timestamp) -> String {
+    let s = t.local_ms().rem_euclid(MS_PER_DAY) / 1000;
+    format!("{:02}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
 }
 
 thread_local! {
@@ -128,16 +139,32 @@ impl State {
 pub(crate) fn deliver(ev: SystemEvent) {
     let is_tick = matches!(ev, SystemEvent::IdleTick { .. });
     with_state(|st| {
-        if matches!(ev, SystemEvent::WillSleep | SystemEvent::DidWake) {
-            st.slept_since_tick = true;
+        match ev {
+            SystemEvent::WillSleep => {
+                st.slept_since_tick = true;
+                st.asleep_since = Some(SystemClock.now());
+            }
+            SystemEvent::DidWake => {
+                st.slept_since_tick = true;
+                st.asleep_since = None;
+            }
+            _ => {}
         }
         if is_tick {
             let now = SystemTime::now();
-            if let Some(prev) = st.last_tick {
-                let gap = now
-                    .duration_since(prev)
+            let gap = st.last_tick.map(|prev| {
+                now.duration_since(prev)
                     .map(|d| d.as_secs_f64())
-                    .unwrap_or(f64::NAN);
+                    .unwrap_or(f64::NAN)
+            });
+            if let Some(since) = st.asleep_since {
+                // Never a warning: the timer runs during dark wakes.
+                let gap = gap.map_or(String::new(), |g| format!(", {g:.1}s since previous tick"));
+                log(&format!(
+                    "tick during dark wake (asleep since {}){gap}",
+                    hms(since)
+                ));
+            } else if let Some(gap) = gap {
                 let note = if st.slept_since_tick {
                     " (sleep/wake in between)"
                 } else {
@@ -158,6 +185,10 @@ pub(crate) fn deliver(ev: SystemEvent) {
         }
         let name = ev.name();
         st.measured(name, |e| e.handle(ev));
+        if st.asleep_since.is_some() && !st.engine.is_asleep() {
+            // Input after WillSleep with no DidWake: the wake was missed.
+            st.asleep_since = None;
+        }
     });
     if is_tick {
         tray::refresh();
@@ -233,6 +264,7 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
             db: db.to_path_buf(),
             last_tick: None,
             slept_since_tick: false,
+            asleep_since: None,
             last_disk_bytes: process_disk_bytes_written().unwrap_or(0),
         })
     });

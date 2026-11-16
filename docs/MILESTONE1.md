@@ -196,10 +196,13 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
 2026-11-16; nothing recorded while paused).
 
+Launch at login is now verified live: after a restart on 2026-11-16 the
+installed `Wrapped.app` started by itself and recorded sessions from 17:25:51
+until it was quit by hand. (Earlier the same day `login enable` printed
+enabled and `Wrapped.app` started at 16:06:52 with the menu-bar icon and no
+Dock icon.)
+
 - Display-only sleep (display off, system awake) via `pmset displaysleepnow`.
-- Launch at login: `login enable` printed enabled and `Wrapped.app` started
-  at 16:06:52 with the menu-bar icon and no Dock icon (2026-11-16); login after
-  logout is not yet verified.
 - Sleep via the Apple menu; power-off / logout flush path; behaviour on battery.
 - Windows CI job with this code.
 
@@ -215,7 +218,7 @@ Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
 | Lid close ~30 s | `WillSleep` flushed and ended the session; `sleep` 15:56:29–15:57:19. A tick fired 5 s after `WillSleep` reporting input from before it; correctly not treated as a return. |
 | Tray Pause / Resume | Paused 16:09:34, resumed 16:10:12 (2026-11-16); no rows recorded while paused. |
 | `stats today` | `screen_time_secs` 1482 = sum of `app_secs` = sum of hour buckets; `away_secs` 689 = idle 456 + locked 183 + sleep 49 over 4 periods. |
-| Launch at login | `login enable` printed enabled; `Wrapped.app` started 16:06:52, menu-bar icon, no Dock icon. Logout/login not yet verified. |
+| Launch at login | `login enable` printed enabled; `Wrapped.app` started 16:06:52, menu-bar icon, no Dock icon. After a restart the installed `Wrapped.app` launched at login and recorded sessions from 17:25:51 until quit by hand. |
 | Resources after 36 min | Footprint 11.0 → 11.3 MB; RSS 70,976 → 65,584 KB; CPU 0:00.24; tick gaps 59.9–65.0 s without sleep, 0 warnings. |
 
 ## Overnight + workday verification
@@ -240,7 +243,10 @@ Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
      writes = Bytes Written − `debug_log` size from `measure.sh`.
    - Energy tab, **on battery**: **Energy Impact** and **Avg Energy Impact**.
 4. Tick gaps: in `measure.sh` output, `gaps_over_90s` and `warnings` should
-   stay 0, and `max_gap_s` should stay near 60–65. Any gap near 300 s with no
+   stay 0, and `max_gap_s` should stay near 60–65. `dark_wake_ticks` counts
+   ticks that fired while the system was asleep (between `WillSleep` and
+   `DidWake`, during macOS maintenance wakes); they are expected overnight and
+   are not gaps or warnings. Any gap near 300 s with no
    sleep in between means the timer was stretched; stop and investigate.
    ```sh
    grep -E 'WARNING|tick gap' ~/wrapped-phase-c/debug.log | grep -v 'sleep/wake' | sort -k4 -n | tail -5
@@ -260,6 +266,32 @@ Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
    `locked`) period, never as app time.
 6. Stop with a final flush: `kill -TERM $(cat ~/wrapped-phase-c/pid)`.
 
+### Finding: dark wakes run the minute timer
+
+From the debug log and `pmset -g log`: after `WillSleep` at 17:28 (lid
+closed) the Mac stayed asleep until `DidWake` at 21:25, but macOS did several
+DarkWakes (maintenance wakes) in between. NSWorkspace sends no wake
+notification for those, yet the minute timer fired during them, with
+`secs_since_input` pointing to before the sleep.
+
+- **Presence was correct**: those ticks reported stale input, so they did not
+  end the sleep. One `sleep` period 17:28:16–21:25:19, no app time inside it.
+- **The tick-gap warning was wrong**: it only checked for a sleep event since
+  the previous tick, so the first dark-wake tick logged "WARNING: idle tick
+  arrived 3329s after the previous one with no sleep in between".
+  **Fixed**: the platform layer now tracks "system asleep" from `WillSleep`
+  until `DidWake`; a tick in that window is logged as "tick during dark wake
+  (asleep since HH:MM:SS)", never as a warning. The warning remains only for a
+  long gap while the system is awake. `measure.sh` reports these as
+  `dark_wake_ticks`, separately from `gaps_over_90s` and `warnings`.
+- **Needless flushes**: the engine ran its periodic 10-minute flush during the
+  dark wakes. **Fixed**: the periodic flush is skipped from `WillSleep` until
+  `DidWake` (everything was flushed at `WillSleep`; the open sleep period is
+  written at wake). A tick showing input after `WillSleep` also ends this
+  state, in case `DidWake` is missed. Crash safety is unchanged.
+- Test: `dark_wake_ticks_keep_sleeping_and_skip_periodic_flush` in
+  `crates/core/tests/engine.rs`.
+
 ### Results (to be filled in from the overnight run)
 
 | Metric | Budget | Start | +1 h | +8 h | Next morning | Notes |
@@ -276,5 +308,6 @@ Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
 | Avg Energy Impact (battery) | ≈ 0 | | | | | |
 | Max tick gap without sleep (s) | < 300 | | | | | |
 | Tick-gap warnings | 0 | | | | | |
+| Dark-wake ticks (informational) | — | | | | | |
 | `screen_time_secs` vs own estimate | | | | | | |
 | Longest `app_usage` session vs real use | | | | | | |

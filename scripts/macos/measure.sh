@@ -7,7 +7,9 @@
 # Prints: local time, elapsed, RSS (ps, KB), physical footprint (vmmap; the
 # figure Activity Monitor's Memory column shows), total CPU time, sizes in
 # bytes of the database, WAL, shared-memory index and debug log, and tick-gap
-# stats from the debug log (gaps across a sleep/wake are excluded).
+# stats from the debug log (gaps across a sleep/wake are excluded), then the
+# number of dark-wake ticks (timer ticks between WillSleep and DidWake, during
+# macOS maintenance wakes; counted separately, never as gaps or warnings).
 # Bytes written by the process is not available from the command line: read
 # it from Activity Monitor → Disk → Bytes Written.
 set -eu
@@ -33,6 +35,7 @@ if [ -n "$gaps" ]; then
 else
     gapinfo="ticks=0 (no debug log?)"
 fi
+darkwake=$(grep -c 'tick during dark wake' "$LOG" 2>/dev/null || true)
 warnings=$(grep -c WARNING "$LOG" 2>/dev/null || true)
 
 echo "$(date '+%Y-%m-%dT%H:%M:%S%z') pid=$PID" \
@@ -44,4 +47,4 @@ echo "$(date '+%Y-%m-%dT%H:%M:%S%z') pid=$PID" \
     "wal=$(size "$DIR/wrapped.db-wal")" \
     "shm=$(size "$DIR/wrapped.db-shm")" \
     "debug_log=$(size "$LOG")" \
-    "$gapinfo warnings=${warnings:-0}"
+    "$gapinfo dark_wake_ticks=${darkwake:-0} warnings=${warnings:-0}"
