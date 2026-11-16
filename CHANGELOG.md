@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Milestone 1 core (`crates/core`): collector plugin trait, system event bus, presence state machine, app usage and active/idle collectors, SQLite storage with migrations, batched writer, daily metric rollups, tracking settings.
+- `crates/collector` binary with a cfg-gated platform module (replaces the `crates/wrapped` placeholder).
 - Milestone 0 spike (macOS): front app, idle and sleep/wake tracking, in `spikes/`.
 - Design doc in `docs/DESIGN.md`.
 - Project files for a public repository: README, dual MIT/Apache-2.0 license, contributing guide, security policy, code of conduct, issue and PR templates, Dependabot and CI.
