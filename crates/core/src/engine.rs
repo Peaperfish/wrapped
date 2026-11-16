@@ -149,7 +149,21 @@ impl Engine {
     }
 
     fn dispatch(&mut self, ev: &SystemEvent) {
-        self.log(|| format!("event {ev:?}"));
+        self.log(|| match ev {
+            // Excluded apps leave no trace, not even in debug output.
+            SystemEvent::FrontApp { bundle_id, name }
+                if self.settings.is_excluded(
+                    &crate::presence::FrontApp {
+                        bundle_id: bundle_id.clone(),
+                        name: name.clone(),
+                    }
+                    .key(),
+                ) =>
+            {
+                "event FrontApp <excluded app>".to_string()
+            }
+            _ => format!("event {ev:?}"),
+        });
         for s in self.slots.iter_mut().filter(|s| s.running) {
             s.collector.on_event(ev);
         }

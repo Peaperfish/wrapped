@@ -897,3 +897,21 @@ fn cleanup(p: &std::path::Path) {
         let _ = std::fs::remove_file(format!("{}{ext}", p.display()));
     }
 }
+
+#[test]
+fn excluded_app_is_redacted_in_debug_log() {
+    let mut h = H::new();
+    let log = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let sink = log.clone();
+    h.e.set_logger(move |m| sink.lock().unwrap().push(m.to_string()));
+    h.e.store()
+        .set_setting("exclude.apps", r#"["com.secret.app"]"#)
+        .unwrap();
+    h.tick(0.0);
+    h.app("com.secret.app");
+    h.app("com.a");
+    let log = log.lock().unwrap();
+    assert!(log.iter().all(|l| !l.contains("secret")), "{log:?}");
+    assert!(log.iter().any(|l| l.contains("<excluded app>")));
+    assert!(log.iter().any(|l| l.contains("com.a")));
+}
