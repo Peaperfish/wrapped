@@ -410,6 +410,62 @@ fn sleep_ends_session_and_wake_restarts() {
     );
 }
 
+/// macOS runs the minute timer during dark wakes (maintenance wakes) without
+/// sending a wake notification. Those ticks report stale input (from before
+/// the sleep) and must neither end the sleep period nor trigger a flush.
+#[test]
+fn dark_wake_ticks_keep_sleeping_and_skip_periodic_flush() {
+    let mut h = H::new();
+    h.app("com.a");
+    h.active_for(5); // 09:05
+    let r = h.e.handle(SystemEvent::WillSleep).unwrap();
+    assert!(r.is_some(), "WillSleep flushes immediately");
+    assert!(h.e.is_asleep());
+    let mut asleep_secs = 0;
+    for at_min in [5, 60, 180] {
+        let to = at_min * 60;
+        h.adv(to - asleep_secs);
+        asleep_secs = to;
+        // Last input was just before WillSleep: older than the time asleep.
+        let r =
+            h.e.handle(SystemEvent::IdleTick {
+                secs_since_input: (asleep_secs + 30) as f64,
+                display_assertion_holders: vec![],
+            })
+            .unwrap();
+        assert!(r.is_none(), "no flush during a dark wake (+{at_min} min)");
+        assert!(h.e.is_asleep());
+    }
+    h.adv(4 * 3600 - asleep_secs); // DidWake at 13:05
+    let r = h.e.handle(SystemEvent::DidWake).unwrap();
+    assert!(r.is_some(), "the sleep period is written at wake");
+    assert!(!h.e.is_asleep());
+    h.app("com.b");
+    h.adv(60);
+    assert_eq!(
+        h.sessions(AU),
+        vec![
+            s("com.a", "09:00:00", "09:05:00", false),
+            s("com.b", "13:05:00", "13:06:00", true),
+        ]
+    );
+    assert_eq!(
+        h.sessions(AI),
+        vec![s("sleep", "09:05:00", "13:05:00", false)]
+    );
+    assert_eq!(h.metric(DAY, AU, "app_secs", "com.a"), Some(300.0));
+}
+
+#[test]
+fn input_after_sleep_without_did_wake_resumes_flushing() {
+    let mut h = H::new();
+    h.app("com.a");
+    h.ev(SystemEvent::WillSleep);
+    h.adv(3600);
+    h.tick(5.0); // input 5 s ago: the wake notification was missed
+    assert!(!h.e.is_asleep());
+}
+
 #[test]
 fn lock_ends_session_and_unlock_restarts() {
     let mut h = H::new();

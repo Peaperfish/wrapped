@@ -5,6 +5,11 @@
 //! of wall-clock time have passed since the last flush (checked on every
 //! event, so in practice on the minute tick), and immediately on `WillSleep`,
 //! `WillPowerOff` and [`Engine::shutdown`] (quit / SIGTERM / SIGINT).
+//! Between `WillSleep` and `DidWake` the periodic flush is skipped: macOS runs
+//! the minute timer during dark wakes (maintenance wakes with no wake
+//! notification), but everything was flushed at `WillSleep` and the open sleep
+//! period is written at wake. A tick showing input after `WillSleep` also ends
+//! this state, in case the wake notification was missed.
 //! The engine is single-threaded: the platform layer calls it from one thread.
 //!
 //! Scanned collectors (git, photos) run on a background thread each, at most
@@ -72,6 +77,8 @@ pub struct Engine {
     paused: bool,
     last_flush_ms: i64,
     flush_interval_ms: i64,
+    /// UTC ms of the last `WillSleep`, until `DidWake` (or input after it).
+    asleep_since_ms: Option<i64>,
     last_front: Option<SystemEvent>,
     own_app_id: Option<String>,
     recovered: usize,
@@ -121,6 +128,7 @@ impl Engine {
             paused: false,
             last_flush_ms: now.utc_ms,
             flush_interval_ms: FLUSH_INTERVAL_MS,
+            asleep_since_ms: None,
             last_front: None,
             own_app_id: None,
             recovered,
@@ -203,6 +211,11 @@ impl Engine {
         self.paused
     }
 
+    /// Between `WillSleep` and `DidWake`: a tick now is a dark-wake tick.
+    pub fn is_asleep(&self) -> bool {
+        self.asleep_since_ms.is_some()
+    }
+
     pub fn running_collectors(&self) -> Vec<&'static str> {
         self.slots
             .iter()
@@ -236,13 +249,34 @@ impl Engine {
         }
 
         let now = self.now();
+        match &ev {
+            SystemEvent::WillSleep => self.asleep_since_ms = Some(now.utc_ms),
+            SystemEvent::DidWake => self.asleep_since_ms = None,
+            SystemEvent::IdleTick {
+                secs_since_input, ..
+            } => {
+                let secs = if secs_since_input.is_finite() {
+                    secs_since_input.max(0.0)
+                } else {
+                    0.0
+                };
+                let last_input = now.utc_ms - (secs * 1000.0) as i64;
+                if self.asleep_since_ms.is_some_and(|since| last_input > since) {
+                    self.asleep_since_ms = None; // input after sleep: awake
+                }
+            }
+            _ => {}
+        }
         if now.utc_ms < self.last_flush_ms {
             self.last_flush_ms = now.utc_ms; // wall clock moved backwards
         }
-        let mut due = now.utc_ms - self.last_flush_ms >= self.flush_interval_ms;
+        // While asleep (dark-wake ticks) no periodic flush and no new scans:
+        // everything was flushed and scans were cancelled at WillSleep.
+        let asleep = self.asleep_since_ms.is_some();
+        let mut due = !asleep && now.utc_ms - self.last_flush_ms >= self.flush_interval_ms;
         if tick {
             due |= self.reap_scans();
-            if self.auto_scans {
+            if self.auto_scans && !asleep {
                 self.schedule_scans()?;
             }
         }

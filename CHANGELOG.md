@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dark wakes: minute ticks between `WillSleep` and `DidWake` (macOS maintenance wakes) are logged as "tick during dark wake", not as a tick-gap warning, and skip the periodic 10-minute flush; `measure.sh` reports them as `dark_wake_ticks`.
 - Collector no longer records itself as an app: `FrontApp` events for its own bundle id (e.g. opening the tray menu) are ignored by the engine.
 
 ### Added
