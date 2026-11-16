@@ -1,0 +1,43 @@
+name: Bug report
+description: Something is broken
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Wrapped is in early development. Please do not include personal data (app names you consider private, file paths, usernames) in your report.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+  - type: input
+    id: version
+    attributes:
+      label: Wrapped version or commit
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      render: shell

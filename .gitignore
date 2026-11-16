@@ -1,2 +1,16 @@
+# Rust
 target/
+
+# Tauri / web
+node_modules/
+dist/
+
+# Local data
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# OS
 .DS_Store
+Thumbs.db
