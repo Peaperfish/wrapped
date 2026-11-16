@@ -8,6 +8,9 @@
 //! * `running_pid(db)` / `request_flush(db)`: find / ask a running collector
 //!   to flush now.
 //! * `login(cmd)`: launch-at-login `enable` / `disable` / `status`.
+//! * `scan_hooks()`: lowest priority for scan threads and their child processes.
+//! * `hold_db_lock(db)`: single-writer lock for a CLI scan.
+//! * `usage()` / `children_cpu_secs()`: resource usage for the scan report.
 //!
 //! Nothing here makes tracking decisions: it only translates OS signals.
 

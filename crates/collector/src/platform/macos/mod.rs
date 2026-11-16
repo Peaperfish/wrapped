@@ -13,6 +13,7 @@
 
 mod lock;
 mod login;
+mod scan;
 mod signals;
 mod sources;
 mod tray;
@@ -22,6 +23,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::SystemTime;
 
+use dispatch2::DispatchQueue;
 use objc2::MainThreadMarker;
 use objc2::runtime::ProtocolObject;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -29,6 +31,7 @@ use wrapped_core::store::FlushReport;
 use wrapped_core::{Clock, Engine, Store, SystemClock, SystemEvent, collectors};
 
 pub use login::login;
+pub use scan::{children_cpu_secs, hold_db_lock, scan_hooks, usage};
 
 /// Gap between idle ticks (with no sleep in between) above which a warning is
 /// printed even without debug logging. The timer interval is 60 s.
@@ -102,6 +105,19 @@ impl State {
             Ok(_) => {}
             Err(e) => log(&format!("error during {what}: {e}")),
         }
+        for r in self.engine.take_scan_reports() {
+            log(&format!(
+                "scan {} {} in {:.1}s: {:?}",
+                r.collector,
+                if r.completed {
+                    "completed"
+                } else {
+                    "stopped early (progress saved)"
+                },
+                (r.finished.utc_ms - r.started.utc_ms) as f64 / 1000.0,
+                r.counters
+            ));
+        }
     }
 
     fn log_flush(&mut self, what: &str, r: &FlushReport) {
@@ -164,6 +180,11 @@ pub(crate) fn deliver(ev: SystemEvent) {
     }
 }
 
+/// A scan thread wants a flush, or has finished (via the main queue).
+fn poll_scans() {
+    with_state(|st| st.measured("scan", |e| e.poll_scans()));
+}
+
 /// Flush now (SIGUSR1).
 pub(crate) fn flush_now() {
     with_state(|st| st.measured("SIGUSR1", |e| e.flush().map(Some)));
@@ -215,6 +236,8 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
         }
     };
     engine.set_own_app_id(own_app_id());
+    engine.set_scan_hooks(scan_hooks());
+    engine.set_waker(Arc::new(|| DispatchQueue::main().exec_async(poll_scans)));
     if debug {
         engine.set_logger(log);
     }

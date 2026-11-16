@@ -2,17 +2,19 @@
 //! commands are temporary stand-ins for what the UI will do later.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
 
 use chrono::NaiveDate;
-use wrapped_core::collector::Unit;
+use wrapped_core::collector::{Kind, Unit};
 use wrapped_core::store::MetricRow;
 use wrapped_core::time::{MS_PER_DAY, MS_PER_MIN, local_midnight_ms};
-use wrapped_core::{Clock, Store, SystemClock, collectors};
+use wrapped_core::{Clock, Engine, Store, SystemClock, collectors};
 
 use crate::platform;
 
 const USAGE: &str = "\
-wrapped-collector: local-only usage tracker (Milestone 1)
+wrapped-collector: local-only usage tracker (Milestone 2)
 
 USAGE
   wrapped-collector [--debug]               run the collector (tray icon)
@@ -23,6 +25,7 @@ USAGE
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
   wrapped-collector --version               print crate version and build (git hash)
+  wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
   wrapped-collector flush                 ask the running collector to flush now
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
@@ -32,7 +35,11 @@ SETTINGS (values are JSON; a bare word is taken as a string)
   active_without_input.timeout_secs   1800
   exclude.apps                        '[\"com.example.Secret\"]'
   pause                               off | indefinite | '{\"until_ms\": <utc ms>}'
-  collector.<name>.enabled            true | false   (app_usage, active_idle)
+  collector.<name>.enabled            true | false   (app_usage, active_idle, git, photos)
+  git.folders                         '[\"~/code\"]'
+  git.author_emails                   '[\"me@example.com\"]'  (set from git config when git is turned on)
+  photos.folders                      '[\"~/Pictures\"]'
+  photos.extensions                   '[\"jpg\",\"jpeg\",\"heic\",\"heif\",\"arw\",\"dng\"]'
 
 ENVIRONMENT
   WRAPPED_DEBUG=1   same as --debug: log every system event, tick gap and flush to stderr
@@ -71,6 +78,8 @@ pub fn main() -> i32 {
         ["stats", day] => stats(&db, day),
         ["sessions"] => sessions(&db, "today"),
         ["sessions", day] => sessions(&db, day),
+        ["scan"] => scan(&db, "all"),
+        ["scan", what] => scan(&db, what),
         ["export", "--json", path] => export(&db, true, path),
         ["export", "--csv", path] => export(&db, false, path),
         ["flush"] => match platform::request_flush(&db) {
@@ -150,6 +159,26 @@ fn settings_set(db: &std::path::Path, key: &str, value: &str) -> CliResult {
     let store = Store::open(db)?;
     let stored = store.set_setting(key, value)?;
     println!("{key} = {stored}");
+    // Turning a collector on stores its defaults explicitly (git: author emails).
+    if stored == "true"
+        && let Some(name) = key
+            .strip_prefix("collector.")
+            .and_then(|r| r.strip_suffix(".enabled"))
+        && let Some(c) = collectors::builtin()
+            .into_iter()
+            .find(|c| c.info().name == name)
+    {
+        let (s, _) = store.load_settings()?;
+        for (k, v) in c.enable_defaults(&s) {
+            let stored = store.set_setting(&k, &v)?;
+            println!("{k} = {stored}");
+            if stored == "[]" {
+                println!(
+                    "  (nothing found; set it with: settings set {k} '[\"you@example.com\"]')"
+                );
+            }
+        }
+    }
     if platform::running_pid(db).is_some() {
         println!("(the running collector picks this up at its next minute tick)");
     }
@@ -265,6 +294,103 @@ fn sessions(db: &std::path::Path, day: &str) -> CliResult {
     Ok(())
 }
 
+fn scan(db: &std::path::Path, what: &str) -> CliResult {
+    let scanned: Vec<&'static str> = collectors::builtin()
+        .iter()
+        .filter(|c| c.kind() == Kind::Scanned)
+        .map(|c| c.info().name)
+        .collect();
+    let names: Vec<&'static str> = match what {
+        "all" => scanned.clone(),
+        n => match scanned.iter().find(|s| **s == n) {
+            Some(s) => vec![*s],
+            None => {
+                return Err(format!("expected one of {} or all", scanned.join(", ")).into());
+            }
+        },
+    };
+    if let Some(pid) = platform::running_pid(db) {
+        let store = Store::open(db)?;
+        for n in &names {
+            store.request_scan(n, SystemClock.now())?;
+        }
+        println!(
+            "a collector is running on this database (pid {pid}); it starts the scan at its next \
+             minute tick and logs the result"
+        );
+        return Ok(());
+    }
+    let _lock = platform::hold_db_lock(db)?;
+    let mut engine = Engine::new(
+        Store::open(db)?,
+        Arc::new(SystemClock),
+        collectors::builtin(),
+    )?;
+    engine.set_auto_scans(false);
+    engine.set_scan_hooks(platform::scan_hooks());
+    let t0 = Instant::now();
+    let mut started = 0;
+    for n in &names {
+        let explicit = what != "all";
+        match engine.start_scan(n) {
+            Ok(_) => started += 1,
+            Err(e) if explicit => return Err(e.into()),
+            Err(e) => println!("{n}: skipped ({e})"),
+        }
+    }
+    if started == 0 {
+        return Ok(());
+    }
+    let reports = engine.wait_scans()?;
+    engine.shutdown()?;
+    let wall = t0.elapsed().as_secs_f64();
+    for r in &reports {
+        println!(
+            "{}: {} in {:.1}s",
+            r.collector,
+            if r.completed {
+                "completed"
+            } else {
+                "stopped early"
+            },
+            (r.finished.utc_ms - r.started.utc_ms) as f64 / 1000.0
+        );
+        for (k, v) in &r.counters {
+            println!("  {k:<22} {v}");
+        }
+        println!(
+            "  {:<22} {}",
+            "items stored (total)",
+            engine.store().item_count(r.collector)?
+        );
+    }
+    println!("process");
+    println!("  {:<22} {wall:.2}", "wall time (s)");
+    if let Some(u) = platform::usage() {
+        println!("  {:<22} {:.2}", "cpu time (s)", u.cpu_secs);
+        println!(
+            "  {:<22} {:.2}",
+            "child cpu time (s)",
+            platform::children_cpu_secs()
+        );
+        println!("  {:<22} {}", "disk bytes read", u.disk_bytes_read);
+        println!("  {:<22} {}", "disk bytes written", u.disk_bytes_written);
+        println!(
+            "  {:<22} {:.1} MB",
+            "peak phys footprint",
+            u.peak_footprint as f64 / 1_048_576.0
+        );
+    }
+    let size = |p: PathBuf| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    println!(
+        "  {:<22} {} (+ WAL {})",
+        "database bytes",
+        size(db.to_path_buf()),
+        size(db.with_extension("db-wal"))
+    );
+    Ok(())
+}
+
 fn export(db: &std::path::Path, json: bool, path: &str) -> CliResult {
     let store = fresh_store(db)?;
     let c = if json {
@@ -274,8 +400,8 @@ fn export(db: &std::path::Path, json: bool, path: &str) -> CliResult {
         store.export_csv(std::path::Path::new(path))?
     };
     println!(
-        "exported {} sessions, {} daily metric rows, {} samples, {} settings to {path}",
-        c.sessions, c.daily_metrics, c.samples, c.settings
+        "exported {} sessions, {} daily metric rows, {} samples, {} settings, {} items to {path}",
+        c.sessions, c.daily_metrics, c.samples, c.settings, c.items
     );
     Ok(())
 }

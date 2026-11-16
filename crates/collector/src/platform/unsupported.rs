@@ -25,3 +25,26 @@ pub fn login(_cmd: &str) -> i32 {
     eprintln!("wrapped-collector: launch at login is not supported on this platform yet");
     1
 }
+
+pub fn scan_hooks() -> wrapped_core::collector::ScanHooks {
+    wrapped_core::collector::ScanHooks::default()
+}
+
+pub struct Usage {
+    pub cpu_secs: f64,
+    pub disk_bytes_read: u64,
+    pub disk_bytes_written: u64,
+    pub peak_footprint: u64,
+}
+
+pub fn usage() -> Option<Usage> {
+    None
+}
+
+pub fn children_cpu_secs() -> f64 {
+    0.0
+}
+
+pub fn hold_db_lock(_db: &Path) -> Result<(), String> {
+    Ok(())
+}
