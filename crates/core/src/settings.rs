@@ -8,6 +8,10 @@
 //! | `active_without_input.timeout_secs`  | integer, 60..=86400                     | 1800    |
 //! | `exclude.apps`                       | array of bundle ids                     | `[]`    |
 //! | `pause`                              | `"off"`, `"indefinite"` or `{"until_ms": <utc ms>}` | `"off"` |
+//! | `git.folders`                        | array of folders (`~/...` or absolute)  | `["~/code"]` |
+//! | `git.author_emails`                  | array of emails, or `null` = resolve from `git config --global user.email` when git is turned on | `null` |
+//! | `photos.folders`                     | array of folders                        | `["~/Pictures"]` |
+//! | `photos.extensions`                  | array of extensions (case-insensitive)  | jpg jpeg heic heif arw dng |
 //!
 //! Keys starting with `internal.` are bookkeeping owned by the store and are
 //! not user settings.
@@ -24,6 +28,11 @@ pub const KEY_AWI_APPS: &str = "active_without_input.apps";
 pub const KEY_AWI_TIMEOUT: &str = "active_without_input.timeout_secs";
 pub const KEY_EXCLUDE: &str = "exclude.apps";
 pub const KEY_PAUSE: &str = "pause";
+pub const KEY_GIT_FOLDERS: &str = "git.folders";
+pub const KEY_GIT_EMAILS: &str = "git.author_emails";
+pub const KEY_PHOTOS_FOLDERS: &str = "photos.folders";
+pub const KEY_PHOTOS_EXTENSIONS: &str = "photos.extensions";
+pub const DEFAULT_PHOTO_EXTENSIONS: &[&str] = &["jpg", "jpeg", "heic", "heif", "arw", "dng"];
 pub const INTERNAL_PREFIX: &str = "internal.";
 
 pub const DEFAULT_IDLE_THRESHOLD_SECS: u32 = 180;
@@ -93,6 +102,12 @@ pub struct Settings {
     pub active_without_input_timeout_secs: u32,
     pub exclude_apps: Vec<String>,
     pub pause: Pause,
+    pub git_folders: Vec<String>,
+    /// `None` until resolved (when git is turned on) or set by the user.
+    pub git_author_emails: Option<Vec<String>>,
+    pub photos_folders: Vec<String>,
+    /// Lowercase, without the dot.
+    pub photos_extensions: Vec<String>,
 }
 
 impl Default for Settings {
@@ -104,6 +119,13 @@ impl Default for Settings {
             active_without_input_timeout_secs: DEFAULT_AWI_TIMEOUT_SECS,
             exclude_apps: Vec::new(),
             pause: Pause::Off,
+            git_folders: vec!["~/code".to_string()],
+            git_author_emails: None,
+            photos_folders: vec!["~/Pictures".to_string()],
+            photos_extensions: DEFAULT_PHOTO_EXTENSIONS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 }
@@ -162,6 +184,16 @@ impl Settings {
             KEY_AWI_APPS => self.active_without_input_apps = string_list(key, v)?,
             KEY_EXCLUDE => self.exclude_apps = string_list(key, v)?,
             KEY_PAUSE => self.pause = Pause::from_json(v)?,
+            KEY_GIT_FOLDERS => self.git_folders = folder_list(key, v)?,
+            KEY_PHOTOS_FOLDERS => self.photos_folders = folder_list(key, v)?,
+            KEY_GIT_EMAILS => {
+                self.git_author_emails = if v.is_null() {
+                    None
+                } else {
+                    Some(email_list(key, v)?)
+                }
+            }
+            KEY_PHOTOS_EXTENSIONS => self.photos_extensions = extension_list(key, v)?,
             _ => {
                 if let Some(name) = key
                     .strip_prefix("collector.")
@@ -206,6 +238,10 @@ impl Settings {
             KEY_AWI_APPS => json!(self.active_without_input_apps),
             KEY_EXCLUDE => json!(self.exclude_apps),
             KEY_PAUSE => self.pause.to_json(),
+            KEY_GIT_FOLDERS => json!(self.git_folders),
+            KEY_GIT_EMAILS => json!(self.git_author_emails),
+            KEY_PHOTOS_FOLDERS => json!(self.photos_folders),
+            KEY_PHOTOS_EXTENSIONS => json!(self.photos_extensions),
             _ => {
                 let name = key
                     .strip_prefix("collector.")
@@ -229,6 +265,10 @@ impl Settings {
             KEY_AWI_TIMEOUT,
             KEY_EXCLUDE,
             KEY_PAUSE,
+            KEY_GIT_FOLDERS,
+            KEY_GIT_EMAILS,
+            KEY_PHOTOS_FOLDERS,
+            KEY_PHOTOS_EXTENSIONS,
         ]
         .iter()
         .map(|k| (k.to_string(), self.get_json(k).expect("known key")))
@@ -269,6 +309,94 @@ fn string_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
         }
     }
     Ok(out)
+}
+
+fn strings<'a>(key: &str, v: &'a Value, what: &str) -> Result<Vec<&'a str>, SettingsError> {
+    let arr = v
+        .as_array()
+        .ok_or_else(|| SettingsError::invalid(key, &format!("expected a JSON array of {what}")))?;
+    arr.iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| SettingsError::invalid(key, "array items must be non-empty strings"))
+        })
+        .collect()
+}
+
+fn push_unique(out: &mut Vec<String>, s: String) {
+    if !out.contains(&s) {
+        out.push(s);
+    }
+}
+
+/// Folders: `~`, `~/...` or absolute paths; trailing slashes removed.
+fn folder_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
+    let mut out = Vec::new();
+    for s in strings(key, v, "folders")? {
+        let ok = s == "~" || s.starts_with("~/") || std::path::Path::new(s).is_absolute();
+        if !ok {
+            return Err(SettingsError::invalid(
+                key,
+                "folders must be absolute or start with ~/",
+            ));
+        }
+        let t = s.trim_end_matches(['/', '\\']);
+        push_unique(
+            &mut out,
+            if t.is_empty() {
+                s.to_string()
+            } else {
+                t.to_string()
+            },
+        );
+    }
+    Ok(out)
+}
+
+/// Emails, compared case-insensitively, so stored lowercase.
+fn email_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
+    let mut out = Vec::new();
+    for s in strings(key, v, "emails")? {
+        if !s.contains('@') || s.contains(char::is_whitespace) {
+            return Err(SettingsError::invalid(key, "expected email addresses"));
+        }
+        push_unique(&mut out, s.to_lowercase());
+    }
+    Ok(out)
+}
+
+/// File extensions: optional leading dot, letters/digits, stored lowercase.
+fn extension_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
+    let mut out = Vec::new();
+    for s in strings(key, v, "extensions")? {
+        let e = s.trim_start_matches('.').to_ascii_lowercase();
+        if e.is_empty() || e.len() > 10 || !e.chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(SettingsError::invalid(
+                key,
+                "extensions are 1-10 letters or digits, e.g. \"jpg\"",
+            ));
+        }
+        push_unique(&mut out, e);
+    }
+    Ok(out)
+}
+
+/// Expand a leading `~` to the home directory.
+pub fn expand_home(folder: &str) -> Option<std::path::PathBuf> {
+    let home = || {
+        std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+    };
+    if folder == "~" {
+        home()
+    } else if let Some(rest) = folder.strip_prefix("~/") {
+        Some(home()?.join(rest))
+    } else {
+        Some(std::path::PathBuf::from(folder))
+    }
 }
 
 #[cfg(test)]
@@ -326,6 +454,34 @@ mod tests {
         ]);
         assert_eq!(skipped.len(), 1);
         assert_eq!(s.exclude_apps, vec!["a".to_string()]);
+    }
+
+    #[test]
+    fn scanned_collector_settings() {
+        let mut s = Settings::default();
+        assert_eq!(s.get_json("git.folders").unwrap(), r#"["~/code"]"#);
+        assert_eq!(s.get_json("git.author_emails").unwrap(), "null");
+        s.apply("git.folders", r#"["~/code/", "/Volumes/x", "~/code"]"#)
+            .unwrap();
+        assert_eq!(s.git_folders, vec!["~/code", "/Volumes/x"]);
+        assert!(s.apply("git.folders", r#"["relative/dir"]"#).is_err());
+        s.apply("git.author_emails", r#"["Me@Example.com"]"#)
+            .unwrap();
+        assert_eq!(s.git_author_emails, Some(vec!["me@example.com".into()]));
+        assert!(s.apply("git.author_emails", r#"["nope"]"#).is_err());
+        s.apply("photos.extensions", r#"[".JPG", "arw", "jpg"]"#)
+            .unwrap();
+        assert_eq!(s.photos_extensions, vec!["jpg", "arw"]);
+        assert!(s.apply("photos.extensions", r#"["j/p"]"#).is_err());
+        s.apply("photos.folders", r#"["~/Pictures", "~/Desktop"]"#)
+            .unwrap();
+        let rows = s.to_rows();
+        let (back, skipped) =
+            Settings::from_rows(rows.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        assert!(skipped.is_empty());
+        assert_eq!(back, s);
+        s.apply("git.author_emails", "null").unwrap();
+        assert_eq!(s.git_author_emails, None);
     }
 
     #[test]

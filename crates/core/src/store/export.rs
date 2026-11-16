@@ -16,6 +16,7 @@ pub struct ExportCounts {
     pub daily_metrics: usize,
     pub samples: usize,
     pub settings: usize,
+    pub items: usize,
 }
 
 const SESSION_COLS: &[&str] = &[
@@ -40,6 +41,14 @@ const SAMPLE_COLS: &[&str] = &[
     "value",
 ];
 const SETTING_COLS: &[&str] = &["key", "value"];
+const ITEM_COLS: &[&str] = &[
+    "collector",
+    "id",
+    "time_utc_ms",
+    "time_offset_min",
+    "time_local",
+    "attrs",
+];
 
 impl Store {
     fn each_session(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
@@ -113,6 +122,36 @@ impl Store {
         Ok(n)
     }
 
+    /// Items; `time_offset_min` is null (and `time_local` has no offset) when
+    /// the source had no UTC offset.
+    fn each_item(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
+        let mut st = self.conn.prepare(
+            "SELECT collector, id, time_ms, time_off, attrs FROM items
+             ORDER BY time_ms, collector, id",
+        )?;
+        let mut rows = st.query([])?;
+        let mut n = 0;
+        while let Some(r) = rows.next()? {
+            let off: Option<i32> = r.get(3)?;
+            let t = Timestamp::new(r.get(2)?, off.unwrap_or(0));
+            let local = match off {
+                Some(_) => t.to_rfc3339(),
+                None => t.to_rfc3339().trim_end_matches("+00:00").to_string(),
+            };
+            let attrs: String = r.get(4)?;
+            f(vec![
+                json!(r.get::<_, String>(0)?),
+                json!(r.get::<_, String>(1)?),
+                json!(t.utc_ms),
+                json!(off),
+                json!(local),
+                serde_json::from_str(&attrs).unwrap_or(Value::String(attrs)),
+            ])?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
     /// User settings only (no `internal.` rows), as stored JSON text.
     fn each_setting(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
         let mut st = self.conn.prepare(
@@ -141,11 +180,12 @@ impl Store {
             json!(now.to_rfc3339())
         )?;
         type Each<'a> = fn(&'a Store, &mut dyn FnMut(Vec<Value>) -> Result<()>) -> Result<usize>;
-        let tables: [(&str, &[&str], Each<'_>); 4] = [
+        let tables: [(&str, &[&str], Each<'_>); 5] = [
             ("sessions", SESSION_COLS, |s, f| s.each_session(f)),
             ("daily_metrics", METRIC_COLS, |s, f| s.each_metric(f)),
             ("samples", SAMPLE_COLS, |s, f| s.each_sample(f)),
             ("settings", SETTING_COLS, |s, f| s.each_setting(f)),
+            ("items", ITEM_COLS, |s, f| s.each_item(f)),
         ];
         for (i, (name, cols, each)) in tables.into_iter().enumerate() {
             write!(w, ",\"{name}\":[")?;
@@ -165,7 +205,8 @@ impl Store {
                 0 => c.sessions = n,
                 1 => c.daily_metrics = n,
                 2 => c.samples = n,
-                _ => c.settings = n,
+                3 => c.settings = n,
+                _ => c.items = n,
             }
         }
         w.write_all(b"}\n")?;
@@ -173,8 +214,8 @@ impl Store {
         Ok(c)
     }
 
-    /// Write `sessions.csv`, `daily_metrics.csv`, `samples.csv` and
-    /// `settings.csv` into `dir` (created if needed).
+    /// Write `sessions.csv`, `daily_metrics.csv`, `samples.csv`,
+    /// `settings.csv` and `items.csv` into `dir` (created if needed).
     pub fn export_csv(&self, dir: &Path) -> Result<ExportCounts> {
         std::fs::create_dir_all(dir)?;
         let open = |name: &str, cols: &[&str]| -> Result<BufWriter<File>> {
@@ -199,11 +240,15 @@ impl Store {
         let mut w = open("settings.csv", SETTING_COLS)?;
         let settings = self.each_setting(|v| row(&mut w, v))?;
         w.flush()?;
+        let mut w = open("items.csv", ITEM_COLS)?;
+        let items = self.each_item(|v| row(&mut w, v))?;
+        w.flush()?;
         Ok(ExportCounts {
             sessions,
             daily_metrics,
             samples,
             settings,
+            items,
         })
     }
 }
@@ -237,8 +282,15 @@ mod tests {
                 start: now,
             },
         )];
-        s.flush(&[], &open, &[], now.plus_ms(60_000), &|_, _| Some(vec![]))
-            .unwrap();
+        s.flush(
+            &super::super::Batch {
+                open: &open,
+                ..Default::default()
+            },
+            now.plus_ms(60_000),
+            &|_, _| Some(vec![]),
+        )
+        .unwrap();
         (s, now)
     }
 

@@ -54,6 +54,39 @@ pub const MIGRATIONS: &[&str] = &[
         value TEXT NOT NULL                    -- JSON
     ) WITHOUT ROWID;
     "#,
+    // v2: scanned collectors (Milestone 2).
+    //
+    // `items`: one row per discrete thing a scanned collector found (a git
+    // commit, a photo). Neither a session (no duration) nor a sample (not a
+    // periodic counter, needs a dedupe id and a few attributes). Inserted with
+    // INSERT OR IGNORE on (collector, id), so re-reading the same commit or shot
+    // from another clone / copy never counts twice. `time_off` is NULL when the
+    // source has no UTC offset (camera time as written); `time_ms` then holds
+    // that naive local time as if it were UTC.
+    //
+    // `scan_files`: per-file incremental cache (photos). The key is a salted
+    // 64-bit hash of the path; no path or file name is stored. Kept out of
+    // `scan_state.state` so a daily scan that finds nothing new writes nothing
+    // (a JSON blob would be rewritten whole).
+    r#"
+    CREATE TABLE items (
+        collector  TEXT    NOT NULL,
+        id         TEXT    NOT NULL,           -- dedupe key (commit hash, shot hash)
+        time_ms    INTEGER NOT NULL,           -- UTC Unix ms (naive local if time_off IS NULL)
+        time_off   INTEGER,                    -- local UTC offset in minutes; NULL = unknown
+        attrs      TEXT    NOT NULL,           -- JSON object, collector-defined
+        PRIMARY KEY (collector, id)
+    ) WITHOUT ROWID;
+    CREATE INDEX items_by_time ON items(collector, time_ms);
+
+    CREATE TABLE scan_files (
+        collector  TEXT    NOT NULL,
+        path_hash  INTEGER NOT NULL,           -- salted SipHash-2-4 of the path
+        size       INTEGER NOT NULL,
+        mtime_ms   INTEGER NOT NULL,
+        PRIMARY KEY (collector, path_hash)
+    ) WITHOUT ROWID;
+    "#,
 ];
 
 pub fn schema_version(conn: &Connection) -> Result<usize, Error> {

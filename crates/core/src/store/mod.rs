@@ -28,13 +28,17 @@ use std::path::Path;
 use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
-use crate::collector::{DayInput, MetricValue, OpenSession, SampleRecord, SessionRecord, Slice};
+use crate::collector::{
+    DayInput, DayItem, FileStamp, ItemRecord, MetricValue, OpenSession, SampleRecord, ScanUpdate,
+    SessionRecord, Slice,
+};
 use crate::settings::{Settings, SettingsError, collector_enabled_key};
 use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_midnight_ms};
 
 /// Local offsets in use worldwide span UTC-12..UTC+14; pad to be safe.
 const OFFSET_MARGIN_MS: i64 = 15 * MS_PER_HOUR;
 const KEY_MAX_SESSION: &str = "internal.max_session_ms";
+const SCAN_REQUEST_PREFIX: &str = "internal.scan_request.";
 
 #[derive(Debug)]
 pub enum Error {
@@ -42,6 +46,7 @@ pub enum Error {
     Settings(SettingsError),
     NewerSchema { found: usize, supported: usize },
     Io(std::io::Error),
+    Scan(String),
 }
 
 impl fmt::Display for Error {
@@ -55,6 +60,7 @@ impl fmt::Display for Error {
                  refusing to touch it"
             ),
             Error::Io(e) => write!(f, "I/O error: {e}"),
+            Error::Scan(e) => write!(f, "{e}"),
         }
     }
 }
@@ -88,6 +94,28 @@ pub struct FlushReport {
     pub samples_written: usize,
     pub days_recomputed: usize,
     pub metric_rows_changed: usize,
+    /// New items stored (duplicates of stored ids are not counted).
+    pub items_written: usize,
+    /// `scan_state` / `scan_files` rows written or deleted.
+    pub scan_rows_changed: usize,
+}
+
+/// Everything one flush writes, in one transaction.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct Batch<'a> {
+    pub closed: &'a [SessionRecord],
+    pub open: &'a [(&'static str, OpenSession)],
+    pub samples: &'a [SampleRecord],
+    pub items: &'a [ItemRecord],
+    pub scans: &'a [(&'static str, ScanUpdate)],
+}
+
+/// A collector's stored scan bookkeeping.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ScanInfo {
+    /// Start of the last completed scan (UTC ms).
+    pub last_scanned_ms: Option<i64>,
+    pub state: Option<String>,
 }
 
 /// One stored session row.
@@ -212,16 +240,28 @@ impl Store {
         Ok(())
     }
 
-    /// Delete every row a collector produced (sessions, samples, daily
-    /// metrics, scan state). Its on/off setting is left alone.
+    /// Delete every row a collector produced (sessions, samples, items, daily
+    /// metrics, scan state, per-file cache) and any pending scan request. Its
+    /// on/off setting and other settings are left alone.
     pub fn delete_collector_data(&mut self, collector: &str) -> Result<()> {
         let tx = self.conn.transaction()?;
-        for table in ["sessions", "samples", "daily_metrics", "scan_state"] {
+        for table in [
+            "sessions",
+            "samples",
+            "items",
+            "daily_metrics",
+            "scan_state",
+            "scan_files",
+        ] {
             tx.execute(
                 &format!("DELETE FROM {table} WHERE collector = ?1"),
                 [collector],
             )?;
         }
+        tx.execute(
+            "DELETE FROM settings WHERE key = ?1",
+            [format!("{SCAN_REQUEST_PREFIX}{collector}")],
+        )?;
         tx.commit()?;
         self.flushed_open.retain(|(c, _), _| c != collector);
         Ok(())
@@ -229,17 +269,98 @@ impl Store {
 
     // ---------- the batched writer ----------
 
+    // ---------- scanned collectors ----------
+
+    pub fn scan_info(&self, collector: &str) -> Result<ScanInfo> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT last_scanned_ms, state FROM scan_state WHERE collector = ?1",
+                [collector],
+                |r| {
+                    Ok(ScanInfo {
+                        last_scanned_ms: r.get(0)?,
+                        state: r.get(1)?,
+                    })
+                },
+            )
+            .optional()?
+            .unwrap_or_default())
+    }
+
+    /// The per-file cache of a collector.
+    pub fn scan_files(&self, collector: &str) -> Result<Vec<FileStamp>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT path_hash, size, mtime_ms FROM scan_files WHERE collector = ?1")?;
+        let rows = st
+            .query_map([collector], |r| {
+                Ok(FileStamp {
+                    path_hash: r.get::<_, i64>(0)? as u64,
+                    size: r.get::<_, i64>(1)? as u64,
+                    mtime_ms: r.get(2)?,
+                })
+            })?
+            .collect::<std::result::Result<_, _>>()?;
+        Ok(rows)
+    }
+
+    /// Ask a running collector (another process) to scan `collector` soon.
+    pub fn request_scan(&self, collector: &str, now: Timestamp) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![
+                format!("{SCAN_REQUEST_PREFIX}{collector}"),
+                now.utc_ms.to_string()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Pending scan requests (removed as they are returned).
+    pub fn take_scan_requests(&self) -> Result<Vec<String>> {
+        let mut st = self
+            .conn
+            .prepare("SELECT key FROM settings WHERE key LIKE 'internal.scan_request.%'")?;
+        let keys: Vec<String> = st
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        for k in &keys {
+            self.conn
+                .execute("DELETE FROM settings WHERE key = ?1", [k])?;
+        }
+        Ok(keys
+            .into_iter()
+            .filter_map(|k| k.strip_prefix(SCAN_REQUEST_PREFIX).map(str::to_string))
+            .collect())
+    }
+
+    pub fn item_count(&self, collector: &str) -> Result<i64> {
+        Ok(self.conn.query_row(
+            "SELECT count(*) FROM items WHERE collector = ?1",
+            [collector],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Write one batch in a single transaction: closed sessions, the current
-    /// open sessions (with `end = now`, marked open), samples, then recompute
-    /// daily metrics for exactly the (collector, local day) pairs touched.
+    /// open sessions (with `end = now`, marked open), samples, items and scan
+    /// bookkeeping, then recompute daily metrics for exactly the (collector,
+    /// local day) pairs touched.
     pub fn flush(
         &mut self,
-        closed: &[SessionRecord],
-        open: &[(&'static str, OpenSession)],
-        samples: &[SampleRecord],
+        batch: &Batch<'_>,
         now: Timestamp,
         rollup: &RollupFn<'_>,
     ) -> Result<FlushReport> {
+        let Batch {
+            closed,
+            open,
+            samples,
+            items,
+            scans,
+        } = *batch;
         let mut report = FlushReport::default();
         let mut touched: BTreeSet<(String, NaiveDate)> = BTreeSet::new();
         let mut max_session = self.max_session_ms;
@@ -294,6 +415,65 @@ impl Store {
                 ],
             )?;
             report.samples_written += 1;
+        }
+
+        for it in items {
+            let n = tx
+                .prepare_cached(
+                    "INSERT OR IGNORE INTO items(collector, id, time_ms, time_off, attrs)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )?
+                .execute(params![
+                    it.collector,
+                    it.id,
+                    it.time.utc_ms,
+                    it.offset_known.then_some(it.time.offset_min),
+                    it.attrs
+                ])?;
+            if n > 0 {
+                report.items_written += 1;
+                touched.insert((it.collector.to_string(), it.time.local_date()));
+            }
+        }
+
+        for (collector, u) in scans {
+            for f in &u.files_put {
+                report.scan_rows_changed += tx
+                    .prepare_cached(
+                        "INSERT INTO scan_files(collector, path_hash, size, mtime_ms)
+                         VALUES (?1, ?2, ?3, ?4)
+                         ON CONFLICT(collector, path_hash) DO UPDATE SET
+                            size = excluded.size, mtime_ms = excluded.mtime_ms",
+                    )?
+                    .execute(params![
+                        collector,
+                        f.path_hash as i64,
+                        f.size as i64,
+                        f.mtime_ms
+                    ])?;
+            }
+            for h in &u.files_del {
+                report.scan_rows_changed += tx
+                    .prepare_cached(
+                        "DELETE FROM scan_files WHERE collector = ?1 AND path_hash = ?2",
+                    )?
+                    .execute(params![collector, *h as i64])?;
+            }
+            if let Some(state) = &u.state {
+                report.scan_rows_changed += tx.execute(
+                    "INSERT INTO scan_state(collector, state) VALUES (?1, ?2)
+                     ON CONFLICT(collector) DO UPDATE SET state = excluded.state
+                     WHERE state IS NOT excluded.state",
+                    params![collector, state],
+                )?;
+            }
+            if let Some(done) = u.done_at {
+                report.scan_rows_changed += tx.execute(
+                    "INSERT INTO scan_state(collector, last_scanned_ms) VALUES (?1, ?2)
+                     ON CONFLICT(collector) DO UPDATE SET last_scanned_ms = excluded.last_scanned_ms",
+                    params![collector, done.utc_ms],
+                )?;
+            }
         }
 
         if max_session > self.max_session_ms {
@@ -489,6 +669,44 @@ fn day_slices(
     Ok(out)
 }
 
+/// Items of `collector` whose local date is `date`, sorted by time.
+fn day_items(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<Vec<DayItem>> {
+    let day0 = local_midnight_ms(date);
+    let mut stmt = tx.prepare_cached(
+        "SELECT id, time_ms, time_off, attrs FROM items
+         WHERE collector = ?1 AND time_ms >= ?2 AND time_ms < ?3 ORDER BY time_ms",
+    )?;
+    let rows = stmt.query_map(
+        params![
+            collector,
+            day0 - OFFSET_MARGIN_MS,
+            day0 + MS_PER_DAY + OFFSET_MARGIN_MS
+        ],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, Option<i32>>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        },
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, ms, off, attrs) = row?;
+        let time = Timestamp::new(ms, off.unwrap_or(0));
+        if time.local_date() != date {
+            continue;
+        }
+        out.push(DayItem {
+            id,
+            time,
+            attrs: serde_json::from_str(&attrs).unwrap_or(serde_json::Value::Null),
+        });
+    }
+    Ok(out)
+}
+
 /// Recompute and diff-write one day's metrics for one collector.
 fn recompute_day(
     tx: &Transaction<'_>,
@@ -498,12 +716,14 @@ fn recompute_day(
     rollup: &RollupFn<'_>,
 ) -> Result<usize> {
     let slices = day_slices(tx, collector, date, max_session_ms)?;
-    let fresh: BTreeMap<(String, String), f64> = if slices.is_empty() {
+    let items = day_items(tx, collector, date)?;
+    let fresh: BTreeMap<(String, String), f64> = if slices.is_empty() && items.is_empty() {
         BTreeMap::new()
     } else {
         let input = DayInput {
             date,
             slices: &slices,
+            items: &items,
         };
         match rollup(collector, &input) {
             Some(rows) => rows
