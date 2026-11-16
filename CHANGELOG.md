@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scripts/macos/install.sh`: builds, replaces the single `~/Applications/Wrapped.app` in place (graceful quit, atomic swap, relaunch, version check) and removes other `Wrapped.app` bundles from `target/`.
+- Bundle versioning (`CFBundleVersion` = git hash, `-dirty` when uncommitted) and `wrapped-collector --version`.
+- `CLAUDE.md` with standing repo rules.
+
 - Milestone 1 core (`crates/core`): collector plugin trait, system event bus, presence state machine, app usage and active/idle collectors, SQLite storage with migrations, batched writer, daily metric rollups, tracking settings.
 - `crates/collector` binary with a cfg-gated platform module (replaces the `crates/wrapped` placeholder).
 - macOS collector app: native tray (pause / resume / open data folder / quit, no Dock icon), NSWorkspace and lock/unlock notifications, minute idle check with display-sleep assertions, flush on sleep / power-off / quit / SIGTERM / SIGINT, single-instance lock.

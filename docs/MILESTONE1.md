@@ -88,10 +88,23 @@ Database: `~/Library/Application Support/Wrapped/wrapped.db`
 ### Install with launch at login
 
 ```sh
-scripts/macos/bundle.sh
-mkdir -p ~/Applications && rm -rf ~/Applications/Wrapped.app && cp -R target/release/Wrapped.app ~/Applications/
+scripts/macos/install.sh
 ~/Applications/Wrapped.app/Contents/MacOS/wrapped-collector login enable
-open ~/Applications/Wrapped.app
+```
+
+`install.sh` builds the release bundle, quits a running installed collector
+(SIGTERM, so it flushes), swaps `~/Applications/Wrapped.app` in place (same path
+and bundle id, so the login item stays valid), relaunches it, checks that
+`wrapped-collector --version` matches HEAD, and deletes every other
+`Wrapped.app` under `target/` (unregistered from LaunchServices first). It
+refuses to replace a collector running from elsewhere (a debug or measurement
+run) unless given `--force`. Version: `CFBundleShortVersionString` is the crate
+version, `CFBundleVersion` the short git hash (`-dirty` with uncommitted
+changes); `wrapped-collector --version` prints both. Run `login enable` once
+after the first install:
+
+```sh
+~/Applications/Wrapped.app/Contents/MacOS/wrapped-collector login enable
 ```
 
 `login enable` should print `enabled`; if it says it requires approval, turn
@@ -179,6 +192,9 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 - **Windows**: platform stub only (Milestone 9).
 
 ### Not verified live (covered by unit tests only, or not at all)
+
+Tray Pause / Resume is now verified live (paused 16:09:34, resumed 16:10:12 on
+2026-11-16; nothing recorded while paused).
 
 - Display-only sleep (display off, system awake) via `pmset displaysleepnow`.
 - Launch at login: `login enable` printed enabled and `Wrapped.app` started
