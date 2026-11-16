@@ -721,11 +721,28 @@ fn read_cap_is_respected_for_large_raws() {
     assert!(m.taken.is_some());
     assert!(f.read <= HEAD_WINDOW);
 
+    // Typical ARW layout (Exif IFD ~5 KB in): nothing beyond the 64 KB window.
+    let mut f = Capped::new(big(fixture::tiff(&s, Some(4606)), 64 * 1024), HARD_CAP);
+    let m = read_meta(&mut f, 127 * 1024 * 1024).unwrap();
+    assert_eq!(m.lens.as_deref(), Some("FE 35mm F1.8"));
+    assert!(f.read <= 64 * 1024, "read {}", f.read);
+
+    // Exif IFD straddling the end of the window: extended by a few hundred bytes.
+    let mut f = Capped::new(big(fixture::tiff(&s, Some(65_500)), HARD_CAP), HARD_CAP);
+    let m = read_meta(&mut f, 60 * 1024 * 1024).unwrap();
+    assert_eq!(m.iso, Some(400));
+    assert_eq!(m.lens.as_deref(), Some("FE 35mm F1.8"));
+    assert!(f.read <= 66 * 1024, "read {}", f.read);
+
     // Exif IFD at 1 MB: the window is extended to it, still under the cap.
     let mut f = Capped::new(big(fixture::tiff(&s, Some(1 << 20)), HARD_CAP), HARD_CAP);
     let m = read_meta(&mut f, 60 * 1024 * 1024).unwrap();
     assert!(m.taken.is_some(), "found after extending");
-    assert!(f.read <= HARD_CAP);
+    assert_eq!(m.lens.as_deref(), Some("FE 35mm F1.8"));
+    assert!(
+        f.read <= (1 << 20) + 4096,
+        "only up to the IFD and its values"
+    );
 
     // Exif IFD beyond the hard cap: given up on, never read past the cap.
     let mut f = Capped::new(big(fixture::tiff(&s, Some(3 << 20)), HARD_CAP), HARD_CAP);

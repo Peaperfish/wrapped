@@ -8,9 +8,10 @@
 //! * HEIF: `kamadak-exif`'s ISOBMFF reader, which seeks over `mdat` and reads
 //!   only the `meta` box and the Exif item's extent, through the cap.
 //! * TIFF raws: `kamadak-exif` would read the whole file (60 MB for an ARW),
-//!   so we read the first [`HEAD_WINDOW`] bytes and parse that with
-//!   `continue_on_error`. If the Exif IFD lies beyond the window, the window
-//!   is extended to cover it, never past [`HARD_CAP`].
+//!   so we read the first [`HEAD_WINDOW`] (64 KB) and parse that with
+//!   `continue_on_error`. If IFD0, the Exif IFD or the values of the tags we
+//!   keep lie further, the window is extended just far enough, never past
+//!   [`HARD_CAP`]. (A Sony ARW has its Exif IFD about 5 KB in.)
 
 use std::io::{self, Read, Seek, SeekFrom};
 
@@ -18,11 +19,9 @@ use chrono::NaiveDateTime;
 use exif::{Context, In, Tag, Value};
 
 /// First read for TIFF-based files.
-pub const HEAD_WINDOW: u64 = 256 * 1024;
+pub const HEAD_WINDOW: u64 = 64 * 1024;
 /// No file is read beyond this many bytes in total.
 pub const HARD_CAP: u64 = 2 * 1024 * 1024;
-/// Bytes read past the Exif IFD offset when the window is extended.
-const IFD_EXTRA: u64 = 64 * 1024;
 
 const TAG_IMAGE_NUMBER: Tag = Tag(Context::Exif, 0x9211);
 
@@ -187,7 +186,10 @@ fn jpeg_exif<R: Read + Seek>(r: &mut Capped<R>) -> Result<Vec<u8>, MetaError> {
 }
 
 /// TIFF-based raws: windowed read, extended once if the Exif IFD is further.
-/// `head` holds the bytes already read from the start of the file.
+/// `head` holds the bytes already read from the start of the file. Reads a
+/// [`HEAD_WINDOW`] first, then extends it (contiguously, never past
+/// [`HARD_CAP`]) only as far as IFD0, the Exif IFD and the values of the tags
+/// we keep actually reach.
 fn tiff_meta<R: Read + Seek>(
     r: &mut Capped<R>,
     head: &[u8],
@@ -199,47 +201,119 @@ fn tiff_meta<R: Read + Seek>(
     r.seek(SeekFrom::Start(head.len() as u64))?;
     let got = read_up_to(r, &mut buf[head.len()..])?;
     buf.truncate(head.len() + got);
-    if let Some(ifd) = exif_ifd_offset(&buf) {
-        let need = (ifd + IFD_EXTRA).min(len).min(HARD_CAP);
-        if ifd + 2 > buf.len() as u64 && need > buf.len() as u64 && ifd < HARD_CAP {
-            let old = buf.len();
-            buf.resize(need as usize, 0);
-            let got = read_up_to(r, &mut buf[old..])?;
-            buf.truncate(old + got);
+    // Each round can reveal one more level (IFD0 → Exif IFD → its values).
+    for _ in 0..4 {
+        let need = needed_end(&buf).min(len);
+        if need <= buf.len() as u64 || need > HARD_CAP {
+            break;
+        }
+        let old = buf.len();
+        buf.resize(need as usize, 0);
+        let got = read_up_to(r, &mut buf[old..])?;
+        buf.truncate(old + got);
+        if got == 0 {
+            break;
         }
     }
     parse_tiff(buf).map(|e| extract(&e))
 }
 
-/// The Exif IFD offset from IFD0 (tag 0x8769), read straight from the header.
-fn exif_ifd_offset(b: &[u8]) -> Option<u64> {
-    let le = match b.get(0..2)? {
-        b"II" => true,
-        b"MM" => false,
-        _ => return None,
-    };
-    let u16_at = |o: usize| -> Option<u16> {
-        let s: [u8; 2] = b.get(o..o + 2)?.try_into().ok()?;
-        Some(if le {
+/// Tags whose values we keep: IFD0 (Make, Model) and the Exif IFD.
+const IFD0_TAGS: &[u16] = &[0x010F, 0x0110, 0x8769];
+const EXIF_TAGS: &[u16] = &[
+    0x829A, 0x829D, 0x8827, 0x9003, 0x9011, 0x9211, 0x9291, 0x920A, 0xA431, 0xA434,
+];
+
+/// Minimal TIFF view for planning reads (works on a truncated buffer).
+struct Tiff<'a> {
+    b: &'a [u8],
+    le: bool,
+}
+
+impl Tiff<'_> {
+    fn u16_at(&self, o: u64) -> Option<u16> {
+        let o = usize::try_from(o).ok()?;
+        let s: [u8; 2] = self.b.get(o..o.checked_add(2)?)?.try_into().ok()?;
+        Some(if self.le {
             u16::from_le_bytes(s)
         } else {
             u16::from_be_bytes(s)
         })
-    };
-    let u32_at = |o: usize| -> Option<u32> {
-        let s: [u8; 4] = b.get(o..o + 4)?.try_into().ok()?;
-        Some(if le {
+    }
+    fn u32_at(&self, o: u64) -> Option<u32> {
+        let o = usize::try_from(o).ok()?;
+        let s: [u8; 4] = self.b.get(o..o.checked_add(4)?)?.try_into().ok()?;
+        Some(if self.le {
             u32::from_le_bytes(s)
         } else {
             u32::from_be_bytes(s)
         })
+    }
+    /// End of an IFD's table and of the out-of-line values of `tags`, or
+    /// the first byte still missing to know that.
+    fn ifd_end(&self, ifd: u64, tags: &[u16], exif_ptr: &mut Option<u64>) -> u64 {
+        let Some(n) = self.u16_at(ifd) else {
+            return ifd + 2;
+        };
+        let table_end = ifd + 2 + 12 * u64::from(n) + 4;
+        if table_end > self.b.len() as u64 {
+            return table_end;
+        }
+        let mut end = table_end;
+        for i in 0..u64::from(n) {
+            let e = ifd + 2 + 12 * i;
+            let (Some(tag), Some(typ), Some(count), Some(val)) = (
+                self.u16_at(e),
+                self.u16_at(e + 2),
+                self.u32_at(e + 4),
+                self.u32_at(e + 8),
+            ) else {
+                continue;
+            };
+            if !tags.contains(&tag) {
+                continue;
+            }
+            if tag == 0x8769 {
+                *exif_ptr = Some(u64::from(val));
+                continue;
+            }
+            let unit: u64 = match typ {
+                1 | 2 | 6 | 7 => 1,
+                3 | 8 => 2,
+                4 | 9 | 11 => 4,
+                5 | 10 | 12 => 8,
+                _ => continue,
+            };
+            let size = unit * u64::from(count);
+            if size > 4 && size <= 4096 {
+                end = end.max(u64::from(val) + size);
+            }
+        }
+        end
+    }
+}
+
+/// How many bytes from the start of the file are needed to parse IFD0, the
+/// Exif IFD and the values we keep (0 if not a TIFF header).
+fn needed_end(b: &[u8]) -> u64 {
+    let le = match b.get(0..2) {
+        Some(b"II") => true,
+        Some(b"MM") => false,
+        _ => return 0,
     };
-    let ifd0 = u32_at(4)? as usize;
-    let n = u16_at(ifd0)? as usize;
-    (0..n.min(1024)).find_map(|i| {
-        let e = ifd0 + 2 + i * 12;
-        (u16_at(e)? == 0x8769).then(|| u32_at(e + 8).map(u64::from))?
-    })
+    let t = Tiff { b, le };
+    let Some(ifd0) = t.u32_at(4).map(u64::from) else {
+        return 8;
+    };
+    let mut exif = None;
+    let mut end = t.ifd_end(ifd0, IFD0_TAGS, &mut exif);
+    if end > b.len() as u64 {
+        return end;
+    }
+    if let Some(ifd) = exif {
+        end = end.max(t.ifd_end(ifd, EXIF_TAGS, &mut None));
+    }
+    end
 }
 
 fn ascii(exif: &exif::Exif, tag: Tag) -> Option<String> {
