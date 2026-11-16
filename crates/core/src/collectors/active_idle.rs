@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use crate::collector::{
+    Agg,
     Collector, CollectorInfo, DayInput, Kind, MetricDef, MetricValue, Sink, Slice, Unit,
 };
 use crate::event::SystemEvent;
@@ -77,12 +78,12 @@ impl Collector for ActiveIdle {
 
     fn metrics(&self) -> Vec<MetricDef> {
         vec![
-            MetricDef { id: "away_secs", title: "Time away", unit: Unit::Seconds, key: None },
-            MetricDef { id: "away_periods", title: "Times away", unit: Unit::Count, key: None },
+            MetricDef { id: "away_secs", title: "Time away", unit: Unit::Seconds, agg: Agg::Sum, key: None },
+            MetricDef { id: "away_periods", title: "Times away", unit: Unit::Count, agg: Agg::Sum, key: None },
             MetricDef {
                 id: "away_secs_by_reason",
                 title: "Time away by reason",
-                unit: Unit::Seconds,
+                unit: Unit::Seconds, agg: Agg::Sum,
                 key: Some("idle | sleep | display_off | locked | screensaver"),
             },
         ]

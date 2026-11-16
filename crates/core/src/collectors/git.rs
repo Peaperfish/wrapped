@@ -26,6 +26,7 @@ use std::process::{Command, Stdio};
 use serde_json::{Value, json};
 
 use crate::collector::{
+    Agg,
     Collector, CollectorInfo, DayInput, Kind, MetricDef, MetricValue, Sink, Unit,
 };
 use crate::scan::{self, Flow, Rules};
@@ -474,19 +475,19 @@ impl Collector for Git {
             MetricDef {
                 id: "commits",
                 title: "Commits",
-                unit: Unit::Count,
+                unit: Unit::Count, agg: Agg::Sum,
                 key: None,
             },
             MetricDef {
                 id: "commits_by_repo",
                 title: "Commits by repository",
-                unit: Unit::Count,
+                unit: Unit::Count, agg: Agg::Sum,
                 key: Some("repository folder name"),
             },
             MetricDef {
                 id: "commits_by_hour",
                 title: "Commits by hour of day",
-                unit: Unit::Count,
+                unit: Unit::Count, agg: Agg::Sum,
                 key: Some("local hour 00..23"),
             },
         ]

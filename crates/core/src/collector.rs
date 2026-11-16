@@ -37,11 +37,43 @@ pub struct CollectorInfo {
     pub default_on: bool,
 }
 
+/// What a metric's values measure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
     Seconds,
     Count,
     Bytes,
+}
+
+impl Unit {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Seconds => "secs",
+            Self::Count => "count",
+            Self::Bytes => "bytes",
+        }
+    }
+}
+
+/// How a metric's daily values combine over a range of days (per key).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Agg {
+    /// Total over the days (time, bytes, counts).
+    Sum,
+    /// Highest daily value (peaks).
+    Max,
+    /// Mean of the days that have a value (days without data are not zeros).
+    Mean,
+}
+
+impl Agg {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Sum => "sum",
+            Self::Max => "max",
+            Self::Mean => "mean",
+        }
+    }
 }
 
 /// One metric a collector contributes to `daily_metrics`.
@@ -50,6 +82,8 @@ pub struct MetricDef {
     pub id: &'static str,
     pub title: &'static str,
     pub unit: Unit,
+    /// How daily values combine across days (stats engine, recaps).
+    pub agg: Agg,
     /// What `daily_metrics.key` means for this metric (`None` = always "").
     pub key: Option<&'static str>,
 }
