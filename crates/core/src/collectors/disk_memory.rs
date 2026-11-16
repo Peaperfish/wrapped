@@ -92,7 +92,13 @@ impl Tick {
         let mut put = |k: &str, v: f64| {
             // Zero swap is the common case: leave it out (absent = 0).
             if v != 0.0 || !k.starts_with('s') {
-                data.insert(k.into(), serde_json::json!(v));
+                // Counters are whole bytes: store them without a fraction.
+                let n = if v.fract() == 0.0 && v.abs() < 9e15 {
+                    serde_json::json!(v as i64)
+                } else {
+                    serde_json::json!(v)
+                };
+                data.insert(k.into(), n);
             }
         };
         put(key::READ, self.bytes_read);
