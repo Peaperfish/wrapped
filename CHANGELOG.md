@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Milestone 2: scanned collectors Git and Photos (off by default), the scan framework (daily scheduling, background-priority threads, cancel/resume, early flushes with backpressure), schema v2 (`items`, `scan_files`), settings `git.folders`, `git.author_emails`, `photos.folders`, `photos.extensions`, `wrapped-collector scan [git|photos|all]`, items in export, and `docs/MILESTONE2.md`.
 - `scripts/macos/install.sh`: builds, replaces the single `~/Applications/Wrapped.app` in place (graceful quit, atomic swap, relaunch, version check) and removes other `Wrapped.app` bundles from `target/`.
 - Bundle versioning (`CFBundleVersion` = git hash, `-dirty` when uncommitted) and `wrapped-collector --version`.
 - `CLAUDE.md` with standing repo rules.
