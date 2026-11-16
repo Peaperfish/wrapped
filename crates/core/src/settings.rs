@@ -461,9 +461,15 @@ mod tests {
         let mut s = Settings::default();
         assert_eq!(s.get_json("git.folders").unwrap(), r#"["~/code"]"#);
         assert_eq!(s.get_json("git.author_emails").unwrap(), "null");
-        s.apply("git.folders", r#"["~/code/", "/Volumes/x", "~/code"]"#)
-            .unwrap();
-        assert_eq!(s.git_folders, vec!["~/code", "/Volumes/x"]);
+        // An absolute path in this platform's form ("/tmp/x", "C:\\...\\x").
+        let abs = std::env::temp_dir().join("x");
+        let abs = abs.to_str().unwrap();
+        s.apply(
+            "git.folders",
+            &json!(["~/code/", abs, "~/code"]).to_string(),
+        )
+        .unwrap();
+        assert_eq!(s.git_folders, vec!["~/code", abs]);
         assert!(s.apply("git.folders", r#"["relative/dir"]"#).is_err());
         s.apply("git.author_emails", r#"["Me@Example.com"]"#)
             .unwrap();

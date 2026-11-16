@@ -85,7 +85,12 @@ pub fn children_cpu_secs() -> f64 {
 /// Hold the database lock for a CLI scan, so a collector cannot start on the
 /// same database meanwhile. SIGUSR1 (sent by `stats` etc. to "the collector")
 /// is ignored instead of killing this process.
-pub fn hold_db_lock(db: &std::path::Path) -> Result<impl Sized, String> {
+/// Held while a CLI scan runs; dropping it releases the database lock.
+pub struct DbLock {
+    _lock: super::lock::Lock,
+}
+
+pub fn hold_db_lock(db: &std::path::Path) -> Result<DbLock, String> {
     let lock = match super::lock::acquire(&super::lock_path(db)) {
         Ok(l) => l,
         Err(super::lock::LockError::Held(pid)) => {
@@ -96,5 +101,5 @@ pub fn hold_db_lock(db: &std::path::Path) -> Result<impl Sized, String> {
         Err(super::lock::LockError::Io(e)) => return Err(format!("cannot create lock file: {e}")),
     };
     unsafe { libc::signal(libc::SIGUSR1, libc::SIG_IGN) };
-    Ok(lock)
+    Ok(DbLock { _lock: lock })
 }

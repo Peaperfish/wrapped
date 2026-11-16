@@ -112,12 +112,24 @@ fn tick(e: &mut Engine) {
 
 // ---------- git fixtures ----------
 
+/// An empty file used as the global git config, so fixtures ignore the
+/// machine's config (signing, hooks, default branch) on every platform.
+fn empty_git_config() -> PathBuf {
+    static P: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    P.get_or_init(|| {
+        let p = std::env::temp_dir().join(format!("wrapped-scan-{}-gitconfig", std::process::id()));
+        std::fs::write(&p, b"").unwrap();
+        p
+    })
+    .clone()
+}
+
 fn git(dir: &Path, args: &[&str]) {
     let out = Command::new("git")
         .arg("-C")
         .arg(dir)
         .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .output()
         .expect("git installed");
@@ -139,7 +151,7 @@ fn commit(dir: &Path, email: &str, date: &str, msg: &str) {
         .arg("-C")
         .arg(dir)
         .args(["commit", "-q", "--allow-empty", "--no-gpg-sign", "-m", msg])
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_AUTHOR_NAME", "A")
         .env("GIT_AUTHOR_EMAIL", email)
@@ -246,7 +258,7 @@ fn git_as_committer(dir: &Path, args: &[&str]) {
         .arg("-C")
         .arg(dir)
         .args(args)
-        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_GLOBAL", empty_git_config())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_COMMITTER_NAME", "C")
         .env("GIT_COMMITTER_EMAIL", "c@example.com")

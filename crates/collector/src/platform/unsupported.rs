@@ -45,6 +45,10 @@ pub fn children_cpu_secs() -> f64 {
     0.0
 }
 
-pub fn hold_db_lock(_db: &Path) -> Result<(), String> {
-    Ok(())
+/// Same shape as the macOS guard. No single-instance lock exists on this
+/// platform yet (no collector can run here), so there is nothing to hold.
+pub struct DbLock;
+
+pub fn hold_db_lock(_db: &Path) -> Result<DbLock, String> {
+    Ok(DbLock)
 }
