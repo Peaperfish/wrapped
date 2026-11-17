@@ -128,6 +128,15 @@ design doc itself is left as written.
   memory pressure is `pressure_secs_by_level` (key `normal|warning|critical`),
   compressed memory `compressed_peak_bytes` and `compressed_avg_bytes`
   (time-weighted).
+- Write budget (accepted, 2026-11-17): with Disk & Memory on, a 16 h day
+  writes 1.60 MB and a 24 h awake day 2.64 MB, over the ~2 MB/day guideline
+  (1.58 MB of that is the M1 collectors alone). Accepted for now: the
+  collector is off by default, 24 h awake is rare on a laptop, and ~1 GB/year
+  is negligible for an SSD. Revisit at Milestone 9 (an always-on Windows
+  desktop may hit the 24 h case daily). The known lever is holding
+  disk_memory samples in memory across several flushes (e.g. written every
+  30 min), which risks up to ~30 min of disk samples on a crash, not activity
+  data.
 
 ## Metric definitions
 

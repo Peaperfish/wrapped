@@ -117,6 +117,7 @@ wrapped-collector stats today
 - A normal 16-hour day stays within the 1–2 MB budget (1.60 MB).
 - A machine **awake 24 h** with the collector on writes 2.64 MB/day, over
   the ~2 MB guideline; 1.58 MB of that is the M1 collectors alone over 24 h.
+  **Accepted** (see DEVIATIONS.md, Disk & Memory); revisit at Milestone 9.
 - Where the remaining +1.06 MB/24 h goes, measured: turning the
   disk_memory rollup off changed nothing for 16 h (1.72 → 1.72 MB with long
   keys), so it is not the daily metrics. Frames per flush were 3 for ~60 %
@@ -189,7 +190,13 @@ on `m3-scratch.db`, then SIGTERM:
   the whole gap (capped at one hour of window, as any sample).
 - **Pressure** is the level at the reading, credited to the 5 minutes before
   it; a short warning spike between readings is not seen.
-- **24 h awake** exceeds the ~2 MB/day guideline (see above).
+- **24 h awake** exceeds the ~2 MB/day guideline (2.64 MB; see above).
+  Accepted for now, revisit at Milestone 9 (DEVIATIONS.md, Disk & Memory).
+- **Hour attribution after sleep**: I/O during sleep and dark wakes (Time
+  Machine, Spotlight and other maintenance) lands in the hour of the wake
+  tick, so `bytes_written_by_hour` shows a spike at wake that is not the
+  user's own activity. The dashboard and recap cards (Milestones 5 and 8)
+  should label disk activity as including background system activity.
 - **A cancelled shutdown** (`WillPowerOff` then nothing) leaves the awake
   stretch closed until the next tick: under a minute of awake time is not
   counted in the next sample.
