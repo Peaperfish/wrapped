@@ -736,6 +736,36 @@ fn pause_and_resume() {
 }
 
 #[test]
+fn collector_turned_off_while_paused_records_again_after_resume() {
+    let mut h = H::new();
+    h.app("com.a");
+    h.adv(60);
+    h.e.set_pause(Pause::Indefinite).unwrap();
+    h.e.disable_collector(AU, true).unwrap();
+    h.e.disable_collector(AI, true).unwrap();
+    h.adv(60);
+    // Resumed while off: the stopped collectors never see `Resumed`.
+    h.e.set_pause(Pause::Off).unwrap();
+    h.e.enable_collector(AU).unwrap();
+    h.e.enable_collector(AI).unwrap();
+    h.adv(60);
+    h.app("com.b");
+    h.adv(60);
+    h.tick(1.0);
+    h.adv(600);
+    h.tick(600.0); // idle: an away period
+    let au = h.sessions(AU);
+    assert!(
+        au.iter().any(|r| r.0 == "com.b"),
+        "app_usage still thinks it is paused: {au:?}"
+    );
+    assert!(
+        !h.sessions(AI).is_empty(),
+        "active_idle still thinks it is paused"
+    );
+}
+
+#[test]
 fn timed_pause_expires_on_tick_and_is_persisted() {
     let mut h = H::new();
     h.app("com.a");

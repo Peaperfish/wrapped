@@ -14,7 +14,7 @@ use wrapped_core::{Clock, Engine, Store, SystemClock, collectors};
 use crate::platform;
 
 const USAGE: &str = "\
-wrapped-collector: local-only usage tracker (Milestone 2)
+wrapped-collector: local-only usage tracker (Milestone 3)
 
 USAGE
   wrapped-collector [--debug]               run the collector (tray icon)
@@ -27,6 +27,7 @@ USAGE
   wrapped-collector --version               print crate version and build (git hash)
   wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
   wrapped-collector git emails             list author emails in git.folders (read-only)
+  wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
   wrapped-collector flush                 ask the running collector to flush now
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
@@ -36,7 +37,7 @@ SETTINGS (values are JSON; a bare word is taken as a string)
   active_without_input.timeout_secs   1800
   exclude.apps                        '[\"com.example.Secret\"]'
   pause                               off | indefinite | '{\"until_ms\": <utc ms>}'
-  collector.<name>.enabled            true | false   (app_usage, active_idle, git, photos)
+  collector.<name>.enabled            true | false   (app_usage, active_idle, git, photos, disk_memory)
   git.folders                         '[\"~/code\"]'
   git.author_emails                   '[\"me@example.com\"]'  (set from git config when git is turned on)
   photos.folders                      '[\"~/Pictures\"]'
@@ -80,6 +81,7 @@ pub fn main() -> i32 {
         ["sessions"] => sessions(&db, "today"),
         ["sessions", day] => sessions(&db, day),
         ["git", "emails"] => git_emails(&db),
+        ["probe", "disk-memory"] => probe_disk_memory(),
         ["scan"] => scan(&db, "all"),
         ["scan", what] => scan(&db, what),
         ["export", "--json", path] => export(&db, true, path),
@@ -274,6 +276,7 @@ fn stats(db: &std::path::Path, day: &str) -> CliResult {
             .map(|(_, m)| m.unit);
         let shown = match unit {
             Some(Unit::Seconds) => format!("{value:>10.0}  {}", fmt_secs(*value)),
+            Some(Unit::Bytes) => format!("{value:>14.0}  {}", fmt_bytes(*value)),
             _ => format!("{value:>10}"),
         };
         if last.is_none_or(|(c, _)| c != collector) {
@@ -455,6 +458,72 @@ fn scan(db: &std::path::Path, what: &str) -> CliResult {
         size(db.with_extension("db-wal"))
     );
     Ok(())
+}
+
+/// Two readings of the disk & memory counters 60 s apart: raw values and
+/// deltas. Read-only: opens no database and stores nothing.
+fn probe_disk_memory() -> CliResult {
+    use wrapped_core::collectors::disk_memory::deltas;
+    let interval = std::time::Duration::from_secs(60);
+    let read = || platform::disk_memory().ok_or("disk / memory counters not available here");
+    let t0 = SystemClock.now();
+    let a = read()?;
+    println!("reading 1 at {}", t0.to_rfc3339());
+    print_reading(&a);
+    println!("waiting {} s ...", interval.as_secs());
+    std::thread::sleep(interval);
+    let t1 = SystemClock.now();
+    let b = read()?;
+    println!("reading 2 at {}", t1.to_rfc3339());
+    print_reading(&b);
+    let wall = t1.utc_ms - t0.utc_ms;
+    println!("deltas over {:.1} s", wall as f64 / 1000.0);
+    match deltas(&a, &b, wall) {
+        Some([r, w, si, so]) => {
+            for (k, v) in [
+                ("disk bytes read", r),
+                ("disk bytes written", w),
+                ("swap in bytes", si),
+                ("swap out bytes", so),
+            ] {
+                println!("  {k:<22} {v:>16}  {}", fmt_bytes(v as f64));
+            }
+            let dc = b.compressed_bytes as i64 - a.compressed_bytes as i64;
+            println!("  {:<22} {dc:>+16}", "compressed bytes");
+        }
+        None => println!("  counters restarted between readings (reboot or reset); no delta"),
+    }
+    Ok(())
+}
+
+fn print_reading(r: &wrapped_core::probe::DiskMemoryReading) {
+    let boot = wrapped_core::Timestamp::new(r.boot_time_ms, SystemClock.now().offset_min);
+    println!("  {:<22} {}", "boot time", boot.to_rfc3339());
+    for (k, v) in [
+        ("disk bytes read", r.disk_bytes_read),
+        ("disk bytes written", r.disk_bytes_written),
+        ("swap in bytes", r.swap_in_bytes),
+        ("swap out bytes", r.swap_out_bytes),
+        ("compressed bytes", r.compressed_bytes),
+    ] {
+        println!("  {k:<22} {v:>16}  {}", fmt_bytes(v as f64));
+    }
+    println!("  {:<22} {:>16}", "memory pressure", r.pressure.key());
+}
+
+fn fmt_bytes(v: f64) -> String {
+    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
+    let mut v = v;
+    let mut i = 0;
+    while v.abs() >= 1000.0 && i < UNITS.len() - 1 {
+        v /= 1000.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{v:.0} {}", UNITS[i])
+    } else {
+        format!("{v:.2} {}", UNITS[i])
+    }
 }
 
 fn export(db: &std::path::Path, json: bool, path: &str) -> CliResult {

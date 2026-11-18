@@ -19,7 +19,19 @@ design doc itself is left as written.
 - `enable_defaults(&self, &Settings)` added: settings a collector stores
   explicitly when turned on (git: `git.author_emails` from
   `git config --global user.email`).
-- `DayInput` carries the day's `items` next to the session `slices`.
+- `DayInput` carries the day's `items` next to the session `slices`, and
+  (Milestone 3) the `samples` whose time is on the day or up to one hour
+  after it (`MAX_SAMPLE_WINDOW_MS`: a sample describes at most the hour
+  before it); the collector decides which part of each belongs to the day.
+- `Collector::on_data_deleted()` added: called when a running collector's
+  data is deleted, so it can drop state that would carry pre-delete time
+  (disk_memory re-baselines its counters).
+- System counters reach collectors through the `Sink`
+  (`Sink::read_disk_memory()`, backed by a `SystemProbe` the platform layer
+  gives the engine), not through events: the collector decides when to read.
+  `Sink::system_asleep()` exposes the engine's asleep state (from
+  `WillSleep` until `DidWake` or input after it), set before each event is
+  dispatched.
 
 ## Data model (§8)
 
@@ -40,6 +52,14 @@ design doc itself is left as written.
   `time_off` is NULL when the source had no UTC offset (photo without
   OffsetTimeOriginal); `time_ms` then holds the camera's naive local time.
   Append-only like the other tables: never rewritten, only deleted on request.
+- `samples.data` (migration v3): a JSON object with further values of the
+  same reading, NULL for single-value samples. Disk & Memory stores one row
+  per reading (metric `reading`, value = awake seconds covered, the deltas,
+  compressed memory and pressure level in `data`) instead of one row per
+  value: seven rows per reading sat in seven parts of the
+  `(collector, metric, time)` B-tree and cost ~7 extra pages per flush
+  (3.87 MB/day measured for a 16 h day, against 1.60 MB as one row). See
+  MILESTONE3.md.
 - `scan_files(collector, path_hash, size, mtime_ms)` added (migration v2):
   the photos per-file cache, keyed by a salted 64-bit SipHash of the path (no
   path or name stored; the salt lives in the collector's `scan_state`). A
@@ -88,6 +108,35 @@ design doc itself is left as written.
   SubSecTimeOriginal and no image number share an id and count once.
 - Extra metric keys: `(unknown)` for a missing camera, lens or focal length,
   so per-key sums equal `shots`.
+
+## Disk & Memory collector (§7)
+
+- "Every 5 min" = the first minute tick at least 4.5 min after the previous
+  reading, while awake and not paused; dark-wake ticks never read.
+- A reading after sleep records one delta (everything since the previous
+  reading) at the wake tick; it covers only the awake seconds (before the
+  sleep plus since the wake), so its bytes land just before the wake tick,
+  not spread over the night.
+- Counter resets (DESIGN.md §8) are detected by boot time first (more than
+  1 s apart), then by any counter going down or a rate above 32 GiB/s; any of
+  them re-baselines with no sample for that interval.
+- Pause drops the baseline: nothing done while paused is recorded.
+- "Disk GB read/written" is internal storage only (disk images, external
+  drives and the SD card reader excluded); "compressed memory" is the
+  physical memory the compressor occupies.
+- Extra metric `disk_memory/bytes_written_by_hour` (key `00`..`23`);
+  memory pressure is `pressure_secs_by_level` (key `normal|warning|critical`),
+  compressed memory `compressed_peak_bytes` and `compressed_avg_bytes`
+  (time-weighted).
+- Write budget (accepted, 2026-11-17): with Disk & Memory on, a 16 h day
+  writes 1.60 MB and a 24 h awake day 2.64 MB, over the ~2 MB/day guideline
+  (1.58 MB of that is the M1 collectors alone). Accepted for now: the
+  collector is off by default, 24 h awake is rare on a laptop, and ~1 GB/year
+  is negligible for an SSD. Revisit at Milestone 9 (an always-on Windows
+  desktop may hit the 24 h case daily). The known lever is holding
+  disk_memory samples in memory across several flushes (e.g. written every
+  30 min), which risks up to ~30 min of disk samples on a crash, not activity
+  data.
 
 ## Metric definitions
 

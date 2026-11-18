@@ -11,6 +11,8 @@
 //! * `scan_hooks()`: lowest priority for scan threads and their child processes.
 //! * `hold_db_lock(db)`: single-writer lock for a CLI scan.
 //! * `usage()` / `children_cpu_secs()`: resource usage for the scan report.
+//! * `disk_memory()`: system-wide disk / swap / memory counters (`None` where
+//!   unsupported); the collector gets them through a `SystemProbe`.
 //!
 //! Nothing here makes tracking decisions: it only translates OS signals.
 

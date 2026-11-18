@@ -39,6 +39,7 @@ const SAMPLE_COLS: &[&str] = &[
     "time_offset_min",
     "time_local",
     "value",
+    "data",
 ];
 const SETTING_COLS: &[&str] = &["key", "value"];
 const ITEM_COLS: &[&str] = &[
@@ -102,7 +103,7 @@ impl Store {
 
     fn each_sample(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
         let mut st = self.conn.prepare(
-            "SELECT collector, metric, time_ms, time_off, value FROM samples
+            "SELECT collector, metric, time_ms, time_off, value, data FROM samples
              ORDER BY time_ms, collector, metric",
         )?;
         let mut rows = st.query([])?;
@@ -116,6 +117,10 @@ impl Store {
                 json!(t.offset_min),
                 json!(t.to_rfc3339()),
                 json!(r.get::<_, f64>(4)?),
+                match r.get::<_, Option<String>>(5)? {
+                    Some(d) => serde_json::from_str(&d).unwrap_or(Value::String(d)),
+                    None => Value::Null,
+                },
             ])?;
             n += 1;
         }

@@ -52,3 +52,9 @@ pub struct DbLock;
 pub fn hold_db_lock(_db: &Path) -> Result<DbLock, String> {
     Ok(DbLock)
 }
+
+/// No disk / memory counters on this platform yet: the Disk & Memory
+/// collector records nothing.
+pub fn disk_memory() -> Option<wrapped_core::probe::DiskMemoryReading> {
+    None
+}

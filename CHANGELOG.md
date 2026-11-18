@@ -9,11 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A collector turned off while tracking was paused, then turned on again after resuming, kept its old pause flag and recorded nothing (app usage, active / idle, disk & memory).
 - Dark wakes: minute ticks between `WillSleep` and `DidWake` (macOS maintenance wakes) are logged as "tick during dark wake", not as a tick-gap warning, and skip the periodic 10-minute flush; `measure.sh` reports them as `dark_wake_ticks`.
 - Collector no longer records itself as an app: `FrontApp` events for its own bundle id (e.g. opening the tray menu) are ignored by the engine.
 
 ### Added
 
+- Milestone 3: Disk & Memory collector (off by default): system-wide disk bytes read / written (internal storage), swap in / out, memory pressure and compressed memory, read every 5 minutes while awake through a platform `SystemProbe` (macOS: IOKit, Mach VM statistics, sysctl; no permission, no child process). Reboot-safe deltas (boot time), one delta per sleep gap at the wake tick, daily metrics split across days and hours, schema v3 (`samples.data`, one row per reading), `wrapped-collector probe disk-memory`, and `docs/MILESTONE3.md`.
+- `write_budget` simulation runs 16 h and 24 h days with and without Disk & Memory.
 - Milestone 2: scanned collectors Git and Photos (off by default), the scan framework (daily scheduling, background-priority threads, cancel/resume, early flushes with backpressure), schema v2 (`items`, `scan_files`), settings `git.folders`, `git.author_emails`, `photos.folders`, `photos.extensions`, `wrapped-collector scan [git|photos|all]`, items in export, and `docs/MILESTONE2.md`.
 - `scripts/macos/install.sh`: builds, replaces the single `~/Applications/Wrapped.app` in place (graceful quit, atomic swap, relaunch, version check) and removes other `Wrapped.app` bundles from `target/`.
 - Bundle versioning (`CFBundleVersion` = git hash, `-dirty` when uncommitted) and `wrapped-collector --version`.

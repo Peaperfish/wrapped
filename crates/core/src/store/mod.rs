@@ -29,8 +29,8 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::collector::{
-    DayInput, DayItem, FileStamp, ItemRecord, MetricValue, OpenSession, SampleRecord, ScanUpdate,
-    SessionRecord, Slice,
+    DayInput, DayItem, DaySample, FileStamp, ItemRecord, MAX_SAMPLE_WINDOW_MS, MetricValue,
+    OpenSession, SampleRecord, ScanUpdate, SessionRecord, Slice,
 };
 use crate::settings::{Settings, SettingsError, collector_enabled_key};
 use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_midnight_ms};
@@ -442,19 +442,24 @@ impl Store {
         }
 
         for s in samples {
-            tx.execute(
-                "INSERT INTO samples(collector, metric, time_ms, time_off, value)
-                 VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(collector, metric, time_ms) DO UPDATE SET value = excluded.value",
-                params![
-                    s.collector,
-                    s.metric,
-                    s.time.utc_ms,
-                    s.time.offset_min,
-                    s.value
-                ],
-            )?;
+            tx.prepare_cached(
+                "INSERT INTO samples(collector, metric, time_ms, time_off, value, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(collector, metric, time_ms) DO UPDATE SET
+                    value = excluded.value, data = excluded.data",
+            )?
+            .execute(params![
+                s.collector,
+                s.metric,
+                s.time.utc_ms,
+                s.time.offset_min,
+                s.value,
+                s.data
+            ])?;
             report.samples_written += 1;
+            // A sample describes up to MAX_SAMPLE_WINDOW_MS before its time.
+            let start = s.time.plus_ms(-MAX_SAMPLE_WINDOW_MS);
+            touch_days(&mut touched, s.collector, start, s.time.utc_ms + 1);
         }
 
         for it in items {
@@ -747,6 +752,69 @@ fn day_items(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<V
     Ok(out)
 }
 
+/// Samples of `collector` whose local time is on `date` or up to
+/// [`MAX_SAMPLE_WINDOW_MS`] after it, sorted by time then metric.
+///
+/// Looked up metric by metric (the primary key is (collector, metric,
+/// time)), so a day's rollup reads only that day's rows however much history
+/// is stored.
+fn day_samples(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<Vec<DaySample>> {
+    let day0 = local_midnight_ms(date);
+    let day1 = day0 + MS_PER_DAY;
+    let mut metrics: Vec<String> = Vec::new();
+    {
+        let mut next = tx.prepare_cached(
+            "SELECT min(metric) FROM samples WHERE collector = ?1 AND metric > ?2",
+        )?;
+        let mut after = String::new();
+        while let Some(m) =
+            next.query_row(params![collector, after], |r| r.get::<_, Option<String>>(0))?
+        {
+            after.clone_from(&m);
+            metrics.push(m);
+        }
+    }
+    let mut stmt = tx.prepare_cached(
+        "SELECT time_ms, time_off, value, data FROM samples
+         WHERE collector = ?1 AND metric = ?2 AND time_ms >= ?3 AND time_ms < ?4",
+    )?;
+    let mut out = Vec::new();
+    for metric in metrics {
+        let rows = stmt.query_map(
+            params![
+                collector,
+                metric,
+                day0 - OFFSET_MARGIN_MS,
+                day1 + MAX_SAMPLE_WINDOW_MS + OFFSET_MARGIN_MS
+            ],
+            |r| {
+                Ok((
+                    Timestamp::new(r.get(0)?, r.get(1)?),
+                    r.get::<_, f64>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            },
+        )?;
+        for row in rows {
+            let (time, value, data) = row?;
+            let local = time.local_ms();
+            if local < day0 || local >= day1 + MAX_SAMPLE_WINDOW_MS {
+                continue;
+            }
+            out.push(DaySample {
+                metric: metric.clone(),
+                time,
+                value,
+                data: data
+                    .and_then(|d| serde_json::from_str(&d).ok())
+                    .unwrap_or(serde_json::Value::Null),
+            });
+        }
+    }
+    out.sort_by(|a, b| (a.time.utc_ms, &a.metric).cmp(&(b.time.utc_ms, &b.metric)));
+    Ok(out)
+}
+
 /// Recompute and diff-write one day's metrics for one collector.
 fn recompute_day(
     tx: &Transaction<'_>,
@@ -757,22 +825,25 @@ fn recompute_day(
 ) -> Result<usize> {
     let slices = day_slices(tx, collector, date, max_session_ms)?;
     let items = day_items(tx, collector, date)?;
-    let fresh: BTreeMap<(String, String), f64> = if slices.is_empty() && items.is_empty() {
-        BTreeMap::new()
-    } else {
-        let input = DayInput {
-            date,
-            slices: &slices,
-            items: &items,
+    let samples = day_samples(tx, collector, date)?;
+    let fresh: BTreeMap<(String, String), f64> =
+        if slices.is_empty() && items.is_empty() && samples.is_empty() {
+            BTreeMap::new()
+        } else {
+            let input = DayInput {
+                date,
+                slices: &slices,
+                items: &items,
+                samples: &samples,
+            };
+            match rollup(collector, &input) {
+                Some(rows) => rows
+                    .into_iter()
+                    .map(|m| ((m.metric.to_string(), m.key), m.value))
+                    .collect(),
+                None => return Ok(0), // unknown collector: leave its rows alone
+            }
         };
-        match rollup(collector, &input) {
-            Some(rows) => rows
-                .into_iter()
-                .map(|m| ((m.metric.to_string(), m.key), m.value))
-                .collect(),
-            None => return Ok(0), // unknown collector: leave its rows alone
-        }
-    };
     let date_s = date.to_string();
     let existing: BTreeMap<(String, String), f64> = {
         let mut stmt = tx.prepare_cached(
@@ -852,6 +923,28 @@ mod tests {
         assert_eq!(s.load_settings().unwrap().0.idle_threshold_secs, 240);
         drop(s);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn upgrade_from_v2_keeps_samples_and_adds_data_column() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &migrations::MIGRATIONS[..2] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 2).unwrap();
+        conn.execute(
+            "INSERT INTO samples(collector, metric, time_ms, time_off, value)
+             VALUES ('x', 'm', 1000, 60, 2.5)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(migrations::migrate(&mut conn).unwrap(), 3);
+        let row: (f64, Option<String>) = conn
+            .query_row("SELECT value, data FROM samples", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(row, (2.5, None));
     }
 
     #[test]

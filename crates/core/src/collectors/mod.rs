@@ -20,4 +20,5 @@ register!(
     active_idle::ActiveIdle,
     git::Git,
     photos::Photos,
+    disk_memory::DiskMemory,
 );
