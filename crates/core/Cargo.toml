@@ -1,0 +1,20 @@
+[package]
+name = "wrapped-core"
+version = "0.1.0"
+description = "Wrapped core: collector plugin system, session state machines, storage and daily rollups (no platform code)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+kamadak-exif = "0.6"
+rusqlite = { version = "0.43", features = ["bundled"] }
+serde_json = "1"
+
+[lints]
+workspace = true
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+libc = "0.2"

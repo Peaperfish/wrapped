@@ -1,0 +1,25 @@
+[package]
+name = "wrapped-collector"
+version = "0.1.0"
+description = "Wrapped background collector: tray icon, platform event sources and the batched writer"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+wrapped-core = { path = "../core" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6"
+dispatch2 = "0.3"
+libc = "0.2"
+objc2 = "0.6"
+objc2-app-kit = "0.3"
+objc2-core-graphics = "0.3"
+objc2-foundation = "0.3"
+objc2-service-management = "0.3"
+
+[lints]
+workspace = true
