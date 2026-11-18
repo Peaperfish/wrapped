@@ -48,6 +48,10 @@ export async function sendCtl(cmd: string, args?: unknown): Promise<any> {
   throw new CtlError(r.code, r.error);
 }
 
+/** True once when the tray's "Settings…" asked for Settings to open (the flag is consumed). */
+export const takeOpenSettings = (): Promise<boolean> =>
+  invoke<boolean>("take_open_settings").catch(() => false);
+
 /** Open the Wrapped app (the collector), for "Wrapped isn't running". */
 export const openWrapped = (): Promise<boolean> => invoke<boolean>("open_wrapped").catch(() => false);
 

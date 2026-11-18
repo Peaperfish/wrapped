@@ -11,6 +11,7 @@
   import Heatmap from "./lib/Heatmap.svelte";
   import Cards from "./lib/Cards.svelte";
   import SetupScreen from "./lib/SetupScreen.svelte";
+  import SettingsModal from "./lib/SettingsModal.svelte";
   import {
     errorText,
     flushCollector,
@@ -19,6 +20,7 @@
     getSeries,
     getSummary,
     ready,
+    takeOpenSettings,
   } from "./lib/api";
   import {
     type Preset,
@@ -188,6 +190,41 @@
     void loadSeries();
   }
 
+  // Settings dialog. Focus goes back to whatever opened it (the gear).
+  let settingsOpen = $state(false);
+  let settingsOpener: HTMLElement | null = null;
+
+  function openSettings(opener?: HTMLElement | null) {
+    settingsOpener = opener ?? document.getElementById("settings-gear");
+    settingsOpen = true;
+  }
+
+  async function closeSettings() {
+    settingsOpen = false;
+    await tick();
+    (settingsOpener ?? document.getElementById("settings-gear"))?.focus();
+  }
+
+  /** A change was made by the collector: fetch everything again. */
+  async function settingsChanged() {
+    seriesCache.clear();
+    await loadMeta();
+    year = clampYear(year);
+    await Promise.all([loadSeries(), loadSummary()]);
+  }
+
+  /** The tray's "Settings…" leaves a flag; look for it at start and on focus. */
+  async function checkOpenSettingsFlag() {
+    if (meta?.setup || settingsOpen) return;
+    if (await takeOpenSettings()) openSettings();
+  }
+
+  onMount(() => {
+    const f = () => void checkOpenSettingsFlag();
+    window.addEventListener("focus", f);
+    return () => window.removeEventListener("focus", f);
+  });
+
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
   /** Ask a running collector to save, wait until the last-recorded time
@@ -227,6 +264,7 @@
     // window is still hidden).
     await tick();
     void ready();
+    await checkOpenSettingsFlag();
   });
 </script>
 
@@ -241,7 +279,7 @@
     />
   </main>
 {:else}
-<main>
+<main inert={settingsOpen}>
   <Header
     {selection}
     {preset}
@@ -252,6 +290,7 @@
     onpreset={(p) => select(presetRange(p, today), true, true)}
     oncustom={(r) => select(r, true, true)}
     onrefresh={refresh}
+    onsettings={(el) => openSettings(el)}
   />
 
   {#if metaError}
@@ -299,6 +338,9 @@
     </p>
   {/if}
 </main>
+{#if settingsOpen && meta}
+  <SettingsModal {meta} onchanged={settingsChanged} onclose={closeSettings} />
+{/if}
 {/if}
 
 <style>

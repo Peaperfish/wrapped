@@ -113,6 +113,15 @@ fn app_names(ids: Vec<String>) -> std::collections::HashMap<String, String> {
     names::app_names(&ids)
 }
 
+/// The tray's "Settings…" leaves a flag file next to the database; the page
+/// asks for it at start and when the window gains focus. True (and the flag
+/// removed) when Settings should open now.
+#[tauri::command]
+fn take_open_settings(state: State<'_, AppState>) -> bool {
+    let Ok(db) = state.db() else { return false };
+    std::fs::remove_file(wrapped_core::ctl::open_settings_flag(db)).is_ok()
+}
+
 /// Recorded app bundle ids, most time first (exclude list suggestions).
 #[tauri::command(async)]
 fn recorded_apps(state: State<'_, AppState>) -> data::Result<Vec<String>> {
@@ -316,6 +325,7 @@ pub fn main() -> i32 {
             series,
             app_names,
             flush_collector,
+            take_open_settings,
             recorded_apps,
             git_emails,
             export_data,
