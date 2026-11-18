@@ -121,6 +121,7 @@
   const yearTotal = $derived(values ? values.reduce((a, b) => a + b, 0) : 0);
 
   const inSelection = (d: Ymd): boolean => selection.from <= d && d <= selection.to;
+  const single = $derived(selection.from === selection.to);
 
   // ---------- pointer and keyboard ----------
 
@@ -283,7 +284,8 @@
           height={CELL}
           rx="2.5"
           fill={fill(c)}
-          class:selected={inSelection(c.date)}
+          class:dim={!inSelection(c.date)}
+          class:ring={single && c.date === selection.from}
           class:today={c.date === today}
         />
       {/each}
@@ -376,8 +378,16 @@
     stroke: rgba(var(--accent-rgb), 0.9);
     stroke-width: 1;
   }
-  rect.selected {
-    stroke: var(--cell-selected);
+  /* A selection keeps its cells' colours; everything else steps back. */
+  rect {
+    transition: opacity 0.12s;
+  }
+  rect.dim {
+    opacity: 0.35;
+  }
+  /* One day: a thin accent ring instead of a band. */
+  rect.ring {
+    stroke: var(--accent);
     stroke-width: 1.4;
   }
   .tooltip {
