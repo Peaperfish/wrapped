@@ -131,7 +131,7 @@ case "$RUNNING" in
     *-dirty*) echo "warning: built from a tree with uncommitted changes ($RUNNING)" >&2 ;;
 esac
 
-# 5. Remove every other Wrapped.app the build produced, unregistering first so
+# 5. Remove every other Wrapped.app the build produced (target/release/Wrapped.app included), unregistering first so
 #    LaunchServices (and the login item) only know the installed copy.
 #    Only app bundles are removed; no cargo clean.
 REMOVED=0
@@ -143,4 +143,34 @@ while IFS= read -r app; do
     REMOVED=$((REMOVED + 1))
 done < <(find "$REPO/target" -name 'Wrapped.app' -type d -prune)
 
-echo "Wrapped.app: $OLD_VERSION -> $NEW_VERSION, installed at $DEST (pid $PID), dashboard $DASH_RUNNING, removed $REMOVED other bundle(s)"
+# 6. Unregister every other copy Launch Services still knows about (deleted
+#    build folders, moved apps), for both bundle ids. Only the registration is
+#    removed here; files outside target/ are never deleted.
+ID_APP=io.github.peaperfish.wrapped
+ID_DASH=io.github.peaperfish.wrapped.dashboard
+STALE=0
+while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    case "$path" in
+        "$DEST"|"$DEST/$DASH_REL") continue ;;
+    esac
+    "$LSREGISTER" -u "$path" 2>/dev/null || true
+    STALE=$((STALE + 1))
+done < <("$LSREGISTER" -dump 2>/dev/null | awk -v a="$ID_APP" -v d="$ID_DASH" '
+    /^path:/ { p = $0; sub(/^path: +/, "", p); sub(/ \(0x[0-9a-f]+\)$/, "", p) }
+    /^identifier:/ { id = $2; if (id == a || id == d) print p }' | sort -u)
+
+echo "Wrapped.app: $OLD_VERSION -> $NEW_VERSION, installed at $DEST (pid $PID), dashboard $DASH_RUNNING, removed $REMOVED other bundle(s), unregistered $STALE stale path(s)"
+
+# 7. What Spotlight knows now: exactly the installed copies.
+sleep 1
+for ID in "$ID_APP" "$ID_DASH"; do
+    FOUND=$(mdfind "kMDItemCFBundleIdentifier == '$ID'" || true)
+    echo "mdfind $ID:"
+    echo "${FOUND:-  (none)}"
+    EXPECT="$DEST"
+    [ "$ID" = "$ID_DASH" ] && EXPECT="$DEST/$DASH_REL"
+    OTHERS=$(printf '%s\n' "$FOUND" | grep -v -x -F -e "$EXPECT" -e '' || true)
+    [ -z "$OTHERS" ] || echo "warning: other copies of $ID are still indexed:
+$OTHERS" >&2
+done

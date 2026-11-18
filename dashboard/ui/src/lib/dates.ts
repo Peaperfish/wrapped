@@ -71,6 +71,53 @@ export function presetRange(p: Exclude<Preset, "custom">, today: Ymd): Range {
   }
 }
 
+const daysInMonth = (y: number, m: number): number => new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+/** What to ask the backend for a selection: the range to summarise and,
+ *  for a preset period still in progress, the range to compare it with. */
+export interface SummaryQuery extends Range {
+  vs?: Range;
+}
+
+/**
+ * A preset that contains today (this week / month / year) is summarised only
+ * up to today and compared with the same elapsed days of the period before:
+ * Mon..today vs last Mon..same weekday; the 1st..today vs the 1st..the same
+ * day of the previous month (clamped to its length); Jan 1..today vs Jan 1..
+ * the same date last year (Feb 29 becomes Feb 28). Everything else (today,
+ * custom ranges, finished periods) has no explicit comparison: the backend
+ * uses the previous range of equal length.
+ */
+export function summaryQuery(r: Range, today: Ymd): SummaryQuery {
+  const p = presetOf(r, today);
+  const [y, m, d] = parts(today);
+  switch (p) {
+    case "week": {
+      const vsFrom = addDays(r.from, -7);
+      return { from: r.from, to: today, vs: { from: vsFrom, to: addDays(vsFrom, weekday(today)) } };
+    }
+    case "month": {
+      const [py, pm] = m === 1 ? [y - 1, 12] : [y, m - 1];
+      const day = Math.min(d, daysInMonth(py, pm));
+      return {
+        from: r.from,
+        to: today,
+        vs: { from: `${py}-${pad(pm)}-01`, to: `${py}-${pad(pm)}-${pad(day)}` },
+      };
+    }
+    case "year": {
+      const day = m === 2 && d === 29 ? 28 : d;
+      return {
+        from: r.from,
+        to: today,
+        vs: { from: `${y - 1}-01-01`, to: `${y - 1}-${pad(m)}-${pad(day)}` },
+      };
+    }
+    default:
+      return { from: r.from, to: r.to };
+  }
+}
+
 /** The preset a range is, or "custom". */
 export function presetOf(r: Range, today: Ymd): Preset {
   for (const p of ["today", "week", "month", "year"] as const) {

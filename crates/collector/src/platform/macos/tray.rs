@@ -1,5 +1,7 @@
 //! Native menu-bar icon (NSStatusItem + NSMenu; no web view).
 //!
+//! Reopening the app while it runs opens the dashboard too.
+//!
 //! Menu: status line, Open Dashboard…, Pause for 1 hour / until tomorrow /
 //! indefinitely, Resume, Open data folder, Quit. One main-thread-only Objective-C class is
 //! the app delegate (to flush on termination), the menu delegate (to refresh
@@ -48,6 +50,20 @@ define_class!(
         #[unsafe(method(applicationWillTerminate:))]
         fn will_terminate(&self, _n: &NSNotification) {
             autoreleasepool(|_| super::shutdown());
+        }
+
+        /// Opening Wrapped.app while it is already running (Spotlight, Finder,
+        /// `open`) opens the dashboard. A fresh launch gets no such call, so a
+        /// launch at login or the relaunch after an install stays silent.
+        #[unsafe(method(applicationShouldHandleReopen:hasVisibleWindows:))]
+        fn should_handle_reopen(&self, _app: &NSApplication, _visible: bool) -> bool {
+            autoreleasepool(|_| {
+                log("app reopened: opening the dashboard");
+                if let Err(e) = super::open_dashboard(&self.ivars().db) {
+                    log(&format!("reopen: Open Dashboard: {e}"));
+                }
+            });
+            false // nothing else to do (no windows to bring back)
         }
     }
 

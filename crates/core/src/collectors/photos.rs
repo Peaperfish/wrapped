@@ -96,6 +96,56 @@ pub fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
     }
 }
 
+/// Friendly names for camera labels as [`camera_label`] writes them (make +
+/// model code, compared case-insensitively). Used when presenting results,
+/// never when storing: the database keeps what the EXIF said.
+const FRIENDLY_CAMERAS: &[(&str, &str)] = &[
+    ("SONY ILCE-7RM5", "Sony α7R V"),
+    // The Air 3S has two cameras with different EXIF model codes.
+    ("DJI FC9113", "DJI Air 3S"),
+    ("DJI FC9184", "DJI Air 3S"),
+];
+
+/// The friendly name of a camera label, or the label unchanged when unknown.
+pub fn friendly_camera(label: &str) -> String {
+    FRIENDLY_CAMERAS
+        .iter()
+        .find(|(code, _)| code.eq_ignore_ascii_case(label))
+        .map_or_else(|| label.to_string(), |(_, name)| (*name).to_string())
+}
+
+/// Friendly names for lens labels the EXIF gives (display only, like cameras).
+const FRIENDLY_LENSES: &[(&str, &str)] = &[
+    ("24.0 mm f/1.8", "Air 3S wide (24mm f/1.8)"),
+    ("70.0 mm f/2.8", "Air 3S tele"),
+];
+
+/// Lens labels that mean "the file says nothing about the lens".
+const NO_LENS: &[&str] = &[UNKNOWN, "----", ""];
+
+/// The friendly name of a lens label: "No lens info" for missing / placeholder
+/// labels, the Air 3S lenses, Sigma's "<spec> | <Line> <number>" as
+/// "Sigma <spec> <Line>"; anything else unchanged.
+pub fn friendly_lens(label: &str) -> String {
+    let t = label.trim();
+    if NO_LENS.contains(&t) {
+        return "No lens info".into();
+    }
+    if let Some((_, name)) = FRIENDLY_LENSES.iter().find(|(raw, _)| raw.eq_ignore_ascii_case(t)) {
+        return (*name).into();
+    }
+    if let Some((spec, line)) = t.split_once(" | ") {
+        let mut words = line.split_whitespace();
+        if let (Some(series @ ("Art" | "Contemporary" | "Sports")), Some(num), None) =
+            (words.next(), words.next(), words.next())
+            && num.chars().all(|c| c.is_ascii_digit())
+        {
+            return format!("Sigma {} {series}", spec.trim());
+        }
+    }
+    label.to_string()
+}
+
 fn camera_of(it: &DayItem) -> String {
     camera_label(it.attr_str("make"), it.attr_str("model"))
 }
@@ -263,6 +313,45 @@ impl Collector for Photos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn friendly_camera_names() {
+        assert_eq!(friendly_camera("SONY ILCE-7RM5"), "Sony α7R V");
+        assert_eq!(friendly_camera("sony ilce-7rm5"), "Sony α7R V");
+        assert_eq!(friendly_camera("DJI FC9184"), "DJI Air 3S");
+        assert_eq!(friendly_camera("DJI FC9113"), "DJI Air 3S");
+        assert_eq!(friendly_camera("DJI FC8284"), "DJI FC8284");
+        // Unknown codes pass through unchanged.
+        assert_eq!(friendly_camera("DJI FC0000"), "DJI FC0000");
+        assert_eq!(friendly_camera("(unknown)"), "(unknown)");
+        assert_eq!(
+            friendly_camera(&camera_label(Some("SONY"), Some("ILCE-7RM5"))),
+            "Sony α7R V"
+        );
+    }
+
+    #[test]
+    fn friendly_lens_names() {
+        assert_eq!(friendly_lens("24.0 mm f/1.8"), "Air 3S wide (24mm f/1.8)");
+        assert_eq!(friendly_lens("70.0 mm f/2.8"), "Air 3S tele");
+        assert_eq!(
+            friendly_lens("24-70mm F2.8 DG DN II | Art 024"),
+            "Sigma 24-70mm F2.8 DG DN II Art"
+        );
+        assert_eq!(
+            friendly_lens("28-70mm F2.8 DG DN | Contemporary 021"),
+            "Sigma 28-70mm F2.8 DG DN Contemporary"
+        );
+        assert_eq!(
+            friendly_lens("150-600mm F5-6.3 DG DN OS | Sports 021"),
+            "Sigma 150-600mm F5-6.3 DG DN OS Sports"
+        );
+        assert_eq!(friendly_lens("(unknown)"), "No lens info");
+        assert_eq!(friendly_lens("----"), "No lens info");
+        // Everything else is left alone.
+        assert_eq!(friendly_lens("FE 20mm F1.8 G"), "FE 20mm F1.8 G");
+        assert_eq!(friendly_lens("a | b c d"), "a | b c d");
+    }
 
     #[test]
     fn camera_labels() {

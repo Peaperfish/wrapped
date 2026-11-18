@@ -61,15 +61,21 @@ fn commands_over_a_synthetic_year() {
         ),
         (
             "summary, full year (2025-11-17..2026-11-16)",
-            Box::new(|| drop(data::summary(&path, "2025-11-17", "2026-11-16").unwrap())),
+            Box::new(|| {
+                drop(data::summary(&path, "2025-11-17", "2026-11-16", None, None).unwrap())
+            }),
         ),
         (
             "summary, calendar year 2026",
-            Box::new(|| drop(data::summary(&path, "2026-01-01", "2026-12-31").unwrap())),
+            Box::new(|| {
+                drop(data::summary(&path, "2026-01-01", "2026-12-31", None, None).unwrap())
+            }),
         ),
         (
             "summary, one month",
-            Box::new(|| drop(data::summary(&path, "2026-10-01", "2026-10-31").unwrap())),
+            Box::new(|| {
+                drop(data::summary(&path, "2026-10-01", "2026-10-31", None, None).unwrap())
+            }),
         ),
         (
             "series 2026, screen time",
@@ -92,7 +98,11 @@ fn commands_over_a_synthetic_year() {
     let all = wrapped_core::collectors::builtin();
     let st = wrapped_core::stats::Stats::new(&store, &all, &settings);
     let r = wrapped_core::stats::DateRange::new(d("2025-11-17"), d("2026-11-16")).unwrap();
-    let (med, max) = time(7, || st.summary(r, 5).unwrap().to_json());
+    let (med, max) = time(7, || {
+        st.summary(r, wrapped_core::stats::SUMMARY_TOP_N)
+            .unwrap()
+            .to_json()
+    });
     let name = "summary, full year, connection kept open";
     println!("{name:<46} {med:>6.2} ms {max:>6.2} ms");
     drop(st);
