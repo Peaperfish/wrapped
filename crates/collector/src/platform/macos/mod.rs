@@ -53,6 +53,53 @@ fn lock_path(db: &Path) -> PathBuf {
     db.with_extension("lock")
 }
 
+/// The dashboard nested in this app bundle.
+pub const DASHBOARD_APP: &str = "Contents/Helpers/Wrapped Dashboard.app";
+
+/// Open the dashboard on `db`, or bring its window to the front if it is
+/// already running. Inside `Wrapped.app`, `open`s the nested
+/// `Wrapped Dashboard.app` (Launch Services keeps it to one instance; the
+/// arguments only apply to a fresh launch). A bare binary (`cargo run`)
+/// starts the `wrapped-dashboard` binary next to it instead.
+pub fn open_dashboard(db: &Path) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("cannot find own executable: {e}"))?;
+    let dir = exe.parent().unwrap_or(Path::new("."));
+    // <bundle>/Contents/MacOS/wrapped-collector -> <bundle>
+    let nested = dir
+        .parent()
+        .and_then(Path::parent)
+        .map(|bundle| bundle.join(DASHBOARD_APP));
+    let mut cmd = match nested {
+        Some(app) if app.is_dir() => {
+            let mut c = std::process::Command::new("/usr/bin/open");
+            c.arg(app).arg("--args").arg("--db").arg(db);
+            c
+        }
+        _ => {
+            let bin = dir.join("wrapped-dashboard");
+            if !bin.is_file() {
+                return Err(format!(
+                    "no dashboard found ({DASHBOARD_APP} in the app bundle, or {})",
+                    bin.display()
+                ));
+            }
+            let mut c = std::process::Command::new(bin);
+            c.arg("--db").arg(db);
+            c
+        }
+    };
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("cannot start the dashboard: {e}"))?;
+    // Reap it off the main thread (`open` exits at once; a bare dashboard
+    // binary lives until its window closes).
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 pub fn running_pid(db: &Path) -> Option<i32> {
     lock::running_pid(&lock_path(db))
 }
@@ -300,7 +347,7 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
     let app = NSApplication::sharedApplication(mtm);
     // Menu-bar only: no Dock icon, no app menu.
     app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
-    let delegate = tray::Delegate::new(mtm, data_dir_of(db));
+    let delegate = tray::Delegate::new(mtm, data_dir_of(db), db.to_path_buf());
     app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
     tray::install(&delegate, mtm);
     let _sources = sources::install();

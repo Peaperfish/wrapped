@@ -1,7 +1,7 @@
 //! Native menu-bar icon (NSStatusItem + NSMenu; no web view).
 //!
-//! Menu: status line, Pause for 1 hour / until tomorrow / indefinitely,
-//! Resume, Open data folder, Quit. One main-thread-only Objective-C class is
+//! Menu: status line, Open Dashboard…, Pause for 1 hour / until tomorrow /
+//! indefinitely, Resume, Open data folder, Quit. One main-thread-only Objective-C class is
 //! the app delegate (to flush on termination), the menu delegate (to refresh
 //! the status line when the menu opens) and the target of every menu item.
 
@@ -26,6 +26,7 @@ const SQUARE_LENGTH: f64 = -2.0;
 
 pub struct Ivars {
     data_dir: PathBuf,
+    db: PathBuf,
     status_item: OnceCell<Retained<NSStatusItem>>,
     status_line: OnceCell<Retained<NSMenuItem>>,
     resume_item: OnceCell<Retained<NSMenuItem>>,
@@ -78,6 +79,13 @@ define_class!(
             self.set_pause(|_| Pause::Off, "Resume");
         }
 
+        #[unsafe(method(openDashboard:))]
+        fn open_dashboard(&self, _sender: Option<&AnyObject>) {
+            if let Err(e) = super::open_dashboard(&self.ivars().db) {
+                log(&format!("tray: Open Dashboard: {e}"));
+            }
+        }
+
         #[unsafe(method(openDataFolder:))]
         fn open_data_folder(&self, _sender: Option<&AnyObject>) {
             autoreleasepool(|_| {
@@ -99,9 +107,10 @@ thread_local! {
 }
 
 impl Delegate {
-    pub fn new(mtm: MainThreadMarker, data_dir: PathBuf) -> Retained<Self> {
+    pub fn new(mtm: MainThreadMarker, data_dir: PathBuf, db: PathBuf) -> Retained<Self> {
         let this = Self::alloc(mtm).set_ivars(Ivars {
             data_dir,
+            db,
             status_item: OnceCell::new(),
             status_line: OnceCell::new(),
             resume_item: OnceCell::new(),
@@ -228,6 +237,14 @@ pub fn install(delegate: &Retained<Delegate>, mtm: MainThreadMarker) {
     let status_line = item(mtm, "Wrapped: tracking", None, "", delegate);
     status_line.setEnabled(false);
     menu.addItem(&status_line);
+    menu.addItem(&NSMenuItem::separatorItem(mtm));
+    menu.addItem(&item(
+        mtm,
+        "Open Dashboard…",
+        Some(sel!(openDashboard:)),
+        "d",
+        delegate,
+    ));
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&item(
         mtm,

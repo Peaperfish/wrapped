@@ -1,6 +1,7 @@
 //! Placeholder for platforms without a collector yet (Windows: Milestone 9).
 //! It exists so the workspace builds and the core tests run everywhere; the
-//! CLI's database commands still work with `WRAPPED_DB` set.
+//! CLI's database commands still work with `WRAPPED_DB` set, and
+//! `wrapped-collector dashboard` starts the dashboard next to it.
 
 use std::path::{Path, PathBuf};
 
@@ -19,6 +20,28 @@ pub fn running_pid(_db: &Path) -> Option<i32> {
 
 pub fn request_flush(_db: &Path) -> Option<i32> {
     None
+}
+
+/// Start the dashboard (`wrapped-dashboard[.exe]` next to this executable)
+/// on `db`. No single-instance handling yet: a second call opens a second
+/// window (Windows port, Milestone 9).
+pub fn open_dashboard(db: &Path) -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("cannot find own executable: {e}"))?;
+    let bin = exe.with_file_name(format!("wrapped-dashboard{}", std::env::consts::EXE_SUFFIX));
+    if !bin.is_file() {
+        return Err(format!("no dashboard at {}", bin.display()));
+    }
+    let child = std::process::Command::new(&bin)
+        .arg("--db")
+        .arg(db)
+        .spawn()
+        .map_err(|e| format!("cannot start {}: {e}", bin.display()))?;
+    // Reap it when its window closes.
+    std::thread::spawn(move || {
+        let mut child = child;
+        let _ = child.wait();
+    });
+    Ok(())
 }
 
 pub fn login(_cmd: &str) -> i32 {
