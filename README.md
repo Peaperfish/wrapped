@@ -2,7 +2,7 @@
 
 A local-only desktop app that tracks how you use your computer and turns it into a dashboard, a live hardware tab, and Spotify-Wrapped-style recaps.
 
-> **Status: early development.** The Milestone 1 collector runs on macOS (tray icon, no UI yet); see [docs/MILESTONE1.md](docs/MILESTONE1.md).
+> **Status: early development.** The collector runs on macOS (tray icon, no UI yet): app usage, active / idle, git, photos and disk & memory, plus a stats engine for any date range; see [docs/MILESTONE1.md](docs/MILESTONE1.md) to [docs/MILESTONE4.md](docs/MILESTONE4.md).
 
 *Wrapped is a working name and may change. This project is not affiliated with Spotify.*
 

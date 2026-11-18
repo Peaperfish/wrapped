@@ -29,7 +29,7 @@
 use std::collections::BTreeMap;
 
 use crate::collector::{
-    Collector, CollectorInfo, DayInput, DaySample, Kind, MAX_SAMPLE_WINDOW_MS, MetricDef,
+    Agg, Collector, CollectorInfo, DayInput, DaySample, Kind, MAX_SAMPLE_WINDOW_MS, MetricDef,
     MetricValue, Sink, Unit,
 };
 use crate::event::SystemEvent;
@@ -309,29 +309,44 @@ impl Collector for DiskMemory {
     }
 
     fn metrics(&self) -> Vec<MetricDef> {
-        let m = |id, title, unit, key| MetricDef {
+        let m = |id, title, unit, agg, key| MetricDef {
             id,
             title,
             unit,
+            agg,
             key,
         };
         vec![
-            m("bytes_read", "Disk read", Unit::Bytes, None),
-            m("bytes_written", "Disk written", Unit::Bytes, None),
-            m("swap_in_bytes", "Swapped in", Unit::Bytes, None),
-            m("swap_out_bytes", "Swapped out", Unit::Bytes, None),
+            m("bytes_read", "Disk read", Unit::Bytes, Agg::Sum, None),
+            m("bytes_written", "Disk written", Unit::Bytes, Agg::Sum, None),
+            m("swap_in_bytes", "Swapped in", Unit::Bytes, Agg::Sum, None),
+            m("swap_out_bytes", "Swapped out", Unit::Bytes, Agg::Sum, None),
             m(
                 "pressure_secs_by_level",
                 "Memory pressure",
                 Unit::Seconds,
+                Agg::Sum,
                 Some("normal | warning | critical"),
             ),
-            m("compressed_peak_bytes", "Compressed memory, peak", Unit::Bytes, None),
-            m("compressed_avg_bytes", "Compressed memory, average", Unit::Bytes, None),
+            m(
+                "compressed_peak_bytes",
+                "Compressed memory, peak",
+                Unit::Bytes,
+                Agg::Max,
+                None,
+            ),
+            m(
+                "compressed_avg_bytes",
+                "Compressed memory, average",
+                Unit::Bytes,
+                Agg::Mean,
+                None,
+            ),
             m(
                 "bytes_written_by_hour",
                 "Disk written by hour of day",
                 Unit::Bytes,
+                Agg::Sum,
                 Some("local hour 00..23"),
             ),
         ]

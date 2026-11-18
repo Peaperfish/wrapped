@@ -14,13 +14,17 @@ use wrapped_core::{Clock, Engine, Store, SystemClock, collectors};
 use crate::platform;
 
 const USAGE: &str = "\
-wrapped-collector: local-only usage tracker (Milestone 3)
+wrapped-collector: local-only usage tracker (Milestone 4)
 
 USAGE
   wrapped-collector [--debug]               run the collector (tray icon)
   wrapped-collector settings get [<key>]    show one or all settings
   wrapped-collector settings set <key> <value>
   wrapped-collector stats [today|YYYY-MM-DD]     daily metrics for a local day
+  wrapped-collector stats range <from> <to> [--json]
+                                            totals, top keys, change vs the previous period,
+                                            time of day, per-day series and records for an
+                                            inclusive range of local dates (read-only)
   wrapped-collector sessions [today|YYYY-MM-DD]  session rows for a local day
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
@@ -76,6 +80,8 @@ pub fn main() -> i32 {
         ["settings", "get"] => settings_get(&db, None),
         ["settings", "get", key] => settings_get(&db, Some(key)),
         ["settings", "set", key, value] => settings_set(&db, key, value),
+        ["stats", "range", from, to] => stats_range(&db, from, to, false),
+        ["stats", "range", from, to, "--json"] => stats_range(&db, from, to, true),
         ["stats"] => stats(&db, "today"),
         ["stats", day] => stats(&db, day),
         ["sessions"] => sessions(&db, "today"),
@@ -325,6 +331,201 @@ fn sessions(db: &std::path::Path, day: &str) -> CliResult {
         );
     }
     Ok(())
+}
+
+/// Stats for an inclusive range of local dates. Opens the database read-only
+/// (no migration, no writes); a collector running on it is asked to flush
+/// first, as `stats` does.
+fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliResult {
+    use wrapped_core::stats::{DateRange, Stats, hidden_collectors};
+    let range = DateRange::new(parse_day(from)?, parse_day(to)?)?;
+    if !db.exists() {
+        return Err(format!("no database at {}", db.display()).into());
+    }
+    if platform::request_flush(db).is_some() {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    let store = Store::open_read_only(db)?;
+    let (settings, _) = store.load_settings()?;
+    let all = collectors::builtin();
+    let st = Stats::new(&store, &all, &settings);
+    let sum = st.summary(range, 5)?;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&sum.to_json())?);
+        return Ok(());
+    }
+    let hidden = hidden_collectors(&all, &settings);
+    print_summary(&sum, &st, &hidden);
+    Ok(())
+}
+
+fn fmt_value(v: f64, unit: Unit) -> String {
+    match unit {
+        Unit::Seconds => fmt_secs(v),
+        Unit::Bytes => fmt_bytes(v),
+        Unit::Count if v.fract() == 0.0 => format!("{v:.0}"),
+        Unit::Count => format!("{v:.2}"),
+    }
+}
+
+fn fmt_pct(p: Option<f64>) -> String {
+    match p {
+        Some(p) => format!("{p:+.1}%"),
+        None => "new".to_string(),
+    }
+}
+
+/// 24 hourly values as one line of block characters.
+fn sparkline(hours: &[f64; 24]) -> String {
+    const BARS: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+    let max = hours.iter().copied().fold(0.0, f64::max);
+    hours
+        .iter()
+        .map(|h| {
+            if max <= 0.0 || *h <= 0.0 {
+                ' '
+            } else {
+                BARS[((h / max) * 7.0).round() as usize]
+            }
+        })
+        .collect()
+}
+
+fn print_summary(
+    sum: &wrapped_core::stats::Summary,
+    st: &wrapped_core::stats::Stats<'_>,
+    hidden: &std::collections::BTreeSet<&'static str>,
+) {
+    let r = sum.range;
+    println!(
+        "Stats for {} .. {} ({} day{}), compared with {} .. {}",
+        r.from,
+        r.to,
+        r.days(),
+        if r.days() == 1 { "" } else { "s" },
+        sum.previous.from,
+        sum.previous.to
+    );
+    if !hidden.is_empty() {
+        let h: Vec<&str> = hidden.iter().copied().collect();
+        println!("Hidden (collector off): {}", h.join(", "));
+    }
+    let mut collectors: Vec<&str> = Vec::new();
+    for m in st.metrics() {
+        if !collectors.contains(&m.collector) {
+            collectors.push(m.collector);
+        }
+    }
+    for c in collectors {
+        println!();
+        println!("{c}");
+        let mut any = false;
+        for cmp in sum.comparisons.iter().filter(|x| x.collector == c) {
+            any = true;
+            println!(
+                "  {:<24} {:>16}   previous {:>16}   {}",
+                cmp.metric,
+                fmt_value(cmp.current, cmp.unit),
+                fmt_value(cmp.previous, cmp.unit),
+                fmt_pct(cmp.pct)
+            );
+        }
+        for (m, keys) in sum.top.iter().filter(|(m, _)| m.collector == c) {
+            if keys.is_empty() {
+                continue;
+            }
+            any = true;
+            println!("  top {}", m.def.id);
+            for (i, (k, v)) in keys.iter().enumerate() {
+                println!("    {}. {:<36} {:>14}", i + 1, k, fmt_value(*v, m.def.unit));
+            }
+        }
+        for (m, days) in sum.series.iter().filter(|(m, _)| m.collector == c) {
+            let active = days.iter().filter(|d| d.1 > 0.0).count();
+            if active == 0 {
+                continue;
+            }
+            any = true;
+            let best = days
+                .iter()
+                .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+                .expect("non-empty");
+            println!(
+                "  per day {:<20} {active} of {} days > 0, highest {} ({})",
+                m.def.id,
+                days.len(),
+                best.0,
+                fmt_value(best.1, m.def.unit)
+            );
+        }
+        if !any {
+            println!("  (no data)");
+        }
+    }
+    let profiles: Vec<_> = sum
+        .time_of_day
+        .iter()
+        .filter(|p| p.hours.iter().any(|h| *h > 0.0))
+        .collect();
+    if !profiles.is_empty() {
+        println!();
+        println!("Time of day (local hours 00..23)");
+        for p in profiles {
+            let peak = p
+                .hours
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.total_cmp(b.1))
+                .map_or(0, |x| x.0);
+            println!(
+                "  {:<34} |{}|  peak {peak:02}:00",
+                format!("{}/{}", p.collector, p.metric),
+                sparkline(&p.hours)
+            );
+        }
+    }
+    println!();
+    println!("Records");
+    let rec = &sum.records;
+    let mut none = true;
+    if let Some(l) = &rec.longest_session {
+        none = false;
+        println!(
+            "  longest app session   {} ({}, {} .. {})",
+            fmt_secs(l.secs),
+            l.app,
+            l.start.to_rfc3339(),
+            l.end.to_rfc3339()
+        );
+    }
+    if let Some(n) = &rec.latest_night {
+        none = false;
+        println!(
+            "  latest night          {} at {:02}:{:02} ({})",
+            n.night,
+            n.clock_min / 60 % 24,
+            n.clock_min % 60,
+            n.at.to_rfc3339()
+        );
+    }
+    for (name, s) in [
+        ("longest active streak", rec.active_streak),
+        ("longest commit streak", rec.commit_streak),
+    ] {
+        if let Some(s) = s {
+            none = false;
+            println!(
+                "  {name}  {} day{} ({} .. {})",
+                s.days,
+                if s.days == 1 { "" } else { "s" },
+                s.from,
+                s.to
+            );
+        }
+    }
+    if none {
+        println!("  (none)");
+    }
 }
 
 /// Every author email in the configured git folders, for choosing

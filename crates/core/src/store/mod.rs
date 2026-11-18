@@ -160,6 +160,31 @@ impl Store {
         Self::init(conn)
     }
 
+    /// Open an existing database for reading only: no migration, no writes
+    /// (stats over another database). Refuses a schema newer than this build.
+    /// An older schema is fine for reads of `daily_metrics` and `sessions`.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        use rusqlite::OpenFlags;
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        let found = migrations::schema_version(&conn)?;
+        if found > migrations::MIGRATIONS.len() {
+            return Err(Error::NewerSchema {
+                found,
+                supported: migrations::MIGRATIONS.len(),
+            });
+        }
+        let max_session_ms = read_max_session(&conn)?;
+        Ok(Self {
+            conn,
+            max_session_ms,
+            flushed_open: HashMap::new(),
+        })
+    }
+
     pub fn open_in_memory() -> Result<Self> {
         Self::init(Connection::open_in_memory()?)
     }
@@ -169,15 +194,7 @@ impl Store {
         conn.pragma_update(None, "journal_size_limit", 1_048_576)?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
         migrations::migrate(&mut conn)?;
-        let max_session_ms = conn
-            .query_row(
-                "SELECT value FROM settings WHERE key = ?1",
-                [KEY_MAX_SESSION],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()?
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+        let max_session_ms = read_max_session(&conn)?;
         Ok(Self {
             conn,
             max_session_ms,
@@ -577,6 +594,77 @@ impl Store {
         Ok(rows)
     }
 
+    /// Longest session ever stored (ms): how far before a range a session
+    /// overlapping it can start.
+    pub fn max_session_ms(&self) -> i64 {
+        self.max_session_ms
+    }
+
+    /// Calls `f(date, collector, metric, key, value)` for every
+    /// `daily_metrics` row with `from <= date <= to` (optionally one
+    /// collector's metric), in key order. One range scan on the primary key.
+    pub fn each_daily_metric_between(
+        &self,
+        from: NaiveDate,
+        to: NaiveDate,
+        only: Option<(&str, &str)>,
+        mut f: impl FnMut(NaiveDate, &str, &str, &str, f64),
+    ) -> Result<()> {
+        let (c, m) = only.unzip();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT date, collector, metric, key, value FROM daily_metrics
+             WHERE date >= ?1 AND date <= ?2
+               AND (?3 IS NULL OR (collector = ?3 AND metric = ?4))",
+        )?;
+        let mut rows = stmt.query(params![from.to_string(), to.to_string(), c, m])?;
+        let mut last: Option<(String, NaiveDate)> = None;
+        while let Some(r) = rows.next()? {
+            let ds = r.get_ref(0)?.as_str().map_err(rusqlite::Error::from)?;
+            let date = match &last {
+                Some((s, d)) if s == ds => *d,
+                _ => {
+                    let Ok(d) = NaiveDate::parse_from_str(ds, "%Y-%m-%d") else {
+                        continue;
+                    };
+                    last = Some((ds.to_string(), d));
+                    d
+                }
+            };
+            let col = r.get_ref(1)?.as_str().map_err(rusqlite::Error::from)?;
+            let met = r.get_ref(2)?.as_str().map_err(rusqlite::Error::from)?;
+            let key = r.get_ref(3)?.as_str().map_err(rusqlite::Error::from)?;
+            f(date, col, met, key, r.get(4)?);
+        }
+        Ok(())
+    }
+
+    /// Calls `f(key, start, end)` for every session of `collector` that
+    /// starts in `[from_ms, to_ms)` UTC, in start order. One range scan on the
+    /// primary key.
+    pub fn each_session_of(
+        &self,
+        collector: &str,
+        from_ms: i64,
+        to_ms: i64,
+        mut f: impl FnMut(&str, Timestamp, Timestamp),
+    ) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT key, start_ms, start_off, end_ms, end_off FROM sessions
+             WHERE collector = ?1 AND start_ms >= ?2 AND start_ms < ?3
+             ORDER BY start_ms",
+        )?;
+        let mut rows = stmt.query(params![collector, from_ms, to_ms])?;
+        while let Some(r) = rows.next()? {
+            let key = r.get_ref(0)?.as_str().map_err(rusqlite::Error::from)?;
+            f(
+                key,
+                Timestamp::new(r.get(1)?, r.get(2)?),
+                Timestamp::new(r.get(3)?, r.get(4)?),
+            );
+        }
+        Ok(())
+    }
+
     /// Sessions of `collector` (all collectors if `None`) overlapping
     /// `[from_ms, to_ms)` UTC, ordered by start.
     pub fn sessions(
@@ -603,6 +691,18 @@ impl Store {
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
     }
+}
+
+fn read_max_session(conn: &Connection) -> Result<i64> {
+    Ok(conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = ?1",
+            [KEY_MAX_SESSION],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0))
 }
 
 fn metric_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MetricRow> {

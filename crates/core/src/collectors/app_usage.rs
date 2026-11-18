@@ -9,6 +9,7 @@
 use std::collections::BTreeMap;
 
 use crate::collector::{
+    Agg,
     Collector, CollectorInfo, DayInput, Kind, MetricDef, MetricValue, Sink, Unit,
 };
 use crate::event::{SystemEvent, away_app_reason};
@@ -85,15 +86,15 @@ impl Collector for AppUsage {
 
     fn metrics(&self) -> Vec<MetricDef> {
         vec![
-            MetricDef { id: "screen_time_secs", title: "Screen time", unit: Unit::Seconds, key: None },
-            MetricDef { id: "app_secs", title: "Time per app", unit: Unit::Seconds, key: Some("bundle id") },
+            MetricDef { id: "screen_time_secs", title: "Screen time", unit: Unit::Seconds, agg: Agg::Sum, key: None },
+            MetricDef { id: "app_secs", title: "Time per app", unit: Unit::Seconds, agg: Agg::Sum, key: Some("bundle id") },
             MetricDef {
                 id: "active_secs_by_hour",
                 title: "Active time by hour",
-                unit: Unit::Seconds,
+                unit: Unit::Seconds, agg: Agg::Sum,
                 key: Some("local hour 00..23"),
             },
-            MetricDef { id: "app_switches", title: "App switches", unit: Unit::Count, key: None },
+            MetricDef { id: "app_switches", title: "App switches", unit: Unit::Count, agg: Agg::Sum, key: None },
         ]
     }
 

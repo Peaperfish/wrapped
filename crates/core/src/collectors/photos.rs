@@ -23,6 +23,7 @@ use chrono::NaiveDateTime;
 use serde_json::{Map, Value, json};
 
 use crate::collector::{
+    Agg,
     Collector, CollectorInfo, DayInput, DayItem, FileStamp, Kind, MetricDef, MetricValue, Sink,
     Unit,
 };
@@ -213,7 +214,7 @@ impl Collector for Photos {
         let m = |id, title, key| MetricDef {
             id,
             title,
-            unit: Unit::Count,
+            unit: Unit::Count, agg: Agg::Sum,
             key,
         };
         vec![
