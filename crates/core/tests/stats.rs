@@ -963,6 +963,9 @@ fn photo_lenses_get_friendly_names_and_merge() {
     lens("(unknown)", 7.0);
     lens("----", 3.0); // same meaning: merges with (unknown)
     lens("70.0 mm f/2.8", 2.0);
+    lens("(unknown) FC9113", 5.0); // fixed-lens drone, no lens field
+    lens("(unknown) FC9184", 4.0); // merges with "70.0 mm f/2.8"
+    lens("(unknown) ILCE-7M4", 6.0); // other camera: No lens info
     let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
     let sum = st.summary(range("2026-11-10", "2026-11-10"), 8).unwrap();
     let (_, keys) = sum
@@ -974,8 +977,9 @@ fn photo_lenses_get_friendly_names_and_merge() {
         keys,
         &vec![
             ("Sigma 24-70mm F2.8 DG DN II Art".to_string(), 40.0),
-            ("No lens info".to_string(), 10.0),
-            ("Air 3S tele".to_string(), 2.0)
+            ("No lens info".to_string(), 16.0),
+            ("Air 3S tele".to_string(), 6.0),
+            ("Air 3S wide (24mm f/1.8)".to_string(), 5.0)
         ]
     );
     // Stored keys stay raw.

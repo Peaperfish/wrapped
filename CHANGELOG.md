@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Photos: shots whose file has no lens field are stored under "(unknown) <camera model>" (raw) in `shots_by_lens`; the display layer names them for fixed-lens cameras (DJI FC9113 → "Air 3S wide (24mm f/1.8)", FC9184 → "Air 3S tele", merged with the same-named rows) and shows any other as "No lens info". Days already stored keep the plain "(unknown)" until their rollups are recomputed.
 - An idle (or display-off) period that turns into system sleep is now split at the moment sleep starts, the part after it recorded as `sleep` (still one "time away"), so "away excluding sleep" no longer overcounts. Only new data; existing periods keep their keys.
 - `wrapped-collector` no longer panics with "Broken pipe" when its output is piped into something that closes early (`stats range ... --json | head -1`); it exits quietly with status 0.
 - `build.rs` (collector and dashboard) also watches the current branch ref, `packed-refs` and the index, so a plain `cargo build` after a new commit shows the new hash; still works without `.git`.
