@@ -8,7 +8,7 @@ use wrapped_core::collectors;
 use wrapped_core::settings::Pause;
 use wrapped_core::store::SessionRow;
 use wrapped_core::time::{MS_PER_DAY, MS_PER_MIN};
-use wrapped_core::{Engine, ManualClock, Store, SystemEvent, Timestamp};
+use wrapped_core::{DisplayAssertion, Engine, ManualClock, Store, SystemEvent, Timestamp};
 
 const CST: i32 = 480; // UTC+8
 
@@ -43,10 +43,14 @@ impl H {
     fn tick(&mut self, secs_since_input: f64) {
         self.tick_with(secs_since_input, &[]);
     }
-    fn tick_with(&mut self, secs_since_input: f64, holders: &[&str]) {
+    /// Tick with display assertions: `(holder, held by the front app)`.
+    fn tick_with(&mut self, secs_since_input: f64, holders: &[(&str, bool)]) {
         self.ev(SystemEvent::IdleTick {
             secs_since_input,
-            display_assertion_holders: holders.iter().map(|s| s.to_string()).collect(),
+            display_assertions: holders
+                .iter()
+                .map(|&(h, front)| DisplayAssertion::new(h, front))
+                .collect(),
         });
     }
     fn adv(&self, secs: i64) {
@@ -256,7 +260,7 @@ fn display_assertion_keeps_user_active() {
     h.app("com.apple.QuickTimePlayerX");
     for m in 1..=20 {
         h.adv(60);
-        h.tick_with(60.0 * m as f64, &["QuickTime Player"]);
+        h.tick_with(60.0 * m as f64, &[("QuickTime Player", true)]);
     }
     // 09:20: video still playing, 20 min without input: still one open session.
     assert_eq!(
@@ -284,6 +288,148 @@ fn display_assertion_keeps_user_active() {
     assert_eq!(
         h.sessions(AI),
         vec![s("idle", "09:20:00", "09:21:00", true)]
+    );
+}
+
+const CAFFEINATE: (&str, bool) = ("caffeinate[49222] caffeinate command-line tool", false);
+
+/// 2026-11-17: `caffeinate -d` started from a terminal kept the display awake
+/// while nobody was there. A background holder is not evidence of use: idle
+/// is backdated to the last input as if there were no assertion.
+#[test]
+fn background_display_assertion_does_not_keep_user_active() {
+    let mut h = H::new();
+    h.app("com.mitchellh.ghostty");
+    // Last input 09:00:30, then nobody for 78 minutes.
+    for m in 1..=78 {
+        h.adv(60);
+        h.tick_with(60.0 * m as f64 - 30.0, &[CAFFEINATE]);
+    }
+    assert_eq!(
+        h.sessions(AU),
+        vec![s("com.mitchellh.ghostty", "09:00:00", "09:00:30", false)]
+    );
+    assert_eq!(
+        h.sessions(AI),
+        vec![s("idle", "09:00:30", "10:18:00", true)]
+    );
+}
+
+/// Same with the terminal on the active-without-input list: its timeout runs
+/// from the last input, not from the last tick that saw the assertion.
+#[test]
+fn background_display_assertion_does_not_extend_active_without_input_timeout() {
+    let mut h = H::new();
+    h.e.store()
+        .set_setting("active_without_input.apps", r#"["com.mitchellh.ghostty"]"#)
+        .unwrap();
+    h.tick(0.0); // reload settings
+    h.app("com.mitchellh.ghostty");
+    for m in 1..=78 {
+        h.adv(60);
+        h.tick_with(60.0 * m as f64 - 30.0, &[CAFFEINATE]);
+    }
+    // Last input 09:00:30 + 1800 s timeout.
+    assert_eq!(
+        h.sessions(AU),
+        vec![s("com.mitchellh.ghostty", "09:00:00", "09:30:30", false)]
+    );
+    assert_eq!(
+        h.sessions(AI),
+        vec![s("idle", "09:30:30", "10:18:00", true)]
+    );
+}
+
+/// A front-app assertion (video playing in front) keeps the user present for
+/// as long as it is held; once released, an active-without-input app still
+/// gets its timeout, counted from the last tick that saw the assertion.
+#[test]
+fn front_app_display_assertion_keeps_active_then_uses_its_timeout() {
+    let mut h = H::new();
+    h.e.store()
+        .set_setting(
+            "active_without_input.apps",
+            r#"["com.apple.QuickTimePlayerX"]"#,
+        )
+        .unwrap();
+    h.tick(0.0); // reload settings
+    h.app("com.apple.QuickTimePlayerX");
+    let video = ("QuickTime Player[700] Playing video", true);
+    for m in 1..=120 {
+        h.adv(60);
+        h.tick_with(60.0 * m as f64, &[video, CAFFEINATE]);
+    }
+    // 11:00: two hours of video without input, still one open session.
+    assert_eq!(
+        h.sessions(AU),
+        vec![s(
+            "com.apple.QuickTimePlayerX",
+            "09:00:00",
+            "11:00:00",
+            true
+        )]
+    );
+    assert!(h.sessions(AI).is_empty());
+    // Video stops at 11:00; only the background holder is left.
+    for m in 121..=149 {
+        h.adv(60);
+        h.tick_with(60.0 * m as f64, &[CAFFEINATE]);
+    }
+    assert!(h.sessions(AI).is_empty(), "within the 1800 s timeout");
+    for m in 150..=151 {
+        h.adv(60);
+        h.tick_with(60.0 * m as f64, &[CAFFEINATE]);
+    }
+    assert_eq!(
+        h.sessions(AU),
+        vec![s(
+            "com.apple.QuickTimePlayerX",
+            "09:00:00",
+            "11:30:00",
+            false
+        )]
+    );
+    assert_eq!(
+        h.sessions(AI),
+        vec![s("idle", "11:30:00", "11:31:00", true)]
+    );
+}
+
+/// The front app's assertion comes and goes while a background one stays:
+/// only the front one counts, each time.
+#[test]
+fn display_assertion_switching_between_front_app_and_background() {
+    let mut h = H::new();
+    h.app("com.apple.QuickTimePlayerX");
+    let video = ("QuickTime Player[700] Playing video", true);
+    let mut m = 0;
+    let mut tick = |h: &mut H, holders: &[(&str, bool)]| {
+        m += 1;
+        h.adv(60);
+        h.tick_with(60.0 * m as f64, holders);
+    };
+    for _ in 1..=10 {
+        tick(&mut h, &[CAFFEINATE, video]); // 09:01..09:10 playing in front
+    }
+    tick(&mut h, &[CAFFEINATE]); // 09:11 paused: idle from 09:10
+    tick(&mut h, &[CAFFEINATE]); // 09:12
+    tick(&mut h, &[video, CAFFEINATE]); // 09:13 playing again
+    tick(&mut h, &[video, CAFFEINATE]); // 09:14
+    tick(&mut h, &[video, CAFFEINATE]); // 09:15
+    tick(&mut h, &[CAFFEINATE]); // 09:16 stopped: idle from 09:15
+    assert_eq!(
+        h.sessions(AU),
+        vec![
+            s("com.apple.QuickTimePlayerX", "09:00:00", "09:10:00", false),
+            s("com.apple.QuickTimePlayerX", "09:13:00", "09:15:00", false),
+        ]
+    );
+    assert_eq!(
+        h.sessions(AI),
+        vec![
+            s("idle", "09:10:00", "09:13:00", false),
+            s("idle", "09:15:00", "09:16:00", true),
+        ]
     );
 }
 
@@ -430,7 +576,7 @@ fn dark_wake_ticks_keep_sleeping_and_skip_periodic_flush() {
         let r =
             h.e.handle(SystemEvent::IdleTick {
                 secs_since_input: (asleep_secs + 30) as f64,
-                display_assertion_holders: vec![],
+                display_assertions: vec![],
             })
             .unwrap();
         assert!(r.is_none(), "no flush during a dark wake (+{at_min} min)");
@@ -840,7 +986,7 @@ fn flushes_every_ten_minutes_and_upserts_open_session() {
         if h.e
             .handle(SystemEvent::IdleTick {
                 secs_since_input: 1.0,
-                display_assertion_holders: vec![],
+                display_assertions: vec![],
             })
             .unwrap()
             .is_some()

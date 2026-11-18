@@ -159,7 +159,7 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
         };
         if e.handle(SystemEvent::IdleTick {
             secs_since_input: secs,
-            display_assertion_holders: vec![],
+            display_assertions: vec![],
         })
         .unwrap()
         .is_some()

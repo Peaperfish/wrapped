@@ -20,7 +20,8 @@ Accepted differences from the design doc are listed in
   `DidWake`, `ScreensSlept`, `ScreensWoke`, `ScreenLocked`, `ScreenUnlocked`,
   `WillPowerOff`, `Paused`, `Resumed`.
 - **Presence state machine** (`presence.rs`), shared by both collectors: idle
-  threshold, active-without-input apps, display-sleep assertions, sleep,
+  threshold, active-without-input apps, the front app's display-sleep
+  assertions, sleep,
   display sleep, lock, lock screen / screensaver as away, power-off.
 - **Collectors**: `app_usage` (front-app sessions) and `active_idle` (away
   periods keyed `idle`, `sleep`, `display_off`, `locked`, `screensaver`). Both on
@@ -52,7 +53,9 @@ Accepted differences from the design doc are listed in
   NSWorkspace front-app, sleep/wake, display sleep/wake and power-off
   notifications; `com.apple.screenIsLocked` / `screenIsUnlocked`; a run-loop
   `NSTimer` every 60 s (5 s tolerance) reading
-  `CGEventSourceSecondsSinceLastEventType` and `IOPMCopyAssertionsByProcess`.
+  `CGEventSourceSecondsSinceLastEventType` and `IOPMCopyAssertionsByProcess`
+  (each assertion marked as held by the frontmost app or not, by pid or
+  `AssertionOnBehalfOfPID`).
   No Accessibility, Input Monitoring or Screen Recording permission; no event
   taps or keyboard hooks. Every Objective-C callback body runs in an
   autoreleasepool.
@@ -127,9 +130,18 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
   being its own crate.
 - **Idle backdating.** Normal apps: when idle is detected (on the minute
   tick), the session ends at the last evidence of use: the latest of last
-  input, an app switch, wake / unlock / resume, or a tick where a display
-  assertion was held. Apps on the active-without-input list: the session ends
-  at last evidence of use + that list's timeout.
+  input, an app switch, wake / unlock / resume, or a tick where the front app
+  held a display assertion. Apps on the active-without-input list: the session
+  ends at last evidence of use + that list's timeout.
+- **Only the front app's display assertion is evidence of use** (fixed
+  2026-11-18, was "any process"). An assertion counts when the frontmost
+  app's process holds it or it was created on that process's behalf (Chrome
+  "Video Wake Lock" with Chrome in front, a video player). Any other holder
+  (`caffeinate`, a terminal's child job, daemons) is ignored: idle is
+  backdated to the last input as if there were no assertion. On 2026-11-17 a
+  `caffeinate -d` started in Ghostty (pid 49222, 17:22:41–23:26:00) turned two
+  away periods (17:39–18:57, 21:37–22:50) into Ghostty sessions of 1 h 17 min
+  and 1 h 13 min.
 - **App switch, wake, unlock and Resume count as use.** If nobody is actually
   there, the next tick backdates to that moment and the zero-length session is
   dropped.
@@ -167,12 +179,18 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 - **Crash loses up to ~10 min** (time since the last flush). A power cut can
   also lose the last committed flush(es): `synchronous=NORMAL` does not fsync
   every commit.
-- **Any process holding `PreventUserIdleDisplaySleep` keeps the user active**,
-  including background video or keep-awake utilities.
+- **A front-app display assertion keeps the user active for as long as it is
+  held**, with no timeout (a 2 h film counts), and an assertion that appears
+  with no input ends an idle period at that tick. A video left playing in
+  front while you are away counts as use.
+- **Players whose assertion is held by a separate helper process** that is
+  neither the front app nor marked on its behalf are not attributed to it, so
+  their video counts only through input (or the active-without-input list).
+  Not verified live for Safari / WebKit.
 - **Timer stretching**: if App Nap or coalescing ever delayed a tick by more
   than 5 min with no sleep notification, that gap would be recorded as sleep.
-  Not observed so far (gaps 59.9–65.0 s over 36 min); being measured in the
-  overnight run.
+  Not observed: the longest tick gap while awake was 65.0 s over the 41 h
+  run (see Results).
 - **Very short sessions** (a Cmd-Tab passing through apps) are stored and
   counted as switches; there is no minimum duration.
 - **Away periods only exist while the collector runs**: time while the
@@ -212,7 +230,7 @@ Dock icon.)
 |---|---|
 | App switches | Each `FrontApp` became one session ending where the next began; metrics matched the rows (33 switches, 136 s). |
 | 4 min idle | Session ended at the last evidence of use (15:27:23), not at the detecting tick (15:30:54); `idle` 15:27:23–15:33:17; resumed at the last input seen by the next tick. |
-| `caffeinate -d -t 330` | Ticks at 193, 253, 313 s without input listed `caffeinate[pid]`, so the session stayed open; it ended at the last tick that saw the assertion (15:49:54). |
+| `caffeinate -d -t 330` | Ticks at 193, 253, 313 s without input listed `caffeinate[pid]`, so the session stayed open; it ended at the last tick that saw the assertion (15:49:54). **This behaviour was wrong** and is fixed: a background `caffeinate` no longer keeps the user present (see Decisions). Re-checked 2026-11-18 with build `45a87f9`: `caffeinate -d` started from Ghostty (in front) is reported `front_app: false`. |
 | Lock (Ctrl+Cmd+Q) | `ScreenLocked` + `loginwindow` ended the session; the Mac also slept; one `locked` period (3 m 03 s) until `ScreenUnlocked`; `loginwindow` never recorded as an app. `screensDidSleep` / `screensDidWake` fired (unconfirmed in M0). |
 | `pmset displaysleepnow` | Skipped. |
 | Lid close ~30 s | `WillSleep` flushed and ended the session; `sleep` 15:56:29–15:57:19. A tick fired 5 s after `WillSleep` reporting input from before it; correctly not treated as a return. |
@@ -292,22 +310,44 @@ notification for those, yet the minute timer fired during them, with
 - Test: `dark_wake_ticks_keep_sleeping_and_skip_periodic_flush` in
   `crates/core/tests/engine.rs`.
 
-### Results (to be filled in from the overnight run)
+### Results (overnight + workday run, build 30fed1b)
 
-| Metric | Budget | Start | +1 h | +8 h | Next morning | Notes |
-|---|---|---|---|---|---|---|
-| RSS, `ps -o rss=` (KB) | — | | | | | |
-| Physical footprint (MB) | < 20 MB | | | | | |
-| Total CPU time, `ps -o time=` | ~0% | | | | | |
-| `wrapped.db` size (bytes) | | | | | | |
-| `wrapped.db-wal` size (bytes) | | | | | | |
-| Debug log size (bytes) | | | | | | |
-| Bytes Written, Activity Monitor | | | | | | |
-| Collector writes (Bytes Written − debug log) | ~1–2 MB/day | | | | | |
-| Energy Impact (battery) | ≈ 0 | | | | | |
-| Avg Energy Impact (battery) | ≈ 0 | | | | | |
-| Max tick gap without sleep (s) | < 300 | | | | | |
-| Tick-gap warnings | 0 | | | | | |
-| Dark-wake ticks (informational) | — | | | | | |
-| `screen_time_secs` vs own estimate | | | | | | |
-| Longest `app_usage` session vs real use | | | | | | |
+Release build `30fed1b` with `WRAPPED_DEBUG=1`, real database, 2026-11-16
+17:25:55 → 2026-11-18 10:46:40 (41.3 h wall, 17.6 h awake: the time outside
+`WillSleep` → `DidWake`). Readings are from `measure.sh`
+(`~/wrapped-phase-c/measurements.txt`), taken when they were taken rather
+than at the +1 h / +8 h marks; derived figures come from the debug log and
+`pmset -g log`. Measured numbers only.
+
+| Metric | Budget | Start 11-16 17:25 | +4 h 00 11-16 21:25 | +4 h 57 11-16 22:23 | +15 h 11-17 08:25 | End +41 h 20 11-18 10:46 | Notes |
+|---|---|---|---|---|---|---|---|
+| RSS, `ps -o rss=` (KB) | — | 80 | 65,584 | 64,080 | 64,640 | 21,680 | Includes shared framework pages; not the budget figure. Start reading taken before AppKit was up. |
+| Physical footprint (MB) | < 20 MB | 0.08 | 11.4 | 11.5 | 11.6 | 18.8 | **Under investigation, not a pass.** 11.3–11.6 MB for the first ~15 h, then 18.8 MB after a heavy day (~1,050 app switches on 11-17). Under budget but it grew. A fresh process of `a79ec83` starts at 12 MB. |
+| Total CPU time, `ps -o time=` | ~0% | 0:00.00 | 0:00.25 | 0:00.51 | 0:00.79 | 0:06.75 | 6.75 s over 17.6 awake h = 0.38 s per awake hour (≈ 0.01 % of one core). Heavy-day stretch 11-17 08:25 → end: 5.96 s over 16.2 awake h = 0.37 s/h. CPU during dark wakes is in the totals, so per-awake-hour is slightly high. |
+| `wrapped.db` size (bytes) | | 40,960 | 40,960 | 40,960 | 40,960 | 40,960 | No checkpoint during the run. |
+| `wrapped.db-wal` size (bytes) | | 0 | 61,832 | 156,592 | 296,672 | 2,002,352 | Grew monotonically over all 132 flushes, below the 4 MB auto-checkpoint, so WAL size = bytes written to the WAL. |
+| Debug log size (bytes) | | 0 | 4,097 | 18,535 | 34,281 | 371,315 | |
+| Bytes Written, Activity Monitor | | — | — | — | — | — | Not recorded. (The kernel counter in the flush log read 4,096 total at shutdown: writes stay in the page cache; see Known limitations.) |
+| Collector writes | ~1–2 MB/day | — | — | — | — | — | From WAL growth instead: 2.00 MB over 17.6 awake h ≈ **1.82 MB per 16 awake h**. Local day 11-17 (13.8 h awake, 1,050 switches): ~1.53 MB between the flushes nearest its midnights ≈ 1.77 MB per 16 h. Simulation: 1.01 MB per 16 h day, so the field figure is ~1.8× the simulation, inside the guideline. 206,000 bytes came from 21 flushes during dark wakes (fixed after this build). |
+| Energy Impact (battery) | ≈ 0 | | | | | | Not measured. |
+| Avg Energy Impact (battery) | ≈ 0 | | | | | | Not measured. |
+| Max tick gap without sleep (s) | < 300 | | | | | 65.0 | Over the 1,050 tick gaps while awake. `measure.sh`'s `max_gap_s` (7,311.2 → 9,083.1) are dark-wake gaps. |
+| Tick-gap warnings | 0 | 0 | 2 | 2 | 8 | 17 | All 17 fell between `WillSleep` and `DidWake`, each within 2 min of a pmset `DarkWake`. This build predates the dark-wake fix, which logs these as dark-wake ticks instead. |
+| Dark-wake ticks (informational) | — | 0 | — | 0 | 0 | 0 | Always 0: this build does not log them as such (see the 17 warnings). |
+| `screen_time_secs` vs own estimate | | | | | | | 11-17: 44,561 s (12 h 22 m) + away 41,839 s = 86,400 s. Includes ~2 h 30 m of false Ghostty time (caffeinate, below). |
+| Longest `app_usage` session vs real use | | | | | | | The 1 h 17 m and 1 h 13 m Ghostty sessions on 11-17 were away time (caffeinate). Both overnight sleeps were single `sleep` periods: 22:32:45 → 08:12:10 (9 h 39 m) and 23:31:23 → 08:10:39 (8 h 39 m). |
+
+Sanity-check findings:
+
+- Totals are internally consistent: for 2026-11-17 screen time + away =
+  86,400 s, and the sums of `app_secs` (44,565 s) and of the hour buckets
+  (44,560 s) are within 5 s of `screen_time_secs` (44,561 s).
+- **Bug, fixed on `fix/background-assertions`**: `caffeinate -d` (pid 49222,
+  started in Ghostty, held `PreventUserIdleDisplaySleep` 17:22:41 → 23:26:00)
+  kept the user present through two away periods, 17:39–18:57 and
+  21:37–22:50. See Decisions ("Only the front app's display assertion…").
+  Already recorded data is not rewritten.
+- **Open, follow-up (not fixed)**: an idle period that turns into idle sleep
+  stays keyed `idle` (DEVIATIONS.md, Active / idle). On 11-17 the `idle`
+  period 12:02:52–13:50:54 included the sleep 12:26:32–13:50:54 (~1 h 24 m),
+  so "away excluding sleep" stats overcount.

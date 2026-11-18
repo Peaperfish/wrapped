@@ -105,7 +105,7 @@ fn count(e: &Engine, sql: &str) -> i64 {
 fn tick(e: &mut Engine) {
     e.handle(SystemEvent::IdleTick {
         secs_since_input: 1.0,
-        display_assertion_holders: vec![],
+        display_assertions: vec![],
     })
     .unwrap();
 }

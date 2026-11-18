@@ -25,7 +25,7 @@ pub mod time;
 
 pub use collector::{Collector, CollectorInfo, Kind, MetricDef, Sink};
 pub use engine::Engine;
-pub use event::SystemEvent;
+pub use event::{DisplayAssertion, SystemEvent};
 pub use settings::{Pause, Settings};
 pub use store::Store;
 pub use time::{Clock, ManualClock, SystemClock, Timestamp};

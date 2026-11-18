@@ -6,13 +6,16 @@
 //! Rules (DESIGN.md §13):
 //! * Idle after `idle_threshold_secs` without input; front apps on the
 //!   "active without input" list use `active_without_input.timeout_secs`.
-//! * Any process holding a keep-display-awake assertion keeps the user active.
+//! * A keep-display-awake assertion keeps the user active only when the
+//!   frontmost app holds it (video playing in front). Assertions held by any
+//!   other process (`caffeinate`, a terminal's child job, background daemons)
+//!   are ignored: idle is backdated to the last input as if there were none.
 //! * Sleep, display sleep, screen lock, and the lock screen / screensaver
 //!   being in front all mean away. Power-off halts tracking.
 //!
 //! Where idle starts. "Last evidence of use" is the latest of: last input, an
-//! app switch, wake / unlock / resume, or a tick where a display assertion was
-//! held.
+//! app switch, wake / unlock / resume, or a tick where the front app held a
+//! display assertion.
 //! * Normal apps: idle is only checked on the ~60 s tick, so when it is
 //!   detected the transition is backdated to the last evidence of use.
 //! * Apps on the "active without input" list: not backdated. The session ends
@@ -153,13 +156,11 @@ impl Presence {
             }
             SystemEvent::IdleTick {
                 secs_since_input,
-                display_assertion_holders,
-            } => self.on_tick(
-                now,
-                *secs_since_input,
-                !display_assertion_holders.is_empty(),
-                s,
-            ),
+                display_assertions,
+            } => {
+                let front_app_assertion = display_assertions.iter().any(|a| a.front_app);
+                self.on_tick(now, *secs_since_input, front_app_assertion, s)
+            }
             SystemEvent::WillSleep => {
                 self.asleep = Some(now.utc_ms);
                 self.last_tick_ms = None;
@@ -264,7 +265,7 @@ impl Presence {
             };
             steps.push(self.step(at));
         } else if assertion {
-            // Something (video, presentation) keeps the display awake.
+            // The front app (video, presentation) keeps the display awake.
             self.note_activity(now.utc_ms);
             self.idle = false;
             if gap {
@@ -307,7 +308,7 @@ mod tests {
     fn tick(secs: f64) -> SystemEvent {
         SystemEvent::IdleTick {
             secs_since_input: secs,
-            display_assertion_holders: vec![],
+            display_assertions: vec![],
         }
     }
     fn app(b: &str) -> SystemEvent {

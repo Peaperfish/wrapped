@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A keep-display-awake assertion held by a background process (e.g. `caffeinate -d` from a terminal) kept the user present indefinitely, so away time was recorded as app time (2026-11-17: ~2.5 h as Ghostty) and neither the idle threshold nor the active-without-input timeout applied. Only an assertion held by (or on behalf of) the frontmost app now counts; idle is otherwise backdated to the last input. `IdleTick` carries `DisplayAssertion { holder, front_app }`.
 - A collector turned off while tracking was paused, then turned on again after resuming, kept its old pause flag and recorded nothing (app usage, active / idle, disk & memory).
 - Dark wakes: minute ticks between `WillSleep` and `DidWake` (macOS maintenance wakes) are logged as "tick during dark wake", not as a tick-gap warning, and skip the periodic 10-minute flush; `measure.sh` reports them as `dark_wake_ticks`.
 - Collector no longer records itself as an app: `FrontApp` events for its own bundle id (e.g. opening the tray menu) are ignored by the engine.

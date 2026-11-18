@@ -88,6 +88,14 @@ design doc itself is left as written.
   starts idle and continues into sleep stays one period keyed `idle`. Pause and
   power-off record nothing.
 - Extra metric `active_idle/away_secs_by_reason` (key = reason).
+- Display assertions (§13: "an app holding a keep display awake request …
+  counts as active"): only an assertion held by the **frontmost** app's
+  process, or created on its behalf (`AssertionOnBehalfOfPID`), counts.
+  Assertions held by background processes (`caffeinate`, a terminal's child
+  job, daemons) never keep the user present; idle is backdated to the last
+  input as if there were none. While the front app holds one there is no
+  timeout; after it is released, apps on the active-without-input list get
+  their timeout from the last tick that saw it.
 
 ## Git and photos collectors (§7)
 
