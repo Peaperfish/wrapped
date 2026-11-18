@@ -101,13 +101,9 @@ pub fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
 /// never when storing: the database keeps what the EXIF said.
 const FRIENDLY_CAMERAS: &[(&str, &str)] = &[
     ("SONY ILCE-7RM5", "Sony α7R V"),
-    ("SONY ILCE-7M4", "Sony α7 IV"),
-    ("SONY ILCE-7CM2", "Sony α7C II"),
-    ("SONY ILCE-1", "Sony α1"),
+    // The Air 3S has two cameras with different EXIF model codes.
+    ("DJI FC9113", "DJI Air 3S"),
     ("DJI FC9184", "DJI Air 3S"),
-    ("DJI FC8282", "DJI Air 3"),
-    ("DJI FC8284", "DJI Air 3"),
-    ("DJI FC9113", "DJI Mini 4 Pro"),
 ];
 
 /// The friendly name of a camera label, or the label unchanged when unknown.
@@ -291,7 +287,8 @@ mod tests {
         assert_eq!(friendly_camera("SONY ILCE-7RM5"), "Sony α7R V");
         assert_eq!(friendly_camera("sony ilce-7rm5"), "Sony α7R V");
         assert_eq!(friendly_camera("DJI FC9184"), "DJI Air 3S");
-        assert_eq!(friendly_camera("DJI FC8284"), "DJI Air 3");
+        assert_eq!(friendly_camera("DJI FC9113"), "DJI Air 3S");
+        assert_eq!(friendly_camera("DJI FC8284"), "DJI FC8284");
         // Unknown codes pass through unchanged.
         assert_eq!(friendly_camera("DJI FC0000"), "DJI FC0000");
         assert_eq!(friendly_camera("(unknown)"), "(unknown)");
