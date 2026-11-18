@@ -3,7 +3,7 @@
 //! * Runs only while its window is open; closing the window quits.
 //! * Reads the collector's database read-only and never writes
 //!   (see [`data`]); `--db <path>` picks another database.
-//! * Commands: `meta`, `summary(from, to)`, `series(year, metric)` and
+//! * Commands: `meta`, `summary(from, to, vsFrom?, vsTo?)`, `series(year, metric)` and
 //!   `ready` (the page has rendered: show the window). Types are in
 //!   [`types`], mirrored to TypeScript in `ui/src/lib/types/`.
 
@@ -79,9 +79,21 @@ fn meta(state: State<'_, AppState>) -> data::Result<Meta> {
 }
 
 #[tauri::command(async)]
-fn summary(state: State<'_, AppState>, from: String, to: String) -> data::Result<Value> {
+fn summary(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+    vs_from: Option<String>,
+    vs_to: Option<String>,
+) -> data::Result<Value> {
     state.timed(&format!("summary {from}..{to}"), || {
-        data::summary(state.db()?, &from, &to)
+        data::summary(
+            state.db()?,
+            &from,
+            &to,
+            vs_from.as_deref(),
+            vs_to.as_deref(),
+        )
     })
 }
 

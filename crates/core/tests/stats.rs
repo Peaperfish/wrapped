@@ -829,3 +829,128 @@ fn latest_night_sees_a_long_session_that_started_well_before_the_range() {
     // It started on the 8th, so it is not the 10th's longest session.
     assert_eq!(rec.longest_session, None);
 }
+
+// ---------- explicit comparison range (periods in progress) ----------
+
+#[test]
+fn summary_vs_none_is_the_plain_summary() {
+    let s = store_with(ALL);
+    put(&s, "2026-11-10", "app_usage", "screen_time_secs", "", 100.0);
+    put(&s, "2026-11-03", "app_usage", "screen_time_secs", "", 60.0);
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let r = range("2026-11-09", "2026-11-15");
+    let a = st.summary(r, 5).unwrap().to_json();
+    let b = st.summary_vs(r, None, 5).unwrap().to_json();
+    assert_eq!(a, b);
+    assert_eq!(a["previous"]["from"], "2026-11-02");
+}
+
+#[test]
+fn week_in_progress_compares_the_same_elapsed_days() {
+    // Today is Wednesday 2026-11-18: this week is Mon 16..Wed 18, compared
+    // with last week's Mon 9..Wed 11, not the whole of last week.
+    let s = store_with(ALL);
+    let sec = |date, v| put(&s, date, "app_usage", "screen_time_secs", "", v);
+    sec("2026-11-16", 100.0);
+    sec("2026-11-18", 100.0);
+    sec("2026-11-09", 150.0);
+    sec("2026-11-11", 50.0);
+    sec("2026-11-13", 400.0); // later in last week: outside the comparison
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let r = range("2026-11-16", "2026-11-18");
+    let vs = range("2026-11-09", "2026-11-11");
+    let sum = st.summary_vs(r, Some(vs), 5).unwrap();
+    assert_eq!(sum.previous, vs);
+    let c = sum
+        .comparisons
+        .iter()
+        .find(|c| c.metric == "screen_time_secs")
+        .unwrap();
+    assert_eq!((c.current, c.previous, c.change), (200.0, 200.0, 0.0));
+    assert_eq!(c.pct, Some(0.0));
+    // The default (the 3 days just before) would compare with other days.
+    let whole = st.summary(r, 5).unwrap();
+    let c = whole
+        .comparisons
+        .iter()
+        .find(|c| c.metric == "screen_time_secs")
+        .unwrap();
+    assert_eq!(c.previous, 400.0); // the default previous range is Nov 13..15
+}
+
+#[test]
+fn comparison_range_may_be_shorter_after_clamping() {
+    // Mar 31 of a month in progress against February (28 days): the
+    // comparison covers Feb 1..28; Feb 29 of a leap year against Feb 28.
+    let s = store_with(ALL);
+    let sec = |date, v| put(&s, date, "app_usage", "screen_time_secs", "", v);
+    sec("2026-03-01", 10.0);
+    sec("2026-03-31", 10.0);
+    sec("2026-02-01", 5.0);
+    sec("2026-02-28", 5.0);
+    sec("2025-02-28", 7.0);
+    sec("2025-03-01", 90.0); // after the clamped end: excluded
+    sec("2024-02-29", 3.0);
+    sec("2024-02-28", 4.0);
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let prev = |r, vs| {
+        let sum = st.summary_vs(r, Some(vs), 5).unwrap();
+        let c = sum
+            .comparisons
+            .iter()
+            .find(|c| c.metric == "screen_time_secs")
+            .unwrap()
+            .clone();
+        (sum.previous.days(), c.current, c.previous)
+    };
+    assert_eq!(
+        prev(
+            range("2026-03-01", "2026-03-31"),
+            range("2026-02-01", "2026-02-28")
+        ),
+        (28, 20.0, 10.0)
+    );
+    // 2024-02-29 (this year, leap) vs 2023: Jan 1..Feb 28.
+    assert_eq!(
+        prev(
+            range("2025-01-01", "2025-02-28"),
+            range("2024-01-01", "2024-02-28")
+        ),
+        (59, 7.0, 4.0)
+    );
+}
+
+#[test]
+fn photo_cameras_get_friendly_names_and_merge() {
+    let s = store_with(ALL);
+    let cam = |key, v| put(&s, "2026-11-10", "photos", "shots_by_camera", key, v);
+    cam("SONY ILCE-7RM5", 50.0);
+    cam("DJI FC8282", 6.0);
+    cam("DJI FC8284", 5.0); // the same drone's second camera
+    cam("DJI FC0000", 8.0); // unknown: unchanged
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let sum = st.summary(range("2026-11-10", "2026-11-10"), 3).unwrap();
+    let (_, keys) = sum
+        .top
+        .iter()
+        .find(|(m, _)| m.def.id == "shots_by_camera")
+        .unwrap();
+    assert_eq!(
+        keys,
+        &vec![
+            ("Sony α7R V".to_string(), 50.0),
+            ("DJI Air 3".to_string(), 11.0),
+            ("DJI FC0000".to_string(), 8.0)
+        ]
+    );
+    // The stored keys stay raw.
+    let raw = st
+        .top(
+            "photos",
+            "shots_by_camera",
+            range("2026-11-10", "2026-11-10"),
+            9,
+        )
+        .unwrap();
+    assert!(raw.iter().any(|(k, _)| k == "SONY ILCE-7RM5"));
+}

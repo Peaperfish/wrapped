@@ -78,7 +78,7 @@ fn meta_without_a_database_reports_defaults() {
     assert!(m.metrics.iter().all(|x| !x.id.starts_with("git/")));
     let m = data::meta(None, d("2026-03-11")).unwrap();
     assert!(!m.db_found);
-    assert!(data::summary(&missing, "2026-01-01", "2026-01-31").is_err());
+    assert!(data::summary(&missing, "2026-01-01", "2026-01-31", None, None).is_err());
     assert!(data::series(&missing, 2026, "app_usage/screen_time_secs").is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -106,7 +106,7 @@ fn series_is_one_value_per_day_of_the_year_with_zeros() {
     assert_eq!(s.days[68], 150.0 * 60.0);
     assert_eq!(s.days.iter().filter(|v| **v > 0.0).count(), 4);
     // The year's series adds up to the summary's total for the year.
-    let sum = data::summary(&db, "2026-01-01", "2026-12-31").unwrap();
+    let sum = data::summary(&db, "2026-01-01", "2026-12-31", None, None).unwrap();
     assert_eq!(
         s.days.iter().sum::<f64>(),
         total(&sum, "app_usage", "screen_time_secs", "")
@@ -130,7 +130,7 @@ fn series_is_one_value_per_day_of_the_year_with_zeros() {
 fn summary_is_the_stats_engine_json_and_matches_the_ts_types() {
     let dir = temp_dir("summary");
     let db = build(&dir);
-    let sum = data::summary(&db, "2025-12-30", "2026-03-10").unwrap();
+    let sum = data::summary(&db, "2025-12-30", "2026-03-10", None, None).unwrap();
     assert_eq!(sum["range"]["from"], "2025-12-30");
     assert_eq!(sum["range"]["days"], 71);
     // 1 h 30 + 30 min + 2 h 15 (over midnight) + 2 h + 50 min + 2 h 45 + 2 h 30.
@@ -157,8 +157,8 @@ fn summary_is_the_stats_engine_json_and_matches_the_ts_types() {
     assert_same_json(&serde_json::to_value(&typed).unwrap(), &sum, "$");
 
     // Reversed or malformed ranges are errors, not panics.
-    assert!(data::summary(&db, "2026-03-10", "2026-03-01").is_err());
-    assert!(data::summary(&db, "March 1", "2026-03-10").is_err());
+    assert!(data::summary(&db, "2026-03-10", "2026-03-01", None, None).is_err());
+    assert!(data::summary(&db, "March 1", "2026-03-10", None, None).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -207,7 +207,7 @@ fn commands_never_write_and_never_block_a_checkpoint() {
     let before = (file_bytes(&db), file_bytes(&wal));
 
     data::meta(Some(&db), d("2026-03-11")).unwrap();
-    data::summary(&db, "2025-01-01", "2026-12-31").unwrap();
+    data::summary(&db, "2025-01-01", "2026-12-31", None, None).unwrap();
     data::series(&db, 2026, "app_usage/screen_time_secs").unwrap();
 
     assert!(
@@ -222,5 +222,39 @@ fn commands_never_write_and_never_block_a_checkpoint() {
         .unwrap();
     assert_eq!(busy, 0, "a dashboard read kept a transaction open");
     drop(writer);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn summary_with_an_explicit_comparison_range() {
+    let dir = temp_dir("summary-vs");
+    let db = build(&dir);
+    let plain = data::summary(&db, "2026-03-08", "2026-03-10", None, None).unwrap();
+    assert_eq!(plain["previous"]["from"], "2026-03-05");
+    let vs = data::summary(
+        &db,
+        "2026-03-08",
+        "2026-03-10",
+        Some("2026-03-01"),
+        Some("2026-03-03"),
+    )
+    .unwrap();
+    assert_eq!(vs["range"], plain["range"]);
+    assert_eq!(vs["totals"], plain["totals"]);
+    assert_eq!(vs["previous"]["from"], "2026-03-01");
+    assert_eq!(vs["previous"]["to"], "2026-03-03");
+    assert_eq!(vs["previous"]["days"], 3);
+    // Only one of the two is an error, as is a reversed range.
+    assert!(data::summary(&db, "2026-03-08", "2026-03-10", Some("2026-03-01"), None).is_err());
+    assert!(
+        data::summary(
+            &db,
+            "2026-03-08",
+            "2026-03-10",
+            Some("2026-03-03"),
+            Some("2026-03-01")
+        )
+        .is_err()
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

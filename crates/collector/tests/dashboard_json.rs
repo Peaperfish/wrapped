@@ -66,7 +66,7 @@ fn dashboard_summary_equals_cli_stats_range_json() {
         ("2026-01-01", "2026-12-31"), // a full year
         ("2024-01-01", "2024-12-31"), // a year without data
     ] {
-        let dash = wrapped_dashboard::data::summary(&db, from, to).unwrap();
+        let dash = wrapped_dashboard::data::summary(&db, from, to, None, None).unwrap();
         same(&dash, &cli_json(&db, from, to), &format!("{from}..{to}"));
     }
     let _ = std::fs::remove_dir_all(&dir);

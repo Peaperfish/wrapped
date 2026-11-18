@@ -124,14 +124,29 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
 }
 
 /// The stats engine's summary of `from..=to` (local dates), exactly as
-/// `wrapped-collector stats range <from> <to> --json` prints it.
-pub fn summary(db: &Path, from: &str, to: &str) -> Result<Value> {
+/// `wrapped-collector stats range <from> <to> --json` prints it. With
+/// `vs_from` and `vs_to` (both or neither) the comparison runs against that
+/// range instead of the previous range of equal length.
+pub fn summary(
+    db: &Path,
+    from: &str,
+    to: &str,
+    vs_from: Option<&str>,
+    vs_to: Option<&str>,
+) -> Result<Value> {
     let range = DateRange::new(parse_date(from)?, parse_date(to)?).map_err(|e| e.to_string())?;
+    let vs = match (vs_from, vs_to) {
+        (Some(a), Some(b)) => {
+            Some(DateRange::new(parse_date(a)?, parse_date(b)?).map_err(|e| e.to_string())?)
+        }
+        (None, None) => None,
+        _ => return Err("vsFrom and vsTo go together".to_string()),
+    };
     let (store, settings) = open(db)?;
     let all = collectors::builtin();
     let st = Stats::new(&store, &all, &settings);
     let sum = st
-        .summary(range, SUMMARY_TOP_N)
+        .summary_vs(range, vs, SUMMARY_TOP_N)
         .map_err(|e| e.to_string())?;
     Ok(sum.to_json())
 }

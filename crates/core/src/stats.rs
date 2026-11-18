@@ -27,7 +27,7 @@ use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_
 /// Activity before this local hour belongs to the previous day's night.
 pub const NIGHT_ENDS_HOUR: i64 = 5;
 /// Keys per keyed metric in a summary for `stats range` and the dashboard.
-pub const SUMMARY_TOP_N: usize = 5;
+pub const SUMMARY_TOP_N: usize = 8;
 /// Margin around a range when selecting sessions by UTC time (offsets span
 /// UTC-12..UTC+14).
 const OFFSET_MARGIN_MS: i64 = 15 * MS_PER_HOUR;
@@ -512,11 +512,25 @@ impl<'a> Stats<'a> {
         Ok((longest, latest))
     }
 
-    /// Everything for one range; `top_n` keys per keyed metric.
+    /// Everything for one range, compared with the previous range of equal
+    /// length; `top_n` keys per keyed metric.
     pub fn summary(&self, r: DateRange, top_n: usize) -> StoreResult<Summary> {
+        self.summary_vs(r, None, top_n)
+    }
+
+    /// Like [`Stats::summary`], compared with `vs` instead of the previous
+    /// range of equal length (for a period still in progress: the same
+    /// elapsed days of the period before). `None` is `summary`.
+    pub fn summary_vs(
+        &self,
+        r: DateRange,
+        vs: Option<DateRange>,
+        top_n: usize,
+    ) -> StoreResult<Summary> {
+        let vs = vs.unwrap_or_else(|| r.previous());
         let rows = self.rows(r, None)?;
         let cur = self.combine(&rows);
-        let prev = self.combine(&self.rows(r.previous(), None)?);
+        let prev = self.combine(&self.rows(vs, None)?);
         let mut top = Vec::new();
         let mut series = Vec::new();
         let mut per_day: BTreeMap<(usize, NaiveDate), f64> = BTreeMap::new();
@@ -532,12 +546,17 @@ impl<'a> Stats<'a> {
                         .collect(),
                 ));
             } else if !is_by_hour(&mr.def) {
-                top.push((mr.clone(), top_of(&cur, m, mr.def.agg, top_n)));
+                let keys = if mr.collector == "photos" && mr.def.id == "shots_by_camera" {
+                    friendly_cameras(top_of(&cur, m, mr.def.agg, usize::MAX), top_n)
+                } else {
+                    top_of(&cur, m, mr.def.agg, top_n)
+                };
+                top.push((mr.clone(), keys));
             }
         }
         Ok(Summary {
             range: r,
-            previous: r.previous(),
+            previous: vs,
             totals: self.totals_of(&cur),
             comparisons: self.comparisons_of(&cur, &prev),
             top,
@@ -546,6 +565,21 @@ impl<'a> Stats<'a> {
             records: self.records(r)?,
         })
     }
+}
+
+/// Camera labels by their friendly names; models that share one name (a
+/// drone's two cameras) add up. Best first, at most `n`.
+fn friendly_cameras(keys: Vec<(String, f64)>, n: usize) -> Vec<(String, f64)> {
+    let mut merged: BTreeMap<String, f64> = BTreeMap::new();
+    for (label, v) in keys {
+        *merged
+            .entry(crate::collectors::photos::friendly_camera(&label))
+            .or_default() += v;
+    }
+    let mut v: Vec<(String, f64)> = merged.into_iter().collect();
+    v.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    v.truncate(n);
+    v
 }
 
 fn is_by_hour(def: &MetricDef) -> bool {

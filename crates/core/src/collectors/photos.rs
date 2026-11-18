@@ -96,6 +96,28 @@ pub fn camera_label(make: Option<&str>, model: Option<&str>) -> String {
     }
 }
 
+/// Friendly names for camera labels as [`camera_label`] writes them (make +
+/// model code, compared case-insensitively). Used when presenting results,
+/// never when storing: the database keeps what the EXIF said.
+const FRIENDLY_CAMERAS: &[(&str, &str)] = &[
+    ("SONY ILCE-7RM5", "Sony α7R V"),
+    ("SONY ILCE-7M4", "Sony α7 IV"),
+    ("SONY ILCE-7CM2", "Sony α7C II"),
+    ("SONY ILCE-1", "Sony α1"),
+    ("DJI FC9184", "DJI Air 3S"),
+    ("DJI FC8282", "DJI Air 3"),
+    ("DJI FC8284", "DJI Air 3"),
+    ("DJI FC9113", "DJI Mini 4 Pro"),
+];
+
+/// The friendly name of a camera label, or the label unchanged when unknown.
+pub fn friendly_camera(label: &str) -> String {
+    FRIENDLY_CAMERAS
+        .iter()
+        .find(|(code, _)| code.eq_ignore_ascii_case(label))
+        .map_or_else(|| label.to_string(), |(_, name)| (*name).to_string())
+}
+
 fn camera_of(it: &DayItem) -> String {
     camera_label(it.attr_str("make"), it.attr_str("model"))
 }
@@ -263,6 +285,21 @@ impl Collector for Photos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn friendly_camera_names() {
+        assert_eq!(friendly_camera("SONY ILCE-7RM5"), "Sony α7R V");
+        assert_eq!(friendly_camera("sony ilce-7rm5"), "Sony α7R V");
+        assert_eq!(friendly_camera("DJI FC9184"), "DJI Air 3S");
+        assert_eq!(friendly_camera("DJI FC8284"), "DJI Air 3");
+        // Unknown codes pass through unchanged.
+        assert_eq!(friendly_camera("DJI FC0000"), "DJI FC0000");
+        assert_eq!(friendly_camera("(unknown)"), "(unknown)");
+        assert_eq!(
+            friendly_camera(&camera_label(Some("SONY"), Some("ILCE-7RM5"))),
+            "Sony α7R V"
+        );
+    }
 
     #[test]
     fn camera_labels() {
