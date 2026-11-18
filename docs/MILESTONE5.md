@@ -235,11 +235,44 @@ App, against `~/Documents/wrapped-notes/m3-scratch.db`:
   Order: Screen time, Away, Time of day, Top apps, Records, Git, Photos,
   Disk & Swap, Memory pressure. Cards of collectors that are off are not
   drawn; a card without data says "Nothing in this range".
-- **Friendly camera names** (`photos::friendly_camera`): applied by the stats
-  summary only (stored keys stay as the EXIF said); models that share a name
-  add up. Unknown codes pass through.
-- App names: bundle ids shown as a readable name (`appName`: a few known
-  ones, else the last part of the id); the tooltip has the bundle id.
+- **Friendly camera and lens names** (`photos::friendly_camera`,
+  `friendly_lens`): applied by the stats summary only (stored keys stay as
+  the EXIF said); keys that share a name add up. Only the owner's two
+  cameras are mapped (Sony ILCE-7RM5; the DJI Air 3S's two cameras, codes
+  FC9113 and FC9184). Lenses: the Air 3S's two ("24.0 mm f/1.8" → "Air 3S
+  wide (24mm f/1.8)", "70.0 mm f/2.8" → "Air 3S tele"), Sigma's
+  "<spec> | <line> <n>" → "Sigma <spec> <line>", and "(unknown)" / "----"
+  → "No lens info". Shots with no lens EXIF cannot be tied to a camera in the
+  per-lens rollup, so DJI shots without lens info are in "No lens info".
+- **App names**: the `app_names(ids)` command resolves bundle ids to the
+  installed app's display name (`NSWorkspace`, then the bundle's
+  `CFBundleDisplayName` / `CFBundleName`), cached per process; ids with no
+  installed app and non-bundle keys ("idle") stay as they are; Windows
+  returns ids. The summary JSON is unchanged; tooltips keep the bundle id.
+- **Today**: part of a day is compared with all of yesterday, so the change
+  is shown neutral (no colour, no arrow) as "… so far", tooltip "vs all of
+  yesterday". Other ranges are unchanged.
+- **Away (awake)**: time away minus the "sleep" reason
+  (`away_secs_by_reason`). "Times away" still counts every period (the
+  per-reason period count is not stored). See DEVIATIONS.md.
+
+## Opening the dashboard
+
+- the menu-bar icon: "Open Dashboard…" (⌘D);
+- Spotlight / Finder / `open ~/Applications/Wrapped.app` while Wrapped is
+  running: the app delegate's `applicationShouldHandleReopen:` opens the
+  dashboard (brings it to the front if open). A fresh launch (at login, or
+  the relaunch at the end of `install.sh`) does not open it: a launch-at-login
+  signal could not be verified here, so only reopen opens it;
+- `wrapped-collector dashboard` from a shell.
+
+## Refresh
+
+The refresh button first runs the sibling `wrapped-collector flush` (SIGUSR1
+to the running collector; the dashboard never writes), then polls `meta` every
+100 ms until the last-recorded time changes or 1.5 s pass, then re-fetches
+meta, series and summary. With no collector running it just re-fetches. The
+button spins meanwhile; "as of" is highlighted briefly when its text changes.
 
 ## Known limitations / left for 5b
 

@@ -187,6 +187,10 @@ design doc itself is left as written.
   period of equal length.
 - `wrapped-collector dashboard` opens the dashboard from a shell (the only
   launcher on Windows until the tray exists there).
+- The dashboard's Away card counts time away minus the "sleep" reason. An idle
+  period that turns into sleep stays keyed "idle" (the key is the reason the
+  period started with), so it can overcount a little (known follow-up).
+  "Times away" cannot exclude sleep: only the total period count is stored.
 
 ## Metric definitions
 
