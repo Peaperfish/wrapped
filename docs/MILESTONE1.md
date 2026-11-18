@@ -20,7 +20,8 @@ Accepted differences from the design doc are listed in
   `DidWake`, `ScreensSlept`, `ScreensWoke`, `ScreenLocked`, `ScreenUnlocked`,
   `WillPowerOff`, `Paused`, `Resumed`.
 - **Presence state machine** (`presence.rs`), shared by both collectors: idle
-  threshold, active-without-input apps, display-sleep assertions, sleep,
+  threshold, active-without-input apps, the front app's display-sleep
+  assertions, sleep,
   display sleep, lock, lock screen / screensaver as away, power-off.
 - **Collectors**: `app_usage` (front-app sessions) and `active_idle` (away
   periods keyed `idle`, `sleep`, `display_off`, `locked`, `screensaver`). Both on
@@ -52,7 +53,9 @@ Accepted differences from the design doc are listed in
   NSWorkspace front-app, sleep/wake, display sleep/wake and power-off
   notifications; `com.apple.screenIsLocked` / `screenIsUnlocked`; a run-loop
   `NSTimer` every 60 s (5 s tolerance) reading
-  `CGEventSourceSecondsSinceLastEventType` and `IOPMCopyAssertionsByProcess`.
+  `CGEventSourceSecondsSinceLastEventType` and `IOPMCopyAssertionsByProcess`
+  (each assertion marked as held by the frontmost app or not, by pid or
+  `AssertionOnBehalfOfPID`).
   No Accessibility, Input Monitoring or Screen Recording permission; no event
   taps or keyboard hooks. Every Objective-C callback body runs in an
   autoreleasepool.
@@ -127,9 +130,18 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
   being its own crate.
 - **Idle backdating.** Normal apps: when idle is detected (on the minute
   tick), the session ends at the last evidence of use: the latest of last
-  input, an app switch, wake / unlock / resume, or a tick where a display
-  assertion was held. Apps on the active-without-input list: the session ends
-  at last evidence of use + that list's timeout.
+  input, an app switch, wake / unlock / resume, or a tick where the front app
+  held a display assertion. Apps on the active-without-input list: the session
+  ends at last evidence of use + that list's timeout.
+- **Only the front app's display assertion is evidence of use** (fixed
+  2026-11-18, was "any process"). An assertion counts when the frontmost
+  app's process holds it or it was created on that process's behalf (Chrome
+  "Video Wake Lock" with Chrome in front, a video player). Any other holder
+  (`caffeinate`, a terminal's child job, daemons) is ignored: idle is
+  backdated to the last input as if there were no assertion. On 2026-11-17 a
+  `caffeinate -d` started in Ghostty (pid 49222, 17:22:41–23:26:00) turned two
+  away periods (17:39–18:57, 21:37–22:50) into Ghostty sessions of 1 h 17 min
+  and 1 h 13 min.
 - **App switch, wake, unlock and Resume count as use.** If nobody is actually
   there, the next tick backdates to that moment and the zero-length session is
   dropped.
@@ -167,8 +179,14 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
 - **Crash loses up to ~10 min** (time since the last flush). A power cut can
   also lose the last committed flush(es): `synchronous=NORMAL` does not fsync
   every commit.
-- **Any process holding `PreventUserIdleDisplaySleep` keeps the user active**,
-  including background video or keep-awake utilities.
+- **A front-app display assertion keeps the user active for as long as it is
+  held**, with no timeout (a 2 h film counts), and an assertion that appears
+  with no input ends an idle period at that tick. A video left playing in
+  front while you are away counts as use.
+- **Players whose assertion is held by a separate helper process** that is
+  neither the front app nor marked on its behalf are not attributed to it, so
+  their video counts only through input (or the active-without-input list).
+  Not verified live for Safari / WebKit.
 - **Timer stretching**: if App Nap or coalescing ever delayed a tick by more
   than 5 min with no sleep notification, that gap would be recorded as sleep.
   Not observed so far (gaps 59.9–65.0 s over 36 min); being measured in the
@@ -212,7 +230,7 @@ Dock icon.)
 |---|---|
 | App switches | Each `FrontApp` became one session ending where the next began; metrics matched the rows (33 switches, 136 s). |
 | 4 min idle | Session ended at the last evidence of use (15:27:23), not at the detecting tick (15:30:54); `idle` 15:27:23–15:33:17; resumed at the last input seen by the next tick. |
-| `caffeinate -d -t 330` | Ticks at 193, 253, 313 s without input listed `caffeinate[pid]`, so the session stayed open; it ended at the last tick that saw the assertion (15:49:54). |
+| `caffeinate -d -t 330` | Ticks at 193, 253, 313 s without input listed `caffeinate[pid]`, so the session stayed open; it ended at the last tick that saw the assertion (15:49:54). **This behaviour was wrong** and is fixed: a background `caffeinate` no longer keeps the user present (see Decisions). Re-checked 2026-11-18 with build `45a87f9`: `caffeinate -d` started from Ghostty (in front) is reported `front_app: false`. |
 | Lock (Ctrl+Cmd+Q) | `ScreenLocked` + `loginwindow` ended the session; the Mac also slept; one `locked` period (3 m 03 s) until `ScreenUnlocked`; `loginwindow` never recorded as an app. `screensDidSleep` / `screensDidWake` fired (unconfirmed in M0). |
 | `pmset displaysleepnow` | Skipped. |
 | Lid close ~30 s | `WillSleep` flushed and ended the session; `sleep` 15:56:29–15:57:19. A tick fired 5 s after `WillSleep` reporting input from before it; correctly not treated as a return. |
