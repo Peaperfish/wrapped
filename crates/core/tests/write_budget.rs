@@ -3,7 +3,8 @@
 //!
 //!     cargo test -p wrapped-core --release --test write_budget -- --ignored --nocapture
 //!
-//! Simulated day: the front app changes every 3 minutes among 15 apps, a
+//! Simulated day: the front app changes ~1,050 times a day (the measured real
+//! rate, spread evenly over the run) among 15 apps, a
 //! 20-minute idle break every 4 hours, flushes on the normal 10-minute policy,
 //! then a full checkpoint. Four runs: 16 h and 24 h awake, each without and
 //! with the Disk & Memory collector (fake counters; 192 / 288 samples).
@@ -30,6 +31,9 @@ use std::sync::{Arc, Mutex};
 
 use wrapped_core::probe::{DiskMemoryReading, PressureLevel, SystemProbe};
 use wrapped_core::{Engine, ManualClock, Store, SystemEvent, collectors};
+
+/// App switches in a simulated day (the user's measured average).
+const SWITCHES_PER_DAY: i64 = 1050;
 
 /// Counters that grow by a varying amount on every read.
 struct GrowingCounters(Mutex<DiskMemoryReading>);
@@ -96,6 +100,8 @@ struct Run {
     checkpoint_bytes: u64,
     distinct: usize,
     kernel: Option<u64>,
+    /// Main database file growth over the day, after the final checkpoint.
+    db_growth: u64,
 }
 
 fn simulate(hours: i64, disk_memory: bool) -> Run {
@@ -137,17 +143,22 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
     checkpoint(e.store()); // exclude schema creation from the day's numbers
     let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
     assert_eq!(size(&wal), 0);
+    let db_before = size(&path);
     let proc_before = process_disk_bytes_written();
 
     let mut flushes = 0u32;
+    let mut switches = 0i64;
     let mut minute = 0i64;
     while minute < hours * 60 {
-        if minute % 3 == 0 {
+        // Switches due by the end of this minute minus those already done.
+        let due = (minute + 1) * SWITCHES_PER_DAY / (hours * 60);
+        while switches < due {
             e.handle(SystemEvent::FrontApp {
-                bundle_id: format!("com.example.app{}", (minute / 3) % 15),
+                bundle_id: format!("com.example.app{}", switches % 15),
                 name: "App".into(),
             })
             .unwrap();
+            switches += 1;
         }
         c.advance_secs(60);
         minute += 1;
@@ -185,6 +196,7 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
         checkpoint_bytes,
         distinct,
         kernel: proc_before.zip(proc_after).map(|(a, b)| b - a),
+        db_growth: size(&path).saturating_sub(db_before),
     };
     drop(e);
     let _ = std::fs::remove_dir_all(&dir);
@@ -196,14 +208,15 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
 fn one_simulated_day() {
     let mb = |b: u64| b as f64 / 1_048_576.0;
     println!(
-        "{:<26} {:>7} {:>8} {:>13} {:>11} {:>13} {:>13} {:>13}",
-        "run", "flushes", "samples", "WAL bytes", "frames/fl", "checkpoint", "total", "kernel"
+        "{:<26} {:>7} {:>8} {:>13} {:>11} {:>13} {:>13} {:>13} {:>16}",
+        "run", "flushes", "samples", "WAL bytes", "frames/fl", "checkpoint", "total", "kernel",
+        "DB growth/year"
     );
     for (hours, dm) in [(16, false), (16, true), (24, false), (24, true)] {
         let r = simulate(hours, dm);
         let total = r.wal_bytes + r.checkpoint_bytes;
         println!(
-            "{:<26} {:>7} {:>8} {:>13} {:>11.1} {:>13} {:>13} {:>13}",
+            "{:<26} {:>7} {:>8} {:>13} {:>11.1} {:>13} {:>13} {:>13} {:>16}",
             format!(
                 "{hours} h awake, disk_memory {}",
                 if dm { "on" } else { "off" }
@@ -215,6 +228,7 @@ fn one_simulated_day() {
             format!("{} ({}p)", r.checkpoint_bytes, r.distinct),
             format!("{total} ({:.2} MB)", mb(total)),
             r.kernel.map_or("n/a".to_string(), |k| format!("{k}")),
+            format!("{:.1} MB", mb(r.db_growth * 365)),
         );
         assert!(r.sessions > 0);
     }
