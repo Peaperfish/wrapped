@@ -156,6 +156,70 @@ fn flush_collector(state: State<'_, AppState>) -> bool {
     asked
 }
 
+/// Send one request to the running collector (`wrapped-collector ctl`): the
+/// dashboard never writes, the collector does. Always returns the reply as
+/// `{ok: true, data}` or `{ok: false, code, error}`; `code` is `not_running`
+/// when no collector is running and `timeout` when it did not answer.
+#[tauri::command(async)]
+fn ctl(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Value {
+    let fail = |code: &str, error: String| serde_json::json!({ "ok": false, "code": code, "error": error });
+    let (Some(exe), Ok(db)) = (collector_exe(), state.db()) else {
+        return fail(
+            "no_collector",
+            "The Wrapped collector was not found next to the dashboard.".into(),
+        );
+    };
+    let out = std::process::Command::new(exe)
+        .arg("ctl")
+        .arg(&cmd)
+        .arg(args.unwrap_or(Value::Null).to_string())
+        .env("WRAPPED_DB", db)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    let reply = match out {
+        Ok(o) => serde_json::from_slice::<Value>(&o.stdout)
+            .unwrap_or_else(|_| fail("io", "The collector gave no usable answer.".into())),
+        Err(e) => fail("io", format!("Cannot run the collector: {e}")),
+    };
+    state.log(&format!("ctl {cmd}: ok = {}", reply["ok"]));
+    reply
+}
+
+/// Open the Wrapped app (the collector), for "Wrapped isn't running".
+#[tauri::command(async)]
+fn open_wrapped(state: State<'_, AppState>) -> bool {
+    let Some(exe) = collector_exe() else {
+        return false;
+    };
+    // <bundle>/Contents/MacOS/wrapped-collector -> <bundle>
+    let bundle = exe
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .filter(|p| p.extension().is_some_and(|e| e == "app"));
+    let ok = match (bundle, cfg!(target_os = "macos")) {
+        (Some(b), true) => std::process::Command::new("/usr/bin/open")
+            .arg(b)
+            .status()
+            .is_ok_and(|s| s.success()),
+        _ => {
+            // A bare binary: start it detached, with the same database.
+            let mut c = std::process::Command::new(&exe);
+            if let Ok(db) = state.db() {
+                c.env("WRAPPED_DB", db);
+            }
+            c.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+        }
+    };
+    state.log(&format!("open_wrapped: {ok}"));
+    ok
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -227,6 +291,8 @@ pub fn main() -> i32 {
             series,
             app_names,
             flush_collector,
+            ctl,
+            open_wrapped,
             ready
         ])
         .setup(|app| {

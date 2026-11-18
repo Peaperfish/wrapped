@@ -5,6 +5,7 @@
 //! * [`presence`]: the shared idle / sleep / lock state machine.
 //! * [`probe`]: system counters (disk, memory) read through the platform layer.
 //! * [`collectors`]: the built-in collectors and their registration list.
+//! * [`ctl`]: the request-file channel from the dashboard / CLI to the collector.
 //! * [`scan`]: folder walk, hashing and bounded EXIF reading for scanned collectors.
 //! * [`store`]: SQLite schema, migrations, batched writes and daily rollups.
 //! * [`engine`]: routes events, owns the flush policy, pause and settings.
@@ -13,6 +14,7 @@
 
 pub mod collector;
 pub mod collectors;
+pub mod ctl;
 pub mod engine;
 pub mod event;
 pub mod presence;

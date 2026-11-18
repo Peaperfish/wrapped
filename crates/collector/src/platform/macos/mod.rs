@@ -110,6 +110,12 @@ pub fn request_flush(db: &Path) -> Option<i32> {
     (unsafe { libc::kill(pid, libc::SIGUSR1) } == 0).then_some(pid)
 }
 
+/// Wake the running collector so it reads its request folder (SIGUSR2).
+/// False when none is running.
+pub fn wake_for_ctl(db: &Path) -> bool {
+    running_pid(db).is_some_and(|pid| unsafe { libc::kill(pid, libc::SIGUSR2) } == 0)
+}
+
 /// Timestamped line on stderr.
 pub(crate) fn log(msg: &str) {
     eprintln!("[{}] {msg}", SystemClock.now().to_rfc3339());
@@ -258,8 +264,33 @@ pub(crate) fn deliver(ev: SystemEvent) {
         }
     });
     if is_tick {
-        tray::refresh();
+        process_ctl();
     }
+}
+
+/// Answer every request waiting in the request folder (SIGUSR2, and at each
+/// minute tick as a safety net). Each is handled to completion on the main
+/// thread before the next.
+pub(crate) fn process_ctl() {
+    with_state(|st| {
+        for (id, req) in wrapped_core::ctl::take_pending(&st.db) {
+            let reply = st.engine.handle_request(&req);
+            if st.debug || matches!(reply, wrapped_core::ctl::Reply::Err { .. }) {
+                log(&format!(
+                    "request {}: {}",
+                    req.cmd,
+                    match &reply {
+                        wrapped_core::ctl::Reply::Ok(_) => "ok".to_string(),
+                        wrapped_core::ctl::Reply::Err { code, error } => format!("{code}: {error}"),
+                    }
+                ));
+            }
+            wrapped_core::ctl::reply(&st.db, &id, &reply);
+            // Anything that wrote records (delete, pause) is visible at once.
+            st.measured("request", |e| e.flush().map(Some));
+        }
+    });
+    tray::refresh();
 }
 
 /// A scan thread wants a flush, or has finished (via the main queue).

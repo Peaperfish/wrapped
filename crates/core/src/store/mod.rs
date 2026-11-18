@@ -393,6 +393,22 @@ impl Store {
             .collect())
     }
 
+    /// True if anything has been recorded (any session, sample, item or daily
+    /// metric): the database of an existing install.
+    pub fn has_any_data(&self) -> Result<bool> {
+        for table in ["sessions", "samples", "items", "daily_metrics"] {
+            let any: bool =
+                self.conn
+                    .query_row(&format!("SELECT EXISTS(SELECT 1 FROM {table})"), [], |r| {
+                        r.get(0)
+                    })?;
+            if any {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn item_count(&self, collector: &str) -> Result<i64> {
         Ok(self.conn.query_row(
             "SELECT count(*) FROM items WHERE collector = ?1",
