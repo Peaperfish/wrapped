@@ -1,8 +1,9 @@
-# Root workspace. Any crate placed under crates/ joins automatically.
+# Root workspace. Any crate placed under crates/ joins automatically, plus the
+# dashboard (Tauri backend; its web frontend lives in dashboard/ui/).
 # `spikes/` is excluded: the M0 spike is macOS-only and has its own lockfile.
 [workspace]
 resolver = "3"
-members = ["crates/*"]
+members = ["crates/*", "dashboard"]
 exclude = ["spikes"]
 
 [workspace.package]
