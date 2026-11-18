@@ -1,6 +1,6 @@
 <script lang="ts">
   // The dashboard shell: header (range presets, freshness, refresh), the year
-  // heatmap and, for 5a, a plain-text summary of the selected range.
+  // heatmap and the cards for the selected range.
   //
   // Data flow: meta() once (and on refresh); series(year, metric) once per
   // (year, metric), cached until refresh; summary(from, to) whenever the
@@ -9,7 +9,7 @@
   import { onMount, tick } from "svelte";
   import Header from "./lib/Header.svelte";
   import Heatmap from "./lib/Heatmap.svelte";
-  import RangePanel from "./lib/RangePanel.svelte";
+  import Cards from "./lib/Cards.svelte";
   import { errorText, getMeta, getSeries, getSummary, ready } from "./lib/api";
   import {
     type Preset,
@@ -18,6 +18,7 @@
     localToday,
     presetOf,
     presetRange,
+    summaryQuery,
     yearOf,
   } from "./lib/dates";
   import type { Meta, SummaryJson, YearSeries } from "./lib/types";
@@ -105,10 +106,10 @@
       return;
     }
     const seq = ++summarySeq;
-    const { from, to } = selection;
+    const q = summaryQuery(selection, today);
     summaryLoading = true;
     try {
-      const s = await getSummary(from, to);
+      const s = await getSummary(q.from, q.to, q.vs);
       if (seq === summarySeq) {
         summary = s;
         summaryError = null;
@@ -215,7 +216,7 @@
         onmetric={setMetric}
       />
     {/if}
-    <RangePanel {meta} {selection} {summary} loading={summaryLoading} error={summaryError} />
+    <Cards {meta} {summary} loading={summaryLoading} error={summaryError} />
     <p class="build faint">
       <span class="num">{meta.db_path}</span> · build <span class="num">{meta.build}</span>
     </p>

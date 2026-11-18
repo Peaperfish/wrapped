@@ -40,3 +40,22 @@ export function fmtPct(p: number | null): string {
   if (p === 0) return "0%";
   return `${p > 0 ? "+" : "−"}${Math.abs(p).toFixed(1)}%`;
 }
+
+const APP_NAMES: Record<string, string> = {
+  "com.google.Chrome": "Chrome",
+  "com.apple.finder": "Finder",
+  "com.apple.Safari": "Safari",
+  "com.mitchellh.ghostty": "Ghostty",
+  "com.microsoft.Word": "Word",
+  "com.tencent.xinWeChat": "WeChat",
+};
+
+/** A readable name for a bundle id ("com.google.Chrome" → "Chrome"): a few
+ *  known ones, else the last part with its first letter capitalised. Other
+ *  keys ("idle", "(unknown)") pass through. */
+export function appName(bundleId: string): string {
+  const known = APP_NAMES[bundleId];
+  if (known) return known;
+  const last = bundleId.split(".").pop() ?? bundleId;
+  return bundleId.includes(".") ? last.charAt(0).toUpperCase() + last.slice(1) : bundleId;
+}
