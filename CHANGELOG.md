@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `wrapped-collector recompute <from> <to> [--collector <name>]` rebuilds the daily metrics of each local day in the range from the stored items and sessions (uses `Store::recompute_day`), e.g. after a rollup change. Takes the single-writer lock, so it refuses while Wrapped is running.
 - Dependabot checks npm dependencies of `dashboard/ui` weekly. `write_budget` simulates the measured ~1,050 app switches a day (was one every 3 minutes) and reports main-database growth per year.
 - Milestone 5c: dashboard polish. Own date range picker (popover, two months, keyboard support) replaces the native date inputs of Custom; heatmap selections keep their colours and dim the rest instead of outlining every cell; the Away (awake) card no longer shows "Times away" (it counted sleep periods).
 - Milestone 5b: dashboard cards (screen time, away, time of day, top apps, records, git, photos, disk & swap, memory pressure) replacing the plain-text panel. Presets still in progress (this week / month / year) are summarised up to today and compared with the same elapsed days of the previous period (`Stats::summary_vs`, `summary(from, to, vsFrom?, vsTo?)`). Friendly camera and lens names in summaries (display only); real app names (`app_names` command); refresh asks the collector to flush first; opening Wrapped.app again (Spotlight, Finder) opens the dashboard; `install.sh` unregisters stale copies; `SUMMARY_TOP_N` is 8.
