@@ -212,8 +212,13 @@ fn idle_is_backdated_to_last_input_and_return_restarts() {
         h.sessions(AI),
         vec![s("idle", "09:00:40", "09:04:00", true)]
     );
-    // Back at the keyboard; the 09:10 tick sees input 5 s ago.
-    h.adv(360);
+    // Back at the keyboard; the 09:10 tick sees input 5 s ago. The ticks in
+    // between keep the gap below TICK_GAP_MS (a longer gap counts as sleep).
+    for _ in 0..5 {
+        h.adv(60);
+        h.tick(300.0);
+    }
+    h.adv(60);
     h.tick(5.0);
     h.adv(60);
     h.tick(1.0);
@@ -554,6 +559,40 @@ fn sleep_ends_session_and_wake_restarts() {
         h.metric(DAY, AI, "away_secs_by_reason", "sleep"),
         Some(28800.0)
     );
+}
+
+#[test]
+fn idle_that_turns_into_sleep_is_split_at_the_sleep_moment() {
+    let mut h = H::new();
+    h.app("com.a");
+    h.adv(60);
+    h.tick(20.0); // input at 09:00:40
+    h.adv(60);
+    h.tick(80.0);
+    h.adv(60);
+    h.tick(140.0);
+    h.adv(60);
+    h.tick(200.0); // 09:04:00: idle since 09:00:40
+    for _ in 0..6 {
+        h.adv(60);
+        h.tick(300.0); // 09:10:00, still idle
+    }
+    h.ev(SystemEvent::WillSleep);
+    h.adv(3600);
+    h.ev(SystemEvent::DidWake);
+    h.adv(60);
+    h.tick(2.0);
+    assert_eq!(
+        h.sessions(AI),
+        vec![
+            s("idle", "09:00:40", "09:10:00", false),
+            s("sleep", "09:10:00", "10:10:00", false),
+        ]
+    );
+    assert_eq!(h.metric(DAY, AI, "away_secs_by_reason", "idle"), Some(560.0));
+    assert_eq!(h.metric(DAY, AI, "away_secs_by_reason", "sleep"), Some(3600.0));
+    // One continuous away period: the split is not a new "time away".
+    assert_eq!(h.metric(DAY, AI, "away_periods", ""), Some(1.0));
 }
 
 /// macOS runs the minute timer during dark wakes (maintenance wakes) without
