@@ -3,14 +3,17 @@
 //! * Runs only while its window is open; closing the window quits.
 //! * Reads the collector's database read-only and never writes
 //!   (see [`data`]); `--db <path>` picks another database.
-//! * Commands: `meta`, `summary(from, to, vsFrom?, vsTo?)`, `series(year, metric)` and
+//! * Commands: `meta`, `summary(from, to, vsFrom?, vsTo?)`, `series(year, metric)`,
+//!   `app_names(ids)`, `flush_collector` (asks a running collector to save, by
+//!   running `wrapped-collector flush`; the dashboard itself never writes) and
 //!   `ready` (the page has rendered: show the window). Types are in
 //!   [`types`], mirrored to TypeScript in `ui/src/lib/types/`.
 
 pub mod data;
+pub mod names;
 pub mod types;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -104,6 +107,55 @@ fn series(state: State<'_, AppState>, year: i32, metric: String) -> data::Result
     })
 }
 
+/// Display names for bundle ids (see [`names`]).
+#[tauri::command(async)]
+fn app_names(ids: Vec<String>) -> std::collections::HashMap<String, String> {
+    names::app_names(&ids)
+}
+
+/// The collector binary that goes with this dashboard: `Wrapped.app/Contents/
+/// MacOS/wrapped-collector` when this is the nested app, else the one next to
+/// this executable.
+fn collector_exe() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    let name = if cfg!(windows) {
+        "wrapped-collector.exe"
+    } else {
+        "wrapped-collector"
+    };
+    // <bundle>/Contents/Helpers/Wrapped Dashboard.app/Contents/MacOS/<exe>
+    let nested = dir
+        .ancestors()
+        .nth(3)
+        .filter(|p| p.file_name().is_some_and(|n| n == "Helpers"))
+        .and_then(Path::parent)
+        .map(|contents| contents.join("MacOS").join(name));
+    nested
+        .filter(|p| p.is_file())
+        .or_else(|| Some(dir.join(name)).filter(|p| p.is_file()))
+}
+
+/// Ask a running collector to flush now, the same as `wrapped-collector
+/// flush` (SIGUSR1). True when one was found and asked; false when no
+/// collector is running (or none can be run): then there is nothing to wait for.
+#[tauri::command(async)]
+fn flush_collector(state: State<'_, AppState>) -> bool {
+    let (Some(exe), Ok(db)) = (collector_exe(), state.db()) else {
+        return false;
+    };
+    let asked = std::process::Command::new(exe)
+        .arg("flush")
+        .env("WRAPPED_DB", db)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success());
+    state.log(&format!("flush_collector: asked = {asked}"));
+    asked
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -169,7 +221,14 @@ pub fn main() -> i32 {
     ));
     let result = tauri::Builder::default()
         .manage(state)
-        .invoke_handler(tauri::generate_handler![meta, summary, series, ready])
+        .invoke_handler(tauri::generate_handler![
+            meta,
+            summary,
+            series,
+            app_names,
+            flush_collector,
+            ready
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             std::thread::spawn(move || {
