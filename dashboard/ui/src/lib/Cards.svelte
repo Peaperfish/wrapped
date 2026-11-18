@@ -49,7 +49,6 @@
     if (!t) return total("active_idle", "away_secs") === undefined ? undefined : 0;
     return t.keys.filter((k) => k.key !== "sleep").reduce((a, k) => a + k.value, 0);
   });
-  const awayCount = $derived(total("active_idle", "away_periods"));
   const activeDays = $derived(
     (summary?.series.find((s) => s.collector === "app_usage" && s.metric === "screen_time_secs")?.days ?? []).filter(
       (v) => v > 0,
@@ -125,12 +124,10 @@
             title="Screen time {fmtSecs(s)}, away while awake {fmtSecs(a)}"
           />
           <dl>
-            <dt class="muted">Screen</dt>
+            <dt class="muted"><i class="sw on"></i>Screen</dt>
             <dd class="num">{fmtSecs(s)}</dd>
-            <dt class="muted">Away (awake)</dt>
+            <dt class="muted"><i class="sw"></i>Away (awake)</dt>
             <dd class="num">{fmtSecs(a)}</dd>
-            <dt class="muted" title="Includes periods that were sleep">Times away</dt>
-            <dd class="num">{awayCount ?? 0}</dd>
           </dl>
         </div>
       </Card>
@@ -262,6 +259,24 @@
     align-items: center;
     gap: 14px;
     flex-wrap: wrap;
+  }
+  .ringrow dl {
+    gap: 10px 14px;
+    font-size: 14px;
+  }
+  /* Colour key matching the ring: accent = at screen, grey = away. */
+  .sw {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 7px;
+    background: var(--cell-empty);
+    box-shadow: inset 0 0 0 1px var(--card-border);
+  }
+  .sw.on {
+    background: var(--accent);
+    box-shadow: none;
   }
   dl {
     margin: 0;

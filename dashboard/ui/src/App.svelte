@@ -233,6 +233,7 @@
   <Header
     {selection}
     {preset}
+    {today}
     {asOf}
     refreshing={refreshing}
     {asOfFlash}

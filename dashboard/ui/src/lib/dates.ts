@@ -133,8 +133,18 @@ export function fmtDay(d: Ymd, withYear = true): string {
   return withYear ? `${s} ${y}` : s;
 }
 
+export const monthLong = (m: number): string => MONTHS_LONG[m] ?? "";
 export const monthShort = (m: number): string => MONTHS[m] ?? "";
 export const weekdayShort = (i: number): string => WEEKDAYS[i] ?? "";
+
+/** The date-range button: "18 Nov 2026", or "1 Jan 2026 – 31 Dec 2026". */
+export function rangeButtonLabel(r: Range): string {
+  const f = (d: Ymd): string => {
+    const [y, m, day] = parts(d);
+    return `${day} ${MONTHS[m - 1]} ${y}`;
+  };
+  return r.from === r.to ? f(r.from) : `${f(r.from)} – ${f(r.to)}`;
+}
 
 /** "18 Nov 2026", "3 – 9 Nov 2026", "November 2026", "2026", … */
 export function rangeLabel(r: Range): string {
