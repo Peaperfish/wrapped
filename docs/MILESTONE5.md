@@ -284,3 +284,24 @@ button spins meanwhile; "as of" is highlighted briefly when its text changes.
   open session it is the end of the last recorded activity.
 - Release size: LTO / stripping could shrink the dashboard executable;
   not done to keep the collector's build unchanged.
+
+## 5c: polish
+
+- **Date range picker.** The two native date inputs of Custom are replaced by
+  one button showing the range ("1 Jan 2026 – 31 Dec 2026"; one day shows just
+  that day). It opens `DateRangePicker.svelte`: two months side by side,
+  Monday-first, prev / next arrows, a "Today" link, today ringed, the range as
+  an accent band with solid end caps, future days dimmed and not selectable.
+  Click a start day, then an end day (swapped when before the start; hover
+  previews). Escape or a click outside cancels, leaving the selection as it
+  was; Return or the second click applies, through the same `oncustom` path as
+  the old inputs. Keyboard: arrows move the focused day, shift+arrows extend,
+  Space picks like a click, Return applies. The popover is absolutely
+  positioned (no header shift) and closes when a preset is chosen.
+- **Heatmap selection.** No per-cell borders: selected cells keep their
+  colour, the rest drop to 35% opacity; a single day gets a thin accent ring.
+- **Away (awake) card.** "Times away" is removed (it counted sleep periods
+  too; only the daily total is stored). Stored data and CLI output are
+  unchanged. The card now shows two rows with a colour key matching the ring.
+
+No deviations from DESIGN.md, so DEVIATIONS.md is unchanged.
