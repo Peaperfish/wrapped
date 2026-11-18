@@ -1,10 +1,12 @@
 <script lang="ts">
   // Range presets, the selected range, data freshness and refresh.
-  import { type Preset, type Range, type Ymd, isValidYmd, ordered, rangeLabel } from "./dates";
+  import DateRangePicker from "./DateRangePicker.svelte";
+  import { type Preset, type Range, type Ymd, rangeButtonLabel, rangeLabel } from "./dates";
 
   interface Props {
     selection: Range;
     preset: Preset;
+    today: Ymd;
     asOf: string | null;
     refreshing: boolean;
     asOfFlash?: boolean;
@@ -12,7 +14,7 @@
     oncustom: (r: Range) => void;
     onrefresh: () => void;
   }
-  let { selection, preset, asOf, refreshing, asOfFlash = false, onpreset, oncustom, onrefresh }: Props = $props();
+  let { selection, preset, today, asOf, refreshing, asOfFlash = false, onpreset, oncustom, onrefresh }: Props = $props();
 
   const presets: [Exclude<Preset, "custom">, string][] = [
     ["today", "Today"],
@@ -21,15 +23,16 @@
     ["year", "This year"],
   ];
 
-  // Custom shows two date fields; it opens on click and stays open while
-  // the selection is not a preset.
+  // Custom shows one button with the range; it opens a calendar popover and
+  // stays visible while the selection is not a preset.
   let customOpen = $state(false);
+  let pickerOpen = $state(false);
+  let rangeBtn: HTMLButtonElement | undefined = $state();
   const showCustom = $derived(customOpen || preset === "custom");
 
-  function setDate(which: "from" | "to", value: Ymd) {
-    if (!isValidYmd(value)) return;
-    const other = which === "from" ? selection.to : selection.from;
-    oncustom(ordered(value, other));
+  function closePicker() {
+    pickerOpen = false;
+    rangeBtn?.focus({ preventScroll: true });
   }
 </script>
 
@@ -47,6 +50,7 @@
           aria-pressed={preset === p && !customOpen}
           onclick={() => {
             customOpen = false;
+            pickerOpen = false;
             onpreset(p);
           }}>{title}</button
         >
@@ -54,25 +58,35 @@
       <button
         class:active={showCustom}
         aria-pressed={showCustom}
-        onclick={() => (customOpen = true)}>Custom</button
+        onclick={() => {
+          customOpen = true;
+          pickerOpen = true;
+        }}>Custom</button
       >
     </div>
 
     {#if showCustom}
       <div class="dates">
-        <input
-          type="date"
-          aria-label="From"
-          value={selection.from}
-          onchange={(e) => setDate("from", e.currentTarget.value)}
-        />
-        <span class="faint">–</span>
-        <input
-          type="date"
-          aria-label="To"
-          value={selection.to}
-          onchange={(e) => setDate("to", e.currentTarget.value)}
-        />
+        <button
+          class="range-btn num"
+          class:open={pickerOpen}
+          aria-haspopup="dialog"
+          aria-expanded={pickerOpen}
+          bind:this={rangeBtn}
+          onclick={() => (pickerOpen = !pickerOpen)}>{rangeButtonLabel(selection)}</button
+        >
+        {#if pickerOpen}
+          <DateRangePicker
+            {selection}
+            {today}
+            trigger={rangeBtn}
+            onapply={(r) => {
+              oncustom(r);
+              closePicker();
+            }}
+            onclose={closePicker}
+          />
+        {/if}
       </div>
     {/if}
 
@@ -143,10 +157,16 @@
     border-color: rgba(var(--accent-rgb), 0.35);
     color: var(--text);
   }
+  /* The popover is absolutely positioned: opening it moves nothing. */
   .dates {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    position: relative;
+  }
+  .range-btn {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+  .range-btn.open {
+    border-color: rgba(var(--accent-rgb), 0.45);
   }
   .asof {
     font-size: 12px;
