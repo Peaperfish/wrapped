@@ -249,3 +249,27 @@ untouched until the installed app does its own first scan.
    seven tools, the ones never found greyed as "Not installed" (checked on
    every scan, added as a source once found). Setup lists only the detected
    ones. Or should undetected tools be hidden in Settings too?
+
+## Progress (partial run, stopped by request)
+
+Commits on `m6`: ctl channel, setup mode, settings modal, `wip: m6 phase 2 (partial)`.
+
+**Done**
+- ctl channel (request files + SIGUSR2, `wrapped-collector ctl`, errors for "not running"), with tests.
+- Setup mode: `onboarding.done`, existing installs skipped, dashboard setup screen, tray "Settings…" / "Finish Setup…", checked end to end on a scratch DB.
+- Settings modal (Tracking, Exclude list, Folders, Data), gear button, tray flag, Tauri dialog plugin.
+- AI usage backend written: schema v4, `ai` module, adapters for all 7 tools, `ai_usage` collector, sources / bookmarks, AI requests on the ctl channel, export of `ai_usage`.
+
+**In progress**
+- `crates/core/tests/ai.rs` (adapter tests) written, does not compile yet; none of its tests have run.
+- Existing tests were adjusted for the new default-on collector (`builtin_hermetic`).
+
+**Not started**
+- AI sources section in Settings (stub only), AI card, heatmap entry for AI tokens, setup-screen tool list (`ai_detect`), `meta.ai`.
+- Docs (DESIGN.md, DEVIATIONS.md incl. SIGUSR2 macOS-only, CHANGELOG), measurements, `install.sh`, final report.
+
+**Checks failing right now**
+- `cargo fmt --check`: fails (needs `cargo fmt`).
+- `cargo clippy -D warnings`: fails (`is_multiple_of` x2, redundant closure x1, complex type x3).
+- `cargo test`: `wrapped-core` lib tests and `tests/ai.rs` do not compile (6 errors in core with tests enabled, 1 `?` error in `ai.rs`); other test targets were passing before this.
+- `npm run check` and `npm run build`: pass.
