@@ -189,8 +189,8 @@ rm -rf ~/Library/Application\ Support/Wrapped   # only to delete all recorded da
   Not verified live for Safari / WebKit.
 - **Timer stretching**: if App Nap or coalescing ever delayed a tick by more
   than 5 min with no sleep notification, that gap would be recorded as sleep.
-  Not observed so far (gaps 59.9–65.0 s over 36 min); being measured in the
-  overnight run.
+  Not observed: the longest tick gap while awake was 65.0 s over the 41 h
+  run (see Results).
 - **Very short sessions** (a Cmd-Tab passing through apps) are stored and
   counted as switches; there is no minimum duration.
 - **Away periods only exist while the collector runs**: time while the
@@ -310,22 +310,44 @@ notification for those, yet the minute timer fired during them, with
 - Test: `dark_wake_ticks_keep_sleeping_and_skip_periodic_flush` in
   `crates/core/tests/engine.rs`.
 
-### Results (to be filled in from the overnight run)
+### Results (overnight + workday run, build 30fed1b)
 
-| Metric | Budget | Start | +1 h | +8 h | Next morning | Notes |
-|---|---|---|---|---|---|---|
-| RSS, `ps -o rss=` (KB) | — | | | | | |
-| Physical footprint (MB) | < 20 MB | | | | | |
-| Total CPU time, `ps -o time=` | ~0% | | | | | |
-| `wrapped.db` size (bytes) | | | | | | |
-| `wrapped.db-wal` size (bytes) | | | | | | |
-| Debug log size (bytes) | | | | | | |
-| Bytes Written, Activity Monitor | | | | | | |
-| Collector writes (Bytes Written − debug log) | ~1–2 MB/day | | | | | |
-| Energy Impact (battery) | ≈ 0 | | | | | |
-| Avg Energy Impact (battery) | ≈ 0 | | | | | |
-| Max tick gap without sleep (s) | < 300 | | | | | |
-| Tick-gap warnings | 0 | | | | | |
-| Dark-wake ticks (informational) | — | | | | | |
-| `screen_time_secs` vs own estimate | | | | | | |
-| Longest `app_usage` session vs real use | | | | | | |
+Release build `30fed1b` with `WRAPPED_DEBUG=1`, real database, 2026-11-16
+17:25:55 → 2026-11-18 10:46:40 (41.3 h wall, 17.6 h awake: the time outside
+`WillSleep` → `DidWake`). Readings are from `measure.sh`
+(`~/wrapped-phase-c/measurements.txt`), taken when they were taken rather
+than at the +1 h / +8 h marks; derived figures come from the debug log and
+`pmset -g log`. Measured numbers only.
+
+| Metric | Budget | Start 11-16 17:25 | +4 h 00 11-16 21:25 | +4 h 57 11-16 22:23 | +15 h 11-17 08:25 | End +41 h 20 11-18 10:46 | Notes |
+|---|---|---|---|---|---|---|---|
+| RSS, `ps -o rss=` (KB) | — | 80 | 65,584 | 64,080 | 64,640 | 21,680 | Includes shared framework pages; not the budget figure. Start reading taken before AppKit was up. |
+| Physical footprint (MB) | < 20 MB | 0.08 | 11.4 | 11.5 | 11.6 | 18.8 | **Under investigation, not a pass.** 11.3–11.6 MB for the first ~15 h, then 18.8 MB after a heavy day (~1,050 app switches on 11-17). Under budget but it grew. A fresh process of `a79ec83` starts at 12 MB. |
+| Total CPU time, `ps -o time=` | ~0% | 0:00.00 | 0:00.25 | 0:00.51 | 0:00.79 | 0:06.75 | 6.75 s over 17.6 awake h = 0.38 s per awake hour (≈ 0.01 % of one core). Heavy-day stretch 11-17 08:25 → end: 5.96 s over 16.2 awake h = 0.37 s/h. CPU during dark wakes is in the totals, so per-awake-hour is slightly high. |
+| `wrapped.db` size (bytes) | | 40,960 | 40,960 | 40,960 | 40,960 | 40,960 | No checkpoint during the run. |
+| `wrapped.db-wal` size (bytes) | | 0 | 61,832 | 156,592 | 296,672 | 2,002,352 | Grew monotonically over all 132 flushes, below the 4 MB auto-checkpoint, so WAL size = bytes written to the WAL. |
+| Debug log size (bytes) | | 0 | 4,097 | 18,535 | 34,281 | 371,315 | |
+| Bytes Written, Activity Monitor | | — | — | — | — | — | Not recorded. (The kernel counter in the flush log read 4,096 total at shutdown: writes stay in the page cache; see Known limitations.) |
+| Collector writes | ~1–2 MB/day | — | — | — | — | — | From WAL growth instead: 2.00 MB over 17.6 awake h ≈ **1.82 MB per 16 awake h**. Local day 11-17 (13.8 h awake, 1,050 switches): ~1.53 MB between the flushes nearest its midnights ≈ 1.77 MB per 16 h. Simulation: 1.01 MB per 16 h day, so the field figure is ~1.8× the simulation, inside the guideline. 206,000 bytes came from 21 flushes during dark wakes (fixed after this build). |
+| Energy Impact (battery) | ≈ 0 | | | | | | Not measured. |
+| Avg Energy Impact (battery) | ≈ 0 | | | | | | Not measured. |
+| Max tick gap without sleep (s) | < 300 | | | | | 65.0 | Over the 1,050 tick gaps while awake. `measure.sh`'s `max_gap_s` (7,311.2 → 9,083.1) are dark-wake gaps. |
+| Tick-gap warnings | 0 | 0 | 2 | 2 | 8 | 17 | All 17 fell between `WillSleep` and `DidWake`, each within 2 min of a pmset `DarkWake`. This build predates the dark-wake fix, which logs these as dark-wake ticks instead. |
+| Dark-wake ticks (informational) | — | 0 | — | 0 | 0 | 0 | Always 0: this build does not log them as such (see the 17 warnings). |
+| `screen_time_secs` vs own estimate | | | | | | | 11-17: 44,561 s (12 h 22 m) + away 41,839 s = 86,400 s. Includes ~2 h 30 m of false Ghostty time (caffeinate, below). |
+| Longest `app_usage` session vs real use | | | | | | | The 1 h 17 m and 1 h 13 m Ghostty sessions on 11-17 were away time (caffeinate). Both overnight sleeps were single `sleep` periods: 22:32:45 → 08:12:10 (9 h 39 m) and 23:31:23 → 08:10:39 (8 h 39 m). |
+
+Sanity-check findings:
+
+- Totals are internally consistent: for 2026-11-17 screen time + away =
+  86,400 s, and the sums of `app_secs` (44,565 s) and of the hour buckets
+  (44,560 s) are within 5 s of `screen_time_secs` (44,561 s).
+- **Bug, fixed on `fix/background-assertions`**: `caffeinate -d` (pid 49222,
+  started in Ghostty, held `PreventUserIdleDisplaySleep` 17:22:41 → 23:26:00)
+  kept the user present through two away periods, 17:39–18:57 and
+  21:37–22:50. See Decisions ("Only the front app's display assertion…").
+  Already recorded data is not rewritten.
+- **Open, follow-up (not fixed)**: an idle period that turns into idle sleep
+  stays keyed `idle` (DEVIATIONS.md, Active / idle). On 11-17 the `idle`
+  period 12:02:52–13:50:54 included the sleep 12:26:32–13:50:54 (~1 h 24 m),
+  so "away excluding sleep" stats overcount.
