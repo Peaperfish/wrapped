@@ -20,10 +20,10 @@ fn watch_git(root: &str) {
     let dir = std::path::Path::new(root).join(".git");
     let head = dir.join("HEAD");
     let mut paths = vec![head.clone(), dir.join("packed-refs"), dir.join("index")];
-    if let Ok(text) = std::fs::read_to_string(&head) {
-        if let Some(r) = text.trim().strip_prefix("ref: ") {
-            paths.push(dir.join(r));
-        }
+    if let Ok(text) = std::fs::read_to_string(&head)
+        && let Some(r) = text.trim().strip_prefix("ref: ")
+    {
+        paths.push(dir.join(r));
     }
     for p in paths.into_iter().filter(|p| p.exists()) {
         println!("cargo:rerun-if-changed={}", p.display());
