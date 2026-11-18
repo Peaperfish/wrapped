@@ -30,7 +30,7 @@ Accepted differences from the design doc are in [DEVIATIONS.md](DEVIATIONS.md).
   - `meta()`: collectors and whether they are on, the earliest date with
     data, the last flush time, the heatmap metrics (only of collectors that
     are on), today's local date and the build id;
-  - `summary(from, to)`: the stats engine's result for the range;
+  - `summary(from, to, vsFrom?, vsTo?)`: the stats engine's result for the range (5b added the optional comparison range);
   - `series(year, metric)`: one value per day of the year, zeros included.
 
   TypeScript types are generated from the Rust structs with ts-rs into
@@ -86,7 +86,7 @@ Accepted differences from the design doc are in [DEVIATIONS.md](DEVIATIONS.md).
   the newest session, an open session's end being the last flush; newest
   sample; latest scan start).
 - `summary()` returns `Summary::to_json()` unchanged with
-  `SUMMARY_TOP_N` (5) keys per metric, now a core constant shared with the
+  `SUMMARY_TOP_N` (5 in 5a, 8 since 5b) keys per metric, now a core constant shared with the
   CLI.
 - `series()` takes `"<collector>/<metric>"` (the `id` in
   `meta().metrics`); only metrics without keys of collectors that are on.
@@ -215,9 +215,34 @@ App, against `~/Documents/wrapped-notes/m3-scratch.db`:
 - Collector release binary: 3,874,560 B before → 3,894,384 B after
   (+19.8 KB: the tray item and spawning the dashboard process).
 
+## What was built (5b)
+
+- **Fair comparisons.** `Stats::summary_vs(range, vs, top_n)`: an optional
+  explicit comparison range (`summary` is `summary_vs(.., None, ..)`, so
+  `stats range --json` and the dashboard stay identical). The frontend
+  (`summaryQuery` in `dates.ts`) asks for a preset that contains today
+  (This week / month / year) only up to today and compares it with the same
+  elapsed days of the period before: Mon..today vs last Mon..same weekday; the
+  1st..today vs the 1st..the same day of last month (clamped to its length);
+  Jan 1..today vs Jan 1..the same date last year (Feb 29 → Feb 28). The
+  heatmap selection is still the whole period (future days blank). Today,
+  custom ranges and finished periods compare with the previous range of equal
+  length, as before. The comparison range can be shorter than the current one
+  after clamping (31 Mar vs 1..28 Feb).
+- **Cards** replace `RangePanel.svelte`: a 12-column grid, S = 3, M = 6,
+  L = 12 columns (S pairs up below 1100 px). `Card`, `BigNumber`, `BarList`,
+  `Ring`, `HourBars` are hand-drawn SVG with colours from `app.css` only.
+  Order: Screen time, Away, Time of day, Top apps, Records, Git, Photos,
+  Disk & Swap, Memory pressure. Cards of collectors that are off are not
+  drawn; a card without data says "Nothing in this range".
+- **Friendly camera names** (`photos::friendly_camera`): applied by the stats
+  summary only (stored keys stay as the EXIF said); models that share a name
+  add up. Unknown codes pass through.
+- App names: bundle ids shown as a readable name (`appName`: a few known
+  ones, else the last part of the id); the tooltip has the bundle id.
+
 ## Known limitations / left for 5b
 
-- The cards (5b). The plain-text panel is a placeholder.
 - No live update while open: data changes appear on refresh.
 - Windows: no single-instance handling (a second "dashboard" opens a
   second window) and no default database path (pass `--db`).
