@@ -22,6 +22,25 @@ jobs:
         os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
+
+      # Dashboard frontend (dashboard/ui): type-check and build. The build
+      # also gives the dashboard crate a ui/dist to embed.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dashboard/ui/package-lock.json
+      - name: npm ci
+        working-directory: dashboard/ui
+        run: npm ci --no-audit --no-fund
+      - name: svelte-check
+        working-directory: dashboard/ui
+        run: npm run check
+      - name: frontend build
+        working-directory: dashboard/ui
+        run: npm run build
+
+      # Rust: the whole workspace (collector, core, dashboard).
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy

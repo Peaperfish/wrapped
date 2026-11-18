@@ -1,0 +1,140 @@
+/* Theme: dark glass cards, one accent colour, tabular / monospace numbers.
+   Every colour the components use comes from these variables. */
+:root {
+  color-scheme: dark;
+
+  --bg: #0b0d12;
+  --bg-glow-1: rgba(61, 220, 151, 0.08);
+  --bg-glow-2: rgba(90, 120, 255, 0.07);
+
+  --card-bg: rgba(255, 255, 255, 0.035);
+  --card-bg-strong: rgba(255, 255, 255, 0.06);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --card-blur: 18px;
+  --radius: 14px;
+  --radius-sm: 8px;
+
+  --text: #e8ebf2;
+  --text-dim: #9aa2b5;
+  --text-faint: #5f677a;
+  --divider: rgba(255, 255, 255, 0.07);
+
+  --accent: #3ddc97;
+  --accent-rgb: 61, 220, 151;
+  --accent-ink: #06150e;
+  --danger: #ff7a7a;
+
+  /* Heatmap: empty, four levels of the accent, future days. */
+  --cell-empty: rgba(255, 255, 255, 0.055);
+  --cell-1: rgba(var(--accent-rgb), 0.22);
+  --cell-2: rgba(var(--accent-rgb), 0.42);
+  --cell-3: rgba(var(--accent-rgb), 0.68);
+  --cell-4: rgba(var(--accent-rgb), 1);
+  --cell-future: rgba(255, 255, 255, 0.02);
+  --cell-selected: #ffffff;
+
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--bg-glow-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+/* Numbers: tabular figures in the monospace face, so columns line up. */
+.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  box-shadow: var(--card-shadow);
+  backdrop-filter: blur(var(--card-blur)) saturate(140%);
+  -webkit-backdrop-filter: blur(var(--card-blur)) saturate(140%);
+  padding: 18px 20px;
+}
+
+.card h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.muted {
+  color: var(--text-dim);
+}
+.faint {
+  color: var(--text-faint);
+}
+.error {
+  color: var(--danger);
+}
+
+button,
+select,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: var(--card-bg-strong);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: 5px 11px;
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: rgba(var(--accent-rgb), 0.5);
+}
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+svg:focus-visible {
+  outline: 2px solid rgba(var(--accent-rgb), 0.7);
+  outline-offset: 2px;
+}
+
+select,
+input[type="date"] {
+  background: var(--card-bg-strong);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+}

@@ -22,5 +22,10 @@ objc2-core-graphics = "0.3"
 objc2-foundation = "0.3"
 objc2-service-management = "0.3"
 
+[dev-dependencies]
+# Only for tests/dashboard_json.rs (the dashboard's summary = this CLI's JSON);
+# never linked into the collector itself.
+wrapped-dashboard = { path = "../../dashboard" }
+
 [lints]
 workspace = true

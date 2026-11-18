@@ -7,6 +7,8 @@
 //!   [`wrapped_core::SystemEvent`]s and feeds them to the engine on one thread.
 //! * `running_pid(db)` / `request_flush(db)`: find / ask a running collector
 //!   to flush now.
+//! * `open_dashboard(db)`: start the dashboard window (or bring it to the
+//!   front on macOS).
 //! * `login(cmd)`: launch-at-login `enable` / `disable` / `status`.
 //! * `scan_hooks()`: lowest priority for scan threads and their child processes.
 //! * `hold_db_lock(db)`: single-writer lock for a CLI scan.

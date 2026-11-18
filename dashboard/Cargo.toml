@@ -1,0 +1,38 @@
+[package]
+name = "wrapped-dashboard"
+version = "0.1.0"
+description = "Wrapped dashboard: Tauri window over the stats engine (read-only, runs only while open)"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+name = "wrapped_dashboard"
+path = "src/lib.rs"
+
+[[bin]]
+name = "wrapped-dashboard"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+wrapped-core = { path = "../crates/core" }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+ts-rs = "12"
+
+[dev-dependencies]
+rusqlite = { version = "0.43", features = ["bundled"] }
+
+[features]
+# Set by `tauri build` and by scripts/macos/bundle.sh: embed ui/dist instead of
+# loading the Vite dev server.
+custom-protocol = ["tauri/custom-protocol"]
+
+[lints]
+workspace = true

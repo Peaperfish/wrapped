@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The dashboard window: core defaults only. The app's own commands (meta, summary, series, ready) are read-only.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

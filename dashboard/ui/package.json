@@ -1,0 +1,24 @@
+{
+  "name": "wrapped-dashboard-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings",
+    "tauri": "cd .. && tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.12.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.0",
+    "@tsconfig/svelte": "^5.0.9",
+    "svelte": "^5.57.0",
+    "svelte-check": "^4.7.8",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.8"
+  }
+}

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Build the release bundle and install it as the one and only Wrapped.app:
 #   ~/Applications/Wrapped.app   (same path + bundle id every time, so the
-#   SMAppService login item stays valid).
+#   SMAppService login item stays valid), with the dashboard nested at
+#   Contents/Helpers/Wrapped Dashboard.app. Both are replaced in one atomic
+#   swap and must report the same version.
 #
 # Usage: scripts/macos/install.sh [--force]
 #   --force  also replace a collector that is running from somewhere else
@@ -20,6 +22,8 @@ esac
 
 DEST="$HOME/Applications/Wrapped.app"
 DEST_EXE="$DEST/Contents/MacOS/wrapped-collector"
+DASH_REL="Contents/Helpers/Wrapped Dashboard.app"
+DASH_EXE_REL="$DASH_REL/Contents/MacOS/wrapped-dashboard"
 DB="${WRAPPED_DB:-$HOME/Library/Application Support/Wrapped/wrapped.db}"
 LOCK="${DB%.*}.lock"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
@@ -35,11 +39,15 @@ app_version() { # "<short version> (<build>)" of a bundle
 lock_pid() { [ -e "$LOCK" ] && lsof -t -- "$LOCK" 2>/dev/null | head -1 || true; }
 exe_of() { ps -p "$1" -o comm= 2>/dev/null | sed 's/^ *//'; }
 
-# 1. Build release + bundle (target/release/Wrapped.app).
+# 1. Build release + bundle (target/release/Wrapped.app with the dashboard nested).
 scripts/macos/bundle.sh
 BUILT="$REPO/target/release/Wrapped.app"
 HEAD_HASH=$(git rev-parse --short HEAD)
 NEW_VERSION=$(app_version "$BUILT")
+[ -x "$BUILT/$DASH_EXE_REL" ] || die "the build has no dashboard at $DASH_REL"
+NEW_DASH_VERSION=$(app_version "$BUILT/$DASH_REL")
+[ "$NEW_DASH_VERSION" = "$NEW_VERSION" ] ||
+    die "built versions differ: collector $NEW_VERSION, dashboard $NEW_DASH_VERSION"
 OLD_VERSION="none"
 [ -d "$DEST" ] && OLD_VERSION=$(app_version "$DEST")
 
@@ -62,6 +70,20 @@ or pass --force to quit it and install anyway."
         die "collector pid $PID is still running 10 s after SIGTERM; not replacing the app"
     fi
 fi
+
+# 2b. Quit a dashboard running from the installed app (it only reads, so a
+#     plain SIGTERM loses nothing). It is not relaunched: it runs on demand.
+DASH_PIDS=$(pgrep -f "^$DEST/$DASH_EXE_REL" || true)
+for DPID in $DASH_PIDS; do
+    echo "quitting dashboard pid $DPID"
+    kill -TERM "$DPID" 2>/dev/null || true
+done
+for DPID in $DASH_PIDS; do
+    for _ in $(seq 1 50); do
+        kill -0 "$DPID" 2>/dev/null || break
+        sleep 0.1
+    done
+done
 
 # 3. Replace the installed app: copy next to it under a temp name, then swap.
 mkdir -p "$HOME/Applications"
@@ -96,6 +118,15 @@ case "$RUNNING" in
     *"($HEAD_HASH"*) ;;
     *) die "version mismatch: installed binary says '$RUNNING', HEAD is $HEAD_HASH" ;;
 esac
+DASH_RUNNING=$("$DEST/$DASH_EXE_REL" --version)
+case "$DASH_RUNNING" in
+    *"($HEAD_HASH"*) ;;
+    *) die "version mismatch: installed dashboard says '$DASH_RUNNING', HEAD is $HEAD_HASH" ;;
+esac
+[ "${RUNNING##* }" = "${DASH_RUNNING##* }" ] ||
+    die "collector ($RUNNING) and dashboard ($DASH_RUNNING) builds differ"
+[ "$(app_version "$DEST/$DASH_REL")" = "$(app_version "$DEST")" ] ||
+    die "Info.plist versions differ: $(app_version "$DEST") vs dashboard $(app_version "$DEST/$DASH_REL")"
 case "$RUNNING" in
     *-dirty*) echo "warning: built from a tree with uncommitted changes ($RUNNING)" >&2 ;;
 esac
@@ -106,9 +137,10 @@ esac
 REMOVED=0
 while IFS= read -r app; do
     [ -n "$app" ] || continue
+    [ -d "$app/$DASH_REL" ] && { "$LSREGISTER" -u "$app/$DASH_REL" || true; }
     "$LSREGISTER" -u "$app" || true
     rm -rf "$app"
     REMOVED=$((REMOVED + 1))
 done < <(find "$REPO/target" -name 'Wrapped.app' -type d -prune)
 
-echo "Wrapped.app: $OLD_VERSION -> $NEW_VERSION, installed at $DEST (pid $PID), removed $REMOVED other bundle(s)"
+echo "Wrapped.app: $OLD_VERSION -> $NEW_VERSION, installed at $DEST (pid $PID), dashboard $DASH_RUNNING, removed $REMOVED other bundle(s)"

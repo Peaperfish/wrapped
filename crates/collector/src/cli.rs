@@ -33,6 +33,7 @@ USAGE
   wrapped-collector git emails             list author emails in git.folders (read-only)
   wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
   wrapped-collector flush                 ask the running collector to flush now
+  wrapped-collector dashboard             open the dashboard window on this database
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
 SETTINGS (values are JSON; a bare word is taken as a string)
@@ -92,6 +93,7 @@ pub fn main() -> i32 {
         ["scan", what] => scan(&db, what),
         ["export", "--json", path] => export(&db, true, path),
         ["export", "--csv", path] => export(&db, false, path),
+        ["dashboard"] => platform::open_dashboard(&db).map_err(Into::into),
         ["flush"] => match platform::request_flush(&db) {
             Some(pid) => {
                 println!("asked collector (pid {pid}) to flush");
@@ -337,7 +339,7 @@ fn sessions(db: &std::path::Path, day: &str) -> CliResult {
 /// (no migration, no writes); a collector running on it is asked to flush
 /// first, as `stats` does.
 fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliResult {
-    use wrapped_core::stats::{DateRange, Stats, hidden_collectors};
+    use wrapped_core::stats::{DateRange, SUMMARY_TOP_N, Stats, hidden_collectors};
     let range = DateRange::new(parse_day(from)?, parse_day(to)?)?;
     if !db.exists() {
         return Err(format!("no database at {}", db.display()).into());
@@ -349,7 +351,7 @@ fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliRes
     let (settings, _) = store.load_settings()?;
     let all = collectors::builtin();
     let st = Stats::new(&store, &all, &settings);
-    let sum = st.summary(range, 5)?;
+    let sum = st.summary(range, SUMMARY_TOP_N)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&sum.to_json())?);
         return Ok(());

@@ -160,6 +160,34 @@ design doc itself is left as written.
   zero: 0 %).
 - `Store::open_read_only` for reading another database without migrating it.
 
+## Dashboard (§5, §9, §14; Milestone 5)
+
+- Split into 5a (shell, heatmap, temporary plain-text summary) and 5b (the
+  cards).
+- Frontend stack: Svelte 5 + TypeScript + Vite inside Tauri 2 (the design
+  says "HTML/CSS/JS"); no chart library, charts are hand-drawn SVG.
+- The dashboard is a separate app nested in the collector's bundle
+  (`Wrapped.app/Contents/Helpers/Wrapped Dashboard.app`, its own bundle id
+  and Dock icon) rather than a window of the collector process, so the
+  collector stays a plain process without a web view. The tray's "Open
+  Dashboard…" launches it; closing its window quits it.
+- The bundle is assembled by `scripts/macos/bundle.sh` (cargo build with
+  Tauri's `custom-protocol` feature, hand-written Info.plist, ad-hoc
+  signature), not `tauri build`, so both apps share one version scheme
+  (`CFBundleVersion` = git hash) and one install path. The Tauri CLI is used
+  for `tauri dev` and icon generation.
+- The backend reads the database read-only and reopens it for every command
+  instead of keeping a connection, so no read snapshot can hold back the
+  collector's WAL checkpoints.
+- Heatmap colour levels are quartiles of the year's days with a value, not
+  fractions of the maximum.
+- Presets cover whole calendar periods (This week = Monday to Sunday, This
+  month = the 1st to the last day, This year = Jan 1 to Dec 31), so future
+  days of the period count as zero and the comparison is with the previous
+  period of equal length.
+- `wrapped-collector dashboard` opens the dashboard from a shell (the only
+  launcher on Windows until the tray exists there).
+
 ## Metric definitions
 
 - `app_usage/app_switches`: number of sessions that start exactly where the

@@ -2,7 +2,7 @@
 
 A local-only desktop app that tracks how you use your computer and turns it into a dashboard, a live hardware tab, and Spotify-Wrapped-style recaps.
 
-> **Status: early development.** The collector runs on macOS (tray icon, no UI yet): app usage, active / idle, git, photos and disk & memory, plus a stats engine for any date range; see [docs/MILESTONE1.md](docs/MILESTONE1.md) to [docs/MILESTONE4.md](docs/MILESTONE4.md).
+> **Status: early development.** The collector runs on macOS (tray icon): app usage, active / idle, git, photos and disk & memory, plus a stats engine for any date range and a first dashboard window (year heatmap, range presets; cards to come); see [docs/MILESTONE1.md](docs/MILESTONE1.md) to [docs/MILESTONE5.md](docs/MILESTONE5.md).
 
 *Wrapped is a working name and may change. This project is not affiliated with Spotify.*
 
@@ -81,6 +81,8 @@ cargo build --release -p wrapped-collector
 ```
 
 To install with launch at login, see [docs/MILESTONE1.md](docs/MILESTONE1.md#install-with-launch-at-login).
+
+The dashboard (`dashboard/`, Tauri + Svelte) also needs Node.js 20.19+; see [docs/MILESTONE5.md](docs/MILESTONE5.md#develop).
 
 To try the Milestone 0 spike (macOS only), see [spikes/README.md](spikes/README.md).
 
