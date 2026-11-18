@@ -10,6 +10,7 @@
   import Header from "./lib/Header.svelte";
   import Heatmap from "./lib/Heatmap.svelte";
   import Cards from "./lib/Cards.svelte";
+  import SetupScreen from "./lib/SetupScreen.svelte";
   import {
     errorText,
     flushCollector,
@@ -229,6 +230,17 @@
   });
 </script>
 
+{#if meta?.setup}
+  <main>
+    <SetupScreen
+      {meta}
+      ondone={async () => {
+        await loadMeta();
+        await Promise.all([loadSeries(), loadSummary()]);
+      }}
+    />
+  </main>
+{:else}
 <main>
   <Header
     {selection}
@@ -287,6 +299,7 @@
     </p>
   {/if}
 </main>
+{/if}
 
 <style>
   main {

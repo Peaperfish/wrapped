@@ -286,8 +286,11 @@ pub(crate) fn process_ctl() {
                 ));
             }
             wrapped_core::ctl::reply(&st.db, &id, &reply);
-            // Anything that wrote records (delete, pause) is visible at once.
-            st.measured("request", |e| e.flush().map(Some));
+            // Anything that wrote records (delete, pause) is visible at once;
+            // a status poll writes nothing.
+            if !matches!(req.cmd.as_str(), "ping" | "status") {
+                st.measured("request", |e| e.flush().map(Some));
+            }
         }
     });
     tray::refresh();
@@ -348,6 +351,17 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
             return 1;
         }
     };
+    // Requests left by a previous run are meaningless now.
+    wrapped_core::ctl::clear(db);
+    // First-launch checklist: an existing install is marked done and left
+    // alone; only an empty, undecided database waits for the user.
+    let setup = match engine.begin_onboarding() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("wrapped-collector: cannot decide onboarding: {e}");
+            return 1;
+        }
+    };
     engine.set_own_app_id(own_app_id());
     engine.set_scan_hooks(scan_hooks());
     engine.set_probe(Arc::new(counters::MacProbe));
@@ -361,7 +375,13 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
         db.display(),
         engine.recovered_sessions(),
         engine.running_collectors().join(", "),
-        if engine.is_paused() { ", PAUSED" } else { "" }
+        if setup {
+            ", SETUP MODE (nothing is recorded until setup is finished)"
+        } else if engine.is_paused() {
+            ", PAUSED"
+        } else {
+            ""
+        }
     ));
     STATE.with(|s| {
         *s.borrow_mut() = Some(State {
@@ -383,6 +403,9 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
     tray::install(&delegate, mtm);
     let _sources = sources::install();
     sources::send_initial_state();
+    if setup && let Err(e) = open_dashboard(db) {
+        log(&format!("setup: cannot open the dashboard: {e}"));
+    }
     app.run();
     // `run` only returns if the app is stopped without terminating.
     shutdown();

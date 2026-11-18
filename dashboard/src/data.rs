@@ -13,9 +13,11 @@ use std::path::{Path, PathBuf};
 use chrono::{Datelike, NaiveDate};
 use serde_json::Value;
 use wrapped_core::stats::{DateRange, SUMMARY_TOP_N, Stats};
-use wrapped_core::{Settings, Store, collectors};
+use wrapped_core::{Clock, Pause, Settings, Store, collectors};
 
-use crate::types::{CollectorMeta, HeatmapMetric, Meta, RangeJson, YearSeries};
+use crate::types::{
+    CollectorMeta, ExportResult, GitEmail, HeatmapMetric, Meta, RangeJson, SettingsMeta, YearSeries,
+};
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -78,6 +80,10 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
                 name: i.name.to_string(),
                 title: i.title.to_string(),
                 enabled: enabled.contains(&i.name),
+                description: i.description.to_string(),
+                permissions: i.permissions.to_string(),
+                cost: i.cost.to_string(),
+                default_on: i.default_on,
             }
         })
         .collect();
@@ -111,6 +117,25 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         ),
         None => (None, None),
     };
+    let setup = match (&opened, settings.onboarding_done) {
+        (_, Some(done)) => !done,
+        (None, None) => true,
+        (Some((store, _)), None) => !store.has_any_data().map_err(|e| e.to_string())?,
+    };
+    let now_ms = wrapped_core::SystemClock.now().utc_ms;
+    let (pause, pause_until_ms) = match settings.pause {
+        Pause::Indefinite => ("indefinite", None),
+        Pause::Until(ms) if ms > now_ms => ("until", Some(ms)),
+        _ => ("off", None),
+    };
+    let settings_meta = SettingsMeta {
+        exclude_apps: settings.exclude_apps.clone(),
+        git_folders: settings.git_folders.clone(),
+        git_author_emails: settings.git_author_emails.clone(),
+        photos_folders: settings.photos_folders.clone(),
+        pause: pause.to_string(),
+        pause_until_ms,
+    };
     Ok(Meta {
         build: env!("WRAPPED_BUILD_ID").to_string(),
         db_path: db.map(|p| p.display().to_string()).unwrap_or_default(),
@@ -120,6 +145,69 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         today: today.to_string(),
         last_flush_ms,
         metrics,
+        setup,
+        settings: settings_meta,
+    })
+}
+
+/// Bundle ids the app usage collector has recorded, most time first (for the
+/// exclude list's "add from recorded apps").
+pub fn recorded_apps(db: &Path) -> Result<Vec<String>> {
+    let (store, _) = open(db)?;
+    let mut st = store
+        .conn()
+        .prepare(
+            "SELECT key FROM daily_metrics WHERE collector = 'app_usage' AND metric = 'app_secs'
+             GROUP BY key ORDER BY sum(value) DESC LIMIT 300",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = st
+        .query_map([], |r| r.get::<_, String>(0))
+        .map_err(|e| e.to_string())?
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+/// Author emails in the repositories under `folders`, most commits first
+/// (read-only: runs `git log` in each repository; stores nothing). The one
+/// from `git config --global user.email` is marked.
+pub fn git_emails(folders: &[String]) -> Vec<GitEmail> {
+    let mine = wrapped_core::collectors::git::global_author_email();
+    wrapped_core::collectors::git::author_email_report(folders)
+        .into_iter()
+        .map(|e| GitEmail {
+            mine: mine.contains(&e.email),
+            email: e.email,
+            commits: e.commits as u32,
+            repos: e.repos.len() as u32,
+        })
+        .collect()
+}
+
+/// Write everything to `path`: one JSON file (`kind = "json"`) or a folder
+/// with one CSV per table (`"csv"`), like `wrapped-collector export`.
+/// Read-only on the database.
+pub fn export_data(db: &Path, kind: &str, path: &Path) -> Result<ExportResult> {
+    let (store, _) = open(db)?;
+    let c = match kind {
+        "json" => {
+            let f = std::fs::File::create(path)
+                .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+            let mut w = std::io::BufWriter::new(f);
+            store
+                .export_json(&mut w, wrapped_core::SystemClock.now())
+                .map_err(|e| e.to_string())?
+        }
+        "csv" => store.export_csv(path).map_err(|e| e.to_string())?,
+        other => return Err(format!("export kind must be json or csv, not {other:?}")),
+    };
+    Ok(ExportResult {
+        path: path.display().to_string(),
+        sessions: c.sessions as u32,
+        daily_metrics: c.daily_metrics as u32,
+        samples: c.samples as u32,
+        items: c.items as u32,
     })
 }
 

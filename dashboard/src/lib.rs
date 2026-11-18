@@ -113,6 +113,30 @@ fn app_names(ids: Vec<String>) -> std::collections::HashMap<String, String> {
     names::app_names(&ids)
 }
 
+/// Recorded app bundle ids, most time first (exclude list suggestions).
+#[tauri::command(async)]
+fn recorded_apps(state: State<'_, AppState>) -> data::Result<Vec<String>> {
+    state.timed("recorded_apps", || data::recorded_apps(state.db()?))
+}
+
+/// Author emails found under `folders` (read-only, may take a few seconds).
+#[tauri::command(async)]
+fn git_emails(folders: Vec<String>) -> Vec<types::GitEmail> {
+    data::git_emails(&folders)
+}
+
+/// Write an export to a path the user picked (JSON file or CSV folder).
+#[tauri::command(async)]
+fn export_data(
+    state: State<'_, AppState>,
+    kind: String,
+    path: String,
+) -> data::Result<types::ExportResult> {
+    state.timed("export_data", || {
+        data::export_data(state.db()?, &kind, Path::new(&path))
+    })
+}
+
 /// The collector binary that goes with this dashboard: `Wrapped.app/Contents/
 /// MacOS/wrapped-collector` when this is the nested app, else the one next to
 /// this executable.
@@ -284,6 +308,7 @@ pub fn main() -> i32 {
             .map_or("(none)".into(), |p| p.display().to_string())
     ));
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             meta,
@@ -291,6 +316,9 @@ pub fn main() -> i32 {
             series,
             app_names,
             flush_collector,
+            recorded_apps,
+            git_emails,
+            export_data,
             ctl,
             open_wrapped,
             ready

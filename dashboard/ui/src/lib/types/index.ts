@@ -2,6 +2,9 @@
 export type { UnitName } from "./UnitName";
 export type { AggName } from "./AggName";
 export type { CollectorMeta } from "./CollectorMeta";
+export type { SettingsMeta } from "./SettingsMeta";
+export type { GitEmail } from "./GitEmail";
+export type { ExportResult } from "./ExportResult";
 export type { HeatmapMetric } from "./HeatmapMetric";
 export type { Meta } from "./Meta";
 export type { RangeJson } from "./RangeJson";

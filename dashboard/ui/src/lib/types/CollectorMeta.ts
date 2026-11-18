@@ -3,4 +3,12 @@
 /**
  * A collector and whether it is turned on.
  */
-export type CollectorMeta = { name: string, title: string, enabled: boolean, };
+export type CollectorMeta = { name: string, title: string, enabled: boolean, 
+/**
+ * What it records, in plain words (setup and Settings).
+ */
+description: string, 
+/**
+ * Permission needed, or "None".
+ */
+permissions: string, cost: string, default_on: boolean, };

@@ -56,6 +56,45 @@ pub struct CollectorMeta {
     pub name: String,
     pub title: String,
     pub enabled: bool,
+    /// What it records, in plain words (setup and Settings).
+    pub description: String,
+    /// Permission needed, or "None".
+    pub permissions: String,
+    pub cost: String,
+    pub default_on: bool,
+}
+
+/// The settings the dashboard shows and edits (through the collector).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SettingsMeta {
+    pub exclude_apps: Vec<String>,
+    pub git_folders: Vec<String>,
+    /// `None` = not chosen yet (resolved from `git config` when git is on).
+    pub git_author_emails: Option<Vec<String>>,
+    pub photos_folders: Vec<String>,
+    /// `"off"`, `"indefinite"` or `"until"` (a timed pause still running).
+    pub pause: String,
+    pub pause_until_ms: Option<i64>,
+}
+
+/// One author email found by `git_emails` (setup and Settings).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct GitEmail {
+    pub email: String,
+    pub commits: u32,
+    pub repos: u32,
+    /// The email from `git config --global user.email`.
+    pub mine: bool,
+}
+
+/// What `export_data` wrote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ExportResult {
+    pub path: String,
+    pub sessions: u32,
+    pub daily_metrics: u32,
+    pub samples: u32,
+    pub items: u32,
 }
 
 /// A metric the heatmap can colour by (a metric without keys of a collector
@@ -89,6 +128,10 @@ pub struct Meta {
     pub last_flush_ms: Option<i64>,
     /// Heatmap metrics of the collectors that are on, screen time first.
     pub metrics: Vec<HeatmapMetric>,
+    /// The first-launch checklist applies: onboarding is not done and nothing
+    /// has been recorded yet (also true without a database file).
+    pub setup: bool,
+    pub settings: SettingsMeta,
 }
 
 // ---------- series(year, metric) ----------
@@ -258,6 +301,9 @@ pub fn typescript_files() -> Vec<(String, String)> {
         UnitName,
         AggName,
         CollectorMeta,
+        SettingsMeta,
+        GitEmail,
+        ExportResult,
         HeatmapMetric,
         Meta,
         RangeJson,

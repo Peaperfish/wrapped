@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The dashboard window: core defaults only. The app's own commands (meta, summary, series, ready) are read-only.",
+  "description": "The dashboard window: core defaults plus the native open / save dialogs (folder pickers, export). The app's own commands read the database read-only; changes go to the collector.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
 }
