@@ -71,3 +71,24 @@ fn dashboard_summary_equals_cli_stats_range_json() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `stats range --json | head -1` closes the pipe early: the CLI must exit 0
+/// without a panic message instead of "failed printing to stdout: Broken pipe".
+#[test]
+fn closed_stdout_pipe_exits_quietly() {
+    let dir = fixture::temp_dir("broken-pipe");
+    let db = fixture::build(&dir);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wrapped-collector"))
+        .args(["stats", "range", "2026-01-01", "2026-12-31", "--json"])
+        .env("WRAPPED_DB", &db)
+        .env_remove("WRAPPED_DEBUG")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take()); // reader goes away before the CLI prints
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "status {:?}", out.status);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(!err.contains("panicked"), "stderr: {err}");
+}

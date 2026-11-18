@@ -32,6 +32,9 @@ USAGE
   wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
   wrapped-collector git emails             list author emails in git.folders (read-only)
   wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
+  wrapped-collector recompute <from> <to> [--collector <name>]
+                                            rebuild the daily metrics of each local day in the range
+                                            from the stored items / sessions (quit Wrapped first)
   wrapped-collector flush                 ask the running collector to flush now
   wrapped-collector dashboard             open the dashboard window on this database
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
@@ -91,6 +94,8 @@ pub fn main() -> i32 {
         ["probe", "disk-memory"] => probe_disk_memory(),
         ["scan"] => scan(&db, "all"),
         ["scan", what] => scan(&db, what),
+        ["recompute", from, to] => recompute(&db, from, to, None),
+        ["recompute", from, to, "--collector", name] => recompute(&db, from, to, Some(name)),
         ["export", "--json", path] => export(&db, true, path),
         ["export", "--csv", path] => export(&db, false, path),
         ["dashboard"] => platform::open_dashboard(&db).map_err(Into::into),
@@ -222,6 +227,56 @@ fn settings_set(db: &std::path::Path, key: &str, value: &str) -> CliResult {
     if running {
         println!("(the running collector picks this up at its next minute tick)");
     }
+    Ok(())
+}
+
+/// Rebuild the daily metrics of a range of days (e.g. after a rollup changed).
+/// Writes many days in one go, so like a CLI scan it needs the single-writer
+/// lock and refuses while the collector runs (a running collector could only
+/// be asked to scan, not to recompute).
+fn recompute(db: &std::path::Path, from: &str, to: &str, only: Option<&str>) -> CliResult {
+    use wrapped_core::stats::DateRange;
+    let range = DateRange::new(parse_day(from)?, parse_day(to)?)?;
+    let all = collectors::builtin();
+    let names: Vec<&'static str> = match only {
+        Some(n) => match all.iter().find(|c| c.info().name == n) {
+            Some(c) => vec![c.info().name],
+            None => {
+                let known: Vec<_> = all.iter().map(|c| c.info().name).collect();
+                return Err(
+                    format!("unknown collector `{n}` (one of {})", known.join(", ")).into(),
+                );
+            }
+        },
+        None => all.iter().map(|c| c.info().name).collect(),
+    };
+    if !db.exists() {
+        return Err(format!("no database at {}", db.display()).into());
+    }
+    let _lock = platform::hold_db_lock(db).map_err(|e| {
+        format!("{e}. Quit Wrapped (tray menu > Quit) first, run this again, then open Wrapped.")
+    })?;
+    let mut store = Store::open(db)?;
+    let rollup = |name: &str, day: &wrapped_core::collector::DayInput<'_>| {
+        all.iter()
+            .find(|c| c.info().name == name)
+            .map(|c| c.rollup(day))
+    };
+    let t0 = Instant::now();
+    let (mut days, mut rows) = (0u32, 0usize);
+    let mut day = range.from;
+    while day <= range.to {
+        for n in &names {
+            rows += store.recompute_day(n, day, &rollup)?;
+        }
+        days += 1;
+        day = day.succ_opt().ok_or("date out of range")?;
+    }
+    println!(
+        "recomputed {days} days ({} metric rows changed) in {:.2}s",
+        rows,
+        t0.elapsed().as_secs_f64()
+    );
     Ok(())
 }
 

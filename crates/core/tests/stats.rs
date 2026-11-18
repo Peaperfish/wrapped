@@ -963,6 +963,9 @@ fn photo_lenses_get_friendly_names_and_merge() {
     lens("(unknown)", 7.0);
     lens("----", 3.0); // same meaning: merges with (unknown)
     lens("70.0 mm f/2.8", 2.0);
+    lens("(unknown) FC9113", 5.0); // fixed-lens drone, no lens field
+    lens("(unknown) FC9184", 4.0); // merges with "70.0 mm f/2.8"
+    lens("(unknown) ILCE-7M4", 6.0); // other camera: No lens info
     let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
     let sum = st.summary(range("2026-11-10", "2026-11-10"), 8).unwrap();
     let (_, keys) = sum
@@ -974,8 +977,9 @@ fn photo_lenses_get_friendly_names_and_merge() {
         keys,
         &vec![
             ("Sigma 24-70mm F2.8 DG DN II Art".to_string(), 40.0),
-            ("No lens info".to_string(), 10.0),
-            ("Air 3S tele".to_string(), 2.0)
+            ("No lens info".to_string(), 16.0),
+            ("Air 3S tele".to_string(), 6.0),
+            ("Air 3S wide (24mm f/1.8)".to_string(), 5.0)
         ]
     );
     // Stored keys stay raw.
@@ -988,4 +992,70 @@ fn photo_lenses_get_friendly_names_and_merge() {
         )
         .unwrap();
     assert!(raw.iter().any(|(k, _)| k == "(unknown)"));
+}
+
+/// `Store::recompute_day` after the stored items changed gives exactly what a
+/// fresh computation of those items gives (what `wrapped-collector recompute`
+/// relies on to fix old days after a rollup change).
+#[test]
+fn recompute_day_matches_a_fresh_computation() {
+    let all = collectors::builtin();
+    let rollup = |name: &str, day: &wrapped_core::collector::DayInput<'_>| {
+        all.iter()
+            .find(|c| c.info().name == name)
+            .map(|c| c.rollup(day))
+    };
+    let date = chrono::NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
+    let t0 = 1_794_312_000_000i64; // 2026-11-10 12:00 UTC
+    let insert = |s: &Store, id: &str, attrs: &str| {
+        s.conn()
+            .execute(
+                "INSERT INTO items (collector, id, time_ms, time_off, attrs) VALUES ('photos', ?1, ?2, 0, ?3)",
+                rusqlite::params![id, t0, attrs],
+            )
+            .unwrap();
+    };
+    let photo_rows = |s: &Store| -> Vec<(String, String, f64)> {
+        s.daily_metrics(date)
+            .unwrap()
+            .into_iter()
+            .filter(|r| r.collector == "photos")
+            .map(|r| (r.metric, r.key, r.value))
+            .collect()
+    };
+    let items = |s: &Store| {
+        insert(s, "a", r#"{"make":"DJI","model":"FC9113"}"#);
+        insert(
+            s,
+            "b",
+            r#"{"make":"DJI","model":"FC9184","lens":"70.0 mm f/2.8"}"#,
+        );
+    };
+    // Old state: the day was rolled up under the plain "(unknown)" key.
+    let mut old = Store::open_in_memory().unwrap();
+    items(&old);
+    old.conn()
+        .execute(
+            "INSERT INTO daily_metrics (date, collector, metric, key, value) VALUES (?1, 'photos', 'shots_by_lens', '(unknown)', 1)",
+            [date.to_string()],
+        )
+        .unwrap();
+    assert!(old.recompute_day("photos", date, &rollup).unwrap() > 0);
+
+    let mut fresh = Store::open_in_memory().unwrap();
+    items(&fresh);
+    fresh.recompute_day("photos", date, &rollup).unwrap();
+
+    let got = photo_rows(&old);
+    assert_eq!(got, photo_rows(&fresh));
+    assert!(
+        got.iter()
+            .any(|(m, k, v)| m == "shots_by_lens" && k == "(unknown) FC9113" && *v == 1.0)
+    );
+    assert!(
+        !got.iter()
+            .any(|(m, k, _)| m == "shots_by_lens" && k == "(unknown)")
+    );
+    // Recomputing again changes nothing.
+    assert_eq!(old.recompute_day("photos", date, &rollup).unwrap(), 0);
 }

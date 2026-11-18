@@ -128,6 +128,13 @@ const NO_LENS: &[&str] = &[UNKNOWN, "----", ""];
 /// "Sigma <spec> <Line>"; anything else unchanged.
 pub fn friendly_lens(label: &str) -> String {
     let t = label.trim();
+    if let Some(model) = t.strip_prefix(UNKNOWN).map(str::trim) {
+        // "(unknown) <camera model>": a fixed-lens camera names its lens.
+        return FIXED_LENS_CAMERAS
+            .iter()
+            .find(|(code, _)| code.eq_ignore_ascii_case(model))
+            .map_or_else(|| "No lens info".into(), |(_, name)| (*name).into());
+    }
     if NO_LENS.contains(&t) {
         return "No lens info".into();
     }
@@ -145,6 +152,24 @@ pub fn friendly_lens(label: &str) -> String {
     }
     label.to_string()
 }
+
+/// The stored `shots_by_lens` key: the lens as the EXIF says it, or, when the
+/// lens field is empty, "(unknown) <raw camera model>" so a fixed-lens camera's
+/// shots can be told apart later (raw data; names are for display only).
+fn lens_key(lens: Option<&str>, model: Option<&str>) -> String {
+    match (lens.map(str::trim).filter(|l| !l.is_empty()), model.map(str::trim)) {
+        (Some(l), _) => l.to_string(),
+        (None, Some(m)) if !m.is_empty() => format!("{UNKNOWN} {m}"),
+        (None, _) => UNKNOWN.to_string(),
+    }
+}
+
+/// Lens of a fixed-lens camera, by EXIF model code, for shots whose file has
+/// no lens field (the Air 3S has two cameras).
+const FIXED_LENS_CAMERAS: &[(&str, &str)] = &[
+    ("FC9113", "Air 3S wide (24mm f/1.8)"),
+    ("FC9184", "Air 3S tele"),
+];
 
 fn camera_of(it: &DayItem) -> String {
     camera_label(it.attr_str("make"), it.attr_str("model"))
@@ -286,7 +311,7 @@ impl Collector for Photos {
         }
         let mut groups: BTreeMap<(&'static str, String), f64> = BTreeMap::new();
         for it in day.items {
-            let lens = it.attr_str("lens").unwrap_or(UNKNOWN).to_string();
+            let lens = lens_key(it.attr_str("lens"), it.attr_str("model"));
             let focal = it
                 .attr_f64("focal_mm")
                 .map(|f| format!("{}", f.round() as i64))
@@ -313,6 +338,14 @@ impl Collector for Photos {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lens_key_is_raw_with_camera_model_when_lens_is_missing() {
+        assert_eq!(lens_key(Some("FE 20mm F1.8 G"), Some("ILCE-7M4")), "FE 20mm F1.8 G");
+        assert_eq!(lens_key(None, Some("FC9113")), "(unknown) FC9113");
+        assert_eq!(lens_key(Some(" "), Some("FC9184")), "(unknown) FC9184");
+        assert_eq!(lens_key(None, None), "(unknown)");
+    }
 
     #[test]
     fn friendly_camera_names() {
@@ -347,6 +380,12 @@ mod tests {
             "Sigma 150-600mm F5-6.3 DG DN OS Sports"
         );
         assert_eq!(friendly_lens("(unknown)"), "No lens info");
+        assert_eq!(
+            friendly_lens("(unknown) FC9113"),
+            "Air 3S wide (24mm f/1.8)"
+        );
+        assert_eq!(friendly_lens("(unknown) fc9184"), "Air 3S tele");
+        assert_eq!(friendly_lens("(unknown) ILCE-7RM5"), "No lens info");
         assert_eq!(friendly_lens("----"), "No lens info");
         // Everything else is left alone.
         assert_eq!(friendly_lens("FE 20mm F1.8 G"), "FE 20mm F1.8 G");

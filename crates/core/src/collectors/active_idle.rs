@@ -1,7 +1,9 @@
 //! Active / idle: away periods (idle, asleep, display off, locked, screensaver).
 //!
-//! The session key is the reason the period *started* with; a period that
-//! starts idle and continues into sleep stays one period keyed `idle`.
+//! The session key is the reason the period *started* with, except that sleep
+//! always gets its own session: a period that starts idle (or display off) and
+//! then turns into sleep is split at the moment sleep starts, so the part
+//! after it is keyed `sleep` and "away excluding sleep" is exact.
 //! Nothing is recorded while paused or shutting down.
 
 use std::collections::BTreeMap;
@@ -10,7 +12,7 @@ use crate::collector::{
     Agg,
     Collector, CollectorInfo, DayInput, Kind, MetricDef, MetricValue, Sink, Slice, Unit,
 };
-use crate::event::SystemEvent;
+use crate::event::{AwayReason, SystemEvent};
 use crate::presence::{Presence, Step};
 
 pub const NAME: &str = "active_idle";
@@ -25,6 +27,9 @@ pub struct ActiveIdle {
 impl ActiveIdle {
     fn apply(&self, out: &Sink, step: &Step) {
         let key = match step.view.away {
+            Some(AwayReason::Sleep) if !self.paused && !step.view.halted => {
+                Some(AwayReason::Sleep.key().to_string())
+            }
             Some(reason) if !self.paused && !step.view.halted => {
                 Some(out.open_key().unwrap_or_else(|| reason.key().to_string()))
             }

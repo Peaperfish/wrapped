@@ -84,9 +84,11 @@ design doc itself is left as written.
 ## Active / idle collector (§7)
 
 - Away periods include sleep. Each period is keyed by the reason it started
-  with: `idle`, `sleep`, `display_off`, `locked`, `screensaver`. A period that
-  starts idle and continues into sleep stays one period keyed `idle`. Pause and
-  power-off record nothing.
+  with: `idle`, `sleep`, `display_off`, `locked`, `screensaver`, except that
+  sleep always gets its own session: a period that starts idle (or display off)
+  and turns into sleep is split at the moment sleep starts, the part after it
+  keyed `sleep` (still one "time away"). Data recorded before this change keeps
+  the old keys. Pause and power-off record nothing.
 - Extra metric `active_idle/away_secs_by_reason` (key = reason).
 - Display assertions (§13: "an app holding a keep display awake request …
   counts as active"): only an assertion held by the **frontmost** app's
@@ -188,8 +190,9 @@ design doc itself is left as written.
 - `wrapped-collector dashboard` opens the dashboard from a shell (the only
   launcher on Windows until the tray exists there).
 - The dashboard's Away card counts time away minus the "sleep" reason. An idle
-  period that turns into sleep stays keyed "idle" (the key is the reason the
-  period started with), so it can overcount a little (known follow-up).
+  period that turns into sleep is split at the sleep moment (see the Active /
+  idle section), so this is exact going forward; older data can still overcount
+  a little.
   "Times away" cannot exclude sleep: only the total period count is stored.
 
 ## Metric definitions
