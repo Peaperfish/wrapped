@@ -546,8 +546,15 @@ impl<'a> Stats<'a> {
                         .collect(),
                 ));
             } else if !is_by_hour(&mr.def) {
-                let keys = if mr.collector == "photos" && mr.def.id == "shots_by_camera" {
-                    friendly_cameras(top_of(&cur, m, mr.def.agg, usize::MAX), top_n)
+                let friendly: Option<fn(&str) -> String> = match (mr.collector, mr.def.id) {
+                    ("photos", "shots_by_camera") => {
+                        Some(crate::collectors::photos::friendly_camera)
+                    }
+                    ("photos", "shots_by_lens") => Some(crate::collectors::photos::friendly_lens),
+                    _ => None,
+                };
+                let keys = if let Some(f) = friendly {
+                    friendly_keys(top_of(&cur, m, mr.def.agg, usize::MAX), top_n, f)
                 } else {
                     top_of(&cur, m, mr.def.agg, top_n)
                 };
@@ -567,14 +574,16 @@ impl<'a> Stats<'a> {
     }
 }
 
-/// Camera labels by their friendly names; models that share one name (a
+/// Keys by their friendly names (cameras, lenses); keys that share one name (a
 /// drone's two cameras) add up. Best first, at most `n`.
-fn friendly_cameras(keys: Vec<(String, f64)>, n: usize) -> Vec<(String, f64)> {
+fn friendly_keys(
+    keys: Vec<(String, f64)>,
+    n: usize,
+    friendly: fn(&str) -> String,
+) -> Vec<(String, f64)> {
     let mut merged: BTreeMap<String, f64> = BTreeMap::new();
     for (label, v) in keys {
-        *merged
-            .entry(crate::collectors::photos::friendly_camera(&label))
-            .or_default() += v;
+        *merged.entry(friendly(&label)).or_default() += v;
     }
     let mut v: Vec<(String, f64)> = merged.into_iter().collect();
     v.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));

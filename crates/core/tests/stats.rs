@@ -925,8 +925,8 @@ fn photo_cameras_get_friendly_names_and_merge() {
     let s = store_with(ALL);
     let cam = |key, v| put(&s, "2026-11-10", "photos", "shots_by_camera", key, v);
     cam("SONY ILCE-7RM5", 50.0);
-    cam("DJI FC8282", 6.0);
-    cam("DJI FC8284", 5.0); // the same drone's second camera
+    cam("DJI FC9113", 6.0);
+    cam("DJI FC9184", 5.0); // the same drone's second camera
     cam("DJI FC0000", 8.0); // unknown: unchanged
     let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
     let sum = st.summary(range("2026-11-10", "2026-11-10"), 3).unwrap();
@@ -939,7 +939,7 @@ fn photo_cameras_get_friendly_names_and_merge() {
         keys,
         &vec![
             ("Sony α7R V".to_string(), 50.0),
-            ("DJI Air 3".to_string(), 11.0),
+            ("DJI Air 3S".to_string(), 11.0),
             ("DJI FC0000".to_string(), 8.0)
         ]
     );
@@ -953,4 +953,39 @@ fn photo_cameras_get_friendly_names_and_merge() {
         )
         .unwrap();
     assert!(raw.iter().any(|(k, _)| k == "SONY ILCE-7RM5"));
+}
+
+#[test]
+fn photo_lenses_get_friendly_names_and_merge() {
+    let s = store_with(ALL);
+    let lens = |key, v| put(&s, "2026-11-10", "photos", "shots_by_lens", key, v);
+    lens("24-70mm F2.8 DG DN II | Art 024", 40.0);
+    lens("(unknown)", 7.0);
+    lens("----", 3.0); // same meaning: merges with (unknown)
+    lens("70.0 mm f/2.8", 2.0);
+    let st = Stats::new(&s, &collectors::builtin(), &settings(&s));
+    let sum = st.summary(range("2026-11-10", "2026-11-10"), 8).unwrap();
+    let (_, keys) = sum
+        .top
+        .iter()
+        .find(|(m, _)| m.def.id == "shots_by_lens")
+        .unwrap();
+    assert_eq!(
+        keys,
+        &vec![
+            ("Sigma 24-70mm F2.8 DG DN II Art".to_string(), 40.0),
+            ("No lens info".to_string(), 10.0),
+            ("Air 3S tele".to_string(), 2.0)
+        ]
+    );
+    // Stored keys stay raw.
+    let raw = st
+        .top(
+            "photos",
+            "shots_by_lens",
+            range("2026-11-10", "2026-11-10"),
+            9,
+        )
+        .unwrap();
+    assert!(raw.iter().any(|(k, _)| k == "(unknown)"));
 }

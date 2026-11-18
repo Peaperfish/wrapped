@@ -185,7 +185,7 @@
 
     {#if on.has("git")}
       <Card title="Git" size="M" empty={commits === undefined}>
-        <BigNumber value={String(commits ?? 0)} label="Commits" {soFar} cmp={cmp("git", "commits")} />
+        <BigNumber value={fmtValue(commits ?? 0, "count")} label="Commits" {soFar} cmp={cmp("git", "commits")} />
         <BarList items={repos} />
         {#if rec?.commit_streak}
           <p class="line muted">
@@ -198,7 +198,7 @@
 
     {#if on.has("photos")}
       <Card title="Photos" size="M" empty={shots === undefined}>
-        <BigNumber value={String(shots ?? 0)} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
+        <BigNumber value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
         <div class="two">
           <div>
             <h3 class="muted">Cameras</h3>
