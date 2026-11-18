@@ -209,7 +209,14 @@ fn one_simulated_day() {
     let mb = |b: u64| b as f64 / 1_048_576.0;
     println!(
         "{:<26} {:>7} {:>8} {:>13} {:>11} {:>13} {:>13} {:>13} {:>16}",
-        "run", "flushes", "samples", "WAL bytes", "frames/fl", "checkpoint", "total", "kernel",
+        "run",
+        "flushes",
+        "samples",
+        "WAL bytes",
+        "frames/fl",
+        "checkpoint",
+        "total",
+        "kernel",
         "DB growth/year"
     );
     for (hours, dm) in [(16, false), (16, true), (24, false), (24, true)] {

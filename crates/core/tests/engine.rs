@@ -589,8 +589,14 @@ fn idle_that_turns_into_sleep_is_split_at_the_sleep_moment() {
             s("sleep", "09:10:00", "10:10:00", false),
         ]
     );
-    assert_eq!(h.metric(DAY, AI, "away_secs_by_reason", "idle"), Some(560.0));
-    assert_eq!(h.metric(DAY, AI, "away_secs_by_reason", "sleep"), Some(3600.0));
+    assert_eq!(
+        h.metric(DAY, AI, "away_secs_by_reason", "idle"),
+        Some(560.0)
+    );
+    assert_eq!(
+        h.metric(DAY, AI, "away_secs_by_reason", "sleep"),
+        Some(3600.0)
+    );
     // One continuous away period: the split is not a new "time away".
     assert_eq!(h.metric(DAY, AI, "away_periods", ""), Some(1.0));
 }
