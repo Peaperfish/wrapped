@@ -7,11 +7,12 @@
     preset: Preset;
     asOf: string | null;
     refreshing: boolean;
+    asOfFlash?: boolean;
     onpreset: (p: Exclude<Preset, "custom">) => void;
     oncustom: (r: Range) => void;
     onrefresh: () => void;
   }
-  let { selection, preset, asOf, refreshing, onpreset, oncustom, onrefresh }: Props = $props();
+  let { selection, preset, asOf, refreshing, asOfFlash = false, onpreset, oncustom, onrefresh }: Props = $props();
 
   const presets: [Exclude<Preset, "custom">, string][] = [
     ["today", "Today"],
@@ -75,7 +76,7 @@
       </div>
     {/if}
 
-    <span class="asof muted">
+    <span class="asof muted" class:flash={asOfFlash}>
       {#if asOf}as of <span class="num">{asOf}</span>{:else}no data yet{/if}
     </span>
     <button class="refresh" class:spinning={refreshing} aria-label="Refresh" title="Refresh" onclick={onrefresh}>
@@ -150,6 +151,16 @@
   .asof {
     font-size: 12px;
     white-space: nowrap;
+  }
+  .asof {
+    border-radius: 6px;
+    padding: 2px 6px;
+    transition: background-color 0.9s ease, color 0.9s ease;
+  }
+  .asof.flash {
+    background: rgba(var(--accent-rgb), 0.25);
+    color: var(--text);
+    transition: none;
   }
   .refresh {
     display: grid;

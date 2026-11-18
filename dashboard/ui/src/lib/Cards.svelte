@@ -6,17 +6,24 @@
   import Card from "./Card.svelte";
   import HourBars from "./HourBars.svelte";
   import Ring from "./Ring.svelte";
-  import { fmtBytes, fmtSecs, appName, fmtValue } from "./format";
-  import { fmtDay, rangeLabel } from "./dates";
+  import { fmtBytes, fmtSecs, fmtValue } from "./format";
+  import { type Preset, fmtDay, rangeLabel } from "./dates";
   import type { Meta, StreakJson, SummaryJson, TopJson } from "./types";
 
   interface Props {
     meta: Meta;
     summary: SummaryJson | null;
+    /** Display names of bundle ids (missing ids are shown as they are). */
+    names: Record<string, string>;
+    preset: Preset;
     loading: boolean;
     error: string | null;
   }
-  let { meta, summary, loading, error }: Props = $props();
+  let { meta, summary, names, preset, loading, error }: Props = $props();
+
+  const appName = (id: string): string => names[id] ?? id;
+  // Today is part of a day compared with all of yesterday.
+  const soFar = $derived(preset === "today");
 
   const on = $derived(new Set(meta.collectors.filter((c) => c.enabled).map((c) => c.name)));
 
@@ -35,7 +42,13 @@
     }));
 
   const screen = $derived(total("app_usage", "screen_time_secs"));
-  const away = $derived(total("active_idle", "away_secs"));
+  // Away while awake: every reason but sleep. (An idle period that turns into
+  // sleep is still keyed "idle", so this can overcount a little.)
+  const away = $derived.by(() => {
+    const t = top("active_idle", "away_secs_by_reason");
+    if (!t) return total("active_idle", "away_secs") === undefined ? undefined : 0;
+    return t.keys.filter((k) => k.key !== "sleep").reduce((a, k) => a + k.value, 0);
+  });
   const awayCount = $derived(total("active_idle", "away_periods"));
   const activeDays = $derived(
     (summary?.series.find((s) => s.collector === "app_usage" && s.metric === "screen_time_secs")?.days ?? []).filter(
@@ -92,7 +105,7 @@
   <div class="grid" class:loading>
     {#if on.has("app_usage")}
       <Card title="Screen time" subtitle={vsLabel} size="S" empty={screen === undefined}>
-        <BigNumber value={fmtSecs(screen ?? 0)} cmp={cmp("app_usage", "screen_time_secs")} />
+        <BigNumber {soFar} value={fmtSecs(screen ?? 0)} cmp={cmp("app_usage", "screen_time_secs")} />
         <p class="line muted">
           <span class="num">{activeDays > 0 ? fmtSecs((screen ?? 0) / activeDays) : "–"}</span> per active day
           <span class="faint">({plural(activeDays, "day")})</span>
@@ -101,7 +114,7 @@
     {/if}
 
     {#if on.has("active_idle")}
-      <Card title="Away" subtitle="Screen time vs time away" size="S" empty={away === undefined && screen === undefined}>
+      <Card title="Away (awake)" subtitle="Screen time vs time away, not asleep" size="S" empty={away === undefined && screen === undefined}>
         {@const s = screen ?? 0}
         {@const a = away ?? 0}
         <div class="ringrow">
@@ -109,14 +122,14 @@
             fraction={s + a > 0 ? s / (s + a) : 0}
             center={s + a > 0 ? `${Math.round((s / (s + a)) * 100)}%` : "–"}
             caption="at screen"
-            title="Screen time {fmtSecs(s)}, away {fmtSecs(a)}"
+            title="Screen time {fmtSecs(s)}, away while awake {fmtSecs(a)}"
           />
           <dl>
             <dt class="muted">Screen</dt>
             <dd class="num">{fmtSecs(s)}</dd>
-            <dt class="muted">Away</dt>
+            <dt class="muted">Away (awake)</dt>
             <dd class="num">{fmtSecs(a)}</dd>
-            <dt class="muted">Times away</dt>
+            <dt class="muted" title="Includes periods that were sleep">Times away</dt>
             <dd class="num">{awayCount ?? 0}</dd>
           </dl>
         </div>
@@ -172,7 +185,7 @@
 
     {#if on.has("git")}
       <Card title="Git" size="M" empty={commits === undefined}>
-        <BigNumber value={String(commits ?? 0)} label="Commits" cmp={cmp("git", "commits")} />
+        <BigNumber value={String(commits ?? 0)} label="Commits" {soFar} cmp={cmp("git", "commits")} />
         <BarList items={repos} />
         {#if rec?.commit_streak}
           <p class="line muted">
@@ -185,7 +198,7 @@
 
     {#if on.has("photos")}
       <Card title="Photos" size="M" empty={shots === undefined}>
-        <BigNumber value={String(shots ?? 0)} label="Shots" cmp={cmp("photos", "shots")} />
+        <BigNumber value={String(shots ?? 0)} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
         <div class="two">
           <div>
             <h3 class="muted">Cameras</h3>
@@ -208,7 +221,7 @@
       >
         <div class="quad">
           {#each diskMetrics as [m, label] (m)}
-            <BigNumber small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} cmp={cmp("disk_memory", m)} />
+            <BigNumber small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
           {/each}
         </div>
       </Card>

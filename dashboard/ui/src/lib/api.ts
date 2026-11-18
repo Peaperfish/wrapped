@@ -15,6 +15,14 @@ export const getSummary = (
 export const getSeries = (year: number, metric: string): Promise<YearSeries> =>
   invoke<YearSeries>("series", { year, metric });
 
+/** Display names for bundle ids; ids without an installed app come back unchanged. */
+export const getAppNames = (ids: string[]): Promise<Record<string, string>> =>
+  invoke<Record<string, string>>("app_names", { ids });
+
+/** Ask a running collector to save now. False: none is running. */
+export const flushCollector = (): Promise<boolean> =>
+  invoke<boolean>("flush_collector").catch(() => false);
+
 /** The first frame with data is on screen: the backend shows the window. */
 export const ready = (): Promise<void> => invoke<void>("ready").catch(() => undefined);
 

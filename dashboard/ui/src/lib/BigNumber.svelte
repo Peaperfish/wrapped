@@ -10,15 +10,18 @@
     cmp?: ComparisonJson;
     /** Smaller type, for several in one card. */
     small?: boolean;
+    /** The period is still in progress and compared with a whole one: show
+     *  the change in a neutral colour with "so far". */
+    soFar?: boolean;
   }
-  let { value, label, cmp, small = false }: Props = $props();
+  let { value, label, cmp, small = false, soFar = false }: Props = $props();
 
   const dir = $derived(
-    !cmp ? "flat" : cmp.pct === null ? (cmp.current > 0 ? "up" : "flat") : cmp.pct > 0 ? "up" : cmp.pct < 0 ? "down" : "flat",
+    soFar ? "neutral" : !cmp ? "flat" : cmp.pct === null ? (cmp.current > 0 ? "up" : "flat") : cmp.pct > 0 ? "up" : cmp.pct < 0 ? "down" : "flat",
   );
   const arrow = $derived(dir === "up" ? "▲" : dir === "down" ? "▼" : "•");
   const tip = $derived(
-    cmp ? `Now ${cmp.current.toLocaleString("en-US")} · before ${cmp.previous.toLocaleString("en-US")}` : "",
+    soFar ? "vs all of yesterday" : cmp ? `Now ${cmp.current.toLocaleString("en-US")} · before ${cmp.previous.toLocaleString("en-US")}` : "",
   );
 </script>
 
@@ -27,7 +30,7 @@
   <div class="row">
     <span class="value num">{value}</span>
     {#if cmp}
-      <span class="change num {dir}" title={tip}>{arrow} {cmp.pct === null && cmp.current === 0 ? "0%" : fmtPct(cmp.pct)}</span>
+      <span class="change num {dir}" title={tip}>{soFar ? "" : `${arrow} `}{cmp.pct === null && cmp.current === 0 ? "0%" : fmtPct(cmp.pct)}{soFar ? " so far" : ""}</span>
     {/if}
   </div>
 </div>
@@ -62,6 +65,7 @@
   .down {
     color: var(--danger);
   }
+  .neutral,
   .flat {
     color: var(--text-faint);
   }

@@ -10,7 +10,15 @@
   import Header from "./lib/Header.svelte";
   import Heatmap from "./lib/Heatmap.svelte";
   import Cards from "./lib/Cards.svelte";
-  import { errorText, getMeta, getSeries, getSummary, ready } from "./lib/api";
+  import {
+    errorText,
+    flushCollector,
+    getAppNames,
+    getMeta,
+    getSeries,
+    getSummary,
+    ready,
+  } from "./lib/api";
   import {
     type Preset,
     type Range,
@@ -38,6 +46,10 @@
   let summaryLoading = $state(false);
   let summaryError = $state<string | null>(null);
   let refreshing = $state(false);
+  let asOfFlash = $state(false);
+  // Display names of bundle ids, resolved by the backend once per id.
+  let names = $state.raw<Record<string, string>>({});
+  const askedNames = new Set<string>();
 
   const seriesCache = new Map<string, YearSeries>();
   let seriesSeq = 0;
@@ -50,6 +62,19 @@
     meta?.earliest_date ? Math.min(yearOf(meta.earliest_date), maxYear) : maxYear,
   );
   const asOf = $derived(meta?.last_flush_ms != null ? fmtAsOf(meta.last_flush_ms, today) : null);
+
+  // Briefly highlight "as of" when it changes (not on the first value).
+  let lastAsOf: string | null | undefined;
+  let flashTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const v = asOf;
+    if (lastAsOf !== undefined && v !== lastAsOf && v !== null) {
+      asOfFlash = true;
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => (asOfFlash = false), 1400);
+    }
+    lastAsOf = v;
+  });
 
   const clampYear = (y: number): number => Math.min(Math.max(y, minYear), maxYear);
 
@@ -113,11 +138,28 @@
       if (seq === summarySeq) {
         summary = s;
         summaryError = null;
+        void loadNames(s);
       }
     } catch (e) {
       if (seq === summarySeq) summaryError = errorText(e);
     } finally {
       if (seq === summarySeq) summaryLoading = false;
+    }
+  }
+
+  async function loadNames(s: SummaryJson) {
+    const ids = [
+      ...(s.top.find((t) => t.collector === "app_usage" && t.metric === "app_secs")?.keys ?? []).map(
+        (k) => k.key,
+      ),
+      ...(s.records.longest_session ? [s.records.longest_session.app] : []),
+    ].filter((id) => !askedNames.has(id));
+    if (ids.length === 0) return;
+    ids.forEach((id) => askedNames.add(id));
+    try {
+      names = { ...names, ...(await getAppNames(ids)) };
+    } catch {
+      ids.forEach((id) => askedNames.delete(id)); // shown as ids; retry next time
     }
   }
 
@@ -145,13 +187,34 @@
     void loadSeries();
   }
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  /** Ask a running collector to save, wait until the last-recorded time
+   *  advances (at most 1.5 s), then re-fetch everything. */
   async function refresh() {
+    if (refreshing) return;
     refreshing = true;
-    seriesCache.clear();
-    await loadMeta();
-    year = clampYear(year);
-    await Promise.all([loadSeries(), loadSummary()]);
-    refreshing = false;
+    try {
+      const before = meta?.last_flush_ms ?? null;
+      if (await flushCollector()) {
+        const deadline = Date.now() + 1500;
+        while (Date.now() < deadline) {
+          await sleep(100);
+          try {
+            const m = await getMeta();
+            if ((m.last_flush_ms ?? null) !== before) break;
+          } catch {
+            break;
+          }
+        }
+      }
+      seriesCache.clear();
+      await loadMeta();
+      year = clampYear(year);
+      await Promise.all([loadSeries(), loadSummary()]);
+    } finally {
+      refreshing = false;
+    }
   }
 
   onMount(async () => {
@@ -172,6 +235,7 @@
     {preset}
     {asOf}
     refreshing={refreshing}
+    {asOfFlash}
     onpreset={(p) => select(presetRange(p, today), true, true)}
     oncustom={(r) => select(r, true, true)}
     onrefresh={refresh}
@@ -216,7 +280,7 @@
         onmetric={setMetric}
       />
     {/if}
-    <Cards {meta} {summary} loading={summaryLoading} error={summaryError} />
+    <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError} />
     <p class="build faint">
       <span class="num">{meta.db_path}</span> · build <span class="num">{meta.build}</span>
     </p>
