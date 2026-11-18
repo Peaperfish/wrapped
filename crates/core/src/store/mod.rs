@@ -600,6 +600,63 @@ impl Store {
         self.max_session_ms
     }
 
+    /// Earliest local date with a `daily_metrics` row of one of `collectors`
+    /// (`None` if none of them has data). Walks the primary key in date
+    /// order and stops at the first match.
+    pub fn earliest_metric_date(&self, collectors: &[&str]) -> Result<Option<NaiveDate>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT date FROM daily_metrics WHERE collector = ?1 ORDER BY date LIMIT 1",
+        )?;
+        let mut best: Option<NaiveDate> = None;
+        for c in collectors {
+            let date: Option<String> = stmt.query_row([c], |r| r.get(0)).optional()?;
+            if let Some(d) = date.and_then(|s| NaiveDate::parse_from_str(&s, "%Y-%m-%d").ok()) {
+                best = Some(best.map_or(d, |b| b.min(d)));
+            }
+        }
+        Ok(best)
+    }
+
+    /// The latest moment `collectors` recorded anything (UTC ms): the end of
+    /// their newest session (an open session ends at the last flush), their
+    /// newest sample, or the start of their latest scan. `None` if they have
+    /// recorded nothing. Index seeks only (a collector's sessions never
+    /// overlap, so its newest session ends last).
+    pub fn last_recorded_ms(&self, collectors: &[&str]) -> Result<Option<i64>> {
+        let mut latest: Option<i64> = None;
+        let mut take = |v: Option<i64>| {
+            if let Some(v) = v {
+                latest = Some(latest.map_or(v, |l| l.max(v)));
+            }
+        };
+        let mut session = self.conn.prepare_cached(
+            "SELECT end_ms FROM sessions WHERE collector = ?1 ORDER BY start_ms DESC LIMIT 1",
+        )?;
+        let mut next_metric = self.conn.prepare_cached(
+            "SELECT metric FROM samples WHERE collector = ?1 AND metric > ?2
+             ORDER BY metric LIMIT 1",
+        )?;
+        let mut sample = self.conn.prepare_cached(
+            "SELECT MAX(time_ms) FROM samples WHERE collector = ?1 AND metric = ?2",
+        )?;
+        let mut scan = self
+            .conn
+            .prepare_cached("SELECT last_scanned_ms FROM scan_state WHERE collector = ?1")?;
+        for c in collectors {
+            take(session.query_row([c], |r| r.get(0)).optional()?);
+            take(scan.query_row([c], |r| r.get(0)).optional()?.flatten());
+            let mut metric = String::new();
+            while let Some(m) = next_metric
+                .query_row(params![c, metric], |r| r.get::<_, String>(0))
+                .optional()?
+            {
+                take(sample.query_row(params![c, m], |r| r.get(0))?);
+                metric = m;
+            }
+        }
+        Ok(latest)
+    }
+
     /// Calls `f(date, collector, metric, key, value)` for every
     /// `daily_metrics` row with `from <= date <= to` (optionally one
     /// collector's metric), in key order. One range scan on the primary key.
@@ -981,6 +1038,38 @@ fn recompute_day(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn earliest_date_and_last_recorded_time() {
+        let s = Store::open_in_memory().unwrap();
+        assert_eq!(s.earliest_metric_date(&["git", "app_usage"]).unwrap(), None);
+        assert_eq!(s.last_recorded_ms(&["app_usage"]).unwrap(), None);
+        s.conn()
+            .execute_batch(
+                "INSERT INTO daily_metrics VALUES ('2026-03-01','git','commits','',1);
+                 INSERT INTO daily_metrics VALUES ('2026-05-01','app_usage','screen_time_secs','',9);
+                 INSERT INTO sessions VALUES ('app_usage',1000,0,5000,0,'a',0);
+                 INSERT INTO sessions VALUES ('app_usage',6000,0,7000,0,'b',1);
+                 INSERT INTO samples VALUES ('disk_memory','a',9000,0,1,NULL);
+                 INSERT INTO samples VALUES ('disk_memory','reading',8000,0,1,NULL);
+                 INSERT INTO samples VALUES ('disk_memory','z',3000,0,1,NULL);
+                 INSERT INTO scan_state VALUES ('git',4000,NULL);",
+            )
+            .unwrap();
+        let d = |s: &str| NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap();
+        assert_eq!(
+            s.earliest_metric_date(&["git", "app_usage"]).unwrap(),
+            Some(d("2026-03-01"))
+        );
+        assert_eq!(
+            s.earliest_metric_date(&["app_usage", "photos"]).unwrap(),
+            Some(d("2026-05-01"))
+        );
+        assert_eq!(s.last_recorded_ms(&["app_usage"]).unwrap(), Some(7000));
+        assert_eq!(s.last_recorded_ms(&["git"]).unwrap(), Some(4000));
+        assert_eq!(s.last_recorded_ms(&["disk_memory"]).unwrap(), Some(9000));
+        assert_eq!(s.last_recorded_ms(&["photos"]).unwrap(), None);
+    }
 
     #[test]
     fn migration_from_empty_database() {

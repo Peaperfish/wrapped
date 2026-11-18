@@ -26,6 +26,8 @@ use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_
 
 /// Activity before this local hour belongs to the previous day's night.
 pub const NIGHT_ENDS_HOUR: i64 = 5;
+/// Keys per keyed metric in a summary for `stats range` and the dashboard.
+pub const SUMMARY_TOP_N: usize = 5;
 /// Margin around a range when selecting sessions by UTC time (offsets span
 /// UTC-12..UTC+14).
 const OFFSET_MARGIN_MS: i64 = 15 * MS_PER_HOUR;
