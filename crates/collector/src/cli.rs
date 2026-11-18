@@ -337,7 +337,7 @@ fn sessions(db: &std::path::Path, day: &str) -> CliResult {
 /// (no migration, no writes); a collector running on it is asked to flush
 /// first, as `stats` does.
 fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliResult {
-    use wrapped_core::stats::{DateRange, Stats, hidden_collectors};
+    use wrapped_core::stats::{DateRange, SUMMARY_TOP_N, Stats, hidden_collectors};
     let range = DateRange::new(parse_day(from)?, parse_day(to)?)?;
     if !db.exists() {
         return Err(format!("no database at {}", db.display()).into());
@@ -349,7 +349,7 @@ fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliRes
     let (settings, _) = store.load_settings()?;
     let all = collectors::builtin();
     let st = Stats::new(&store, &all, &settings);
-    let sum = st.summary(range, 5)?;
+    let sum = st.summary(range, SUMMARY_TOP_N)?;
     if json {
         println!("{}", serde_json::to_string_pretty(&sum.to_json())?);
         return Ok(());
