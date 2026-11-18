@@ -408,6 +408,19 @@ impl Engine {
         let Some(mut scanner) = self.slots[i].collector.scanner() else {
             return Err(Error::Scan(format!("`{name}` has no scanner")));
         };
+        // Settings the collector wants stored first (AI usage: tools found on
+        // this machine, folders that moved), on this thread, the only writer.
+        let updates = self.slots[i]
+            .collector
+            .prepare_scan(&self.settings, &self.scan_hooks);
+        if !updates.is_empty() {
+            for (k, v) in &updates {
+                self.store.set_setting(k, v)?;
+            }
+            let (s, _) = self.store.load_settings()?;
+            *self.shared.settings.write().expect("settings lock") = Arc::new(s.clone());
+            self.settings = s;
+        }
         let info = self.store.scan_info(name)?;
         let files = self.store.scan_files(name)?;
         let ctx = Arc::new(
@@ -612,16 +625,17 @@ impl Engine {
     /// Write everything buffered now, in one transaction.
     pub fn flush(&mut self) -> Result<FlushReport> {
         let now = self.now();
-        let (closed, samples, open, items, scans) = {
+        let (closed, samples, open, items, ai, scans) = {
             let mut b = self.shared.buffer.lock().expect("buffer lock");
             let closed = std::mem::take(&mut b.closed);
             let samples = std::mem::take(&mut b.samples);
             let items = std::mem::take(&mut b.items);
+            let ai = std::mem::take(&mut b.ai);
             let scans: Vec<(&'static str, ScanUpdate)> =
                 std::mem::take(&mut b.scans).into_iter().collect();
             let open: Vec<_> = b.open.iter().map(|(c, o)| (*c, o.clone())).collect();
             self.shared.wake_sent.store(false, Ordering::SeqCst);
-            (closed, samples, open, items, scans)
+            (closed, samples, open, items, ai, scans)
         };
         // Blocked scan threads may continue as soon as the buffer is drained.
         self.shared.drained.notify_all();
@@ -637,6 +651,7 @@ impl Engine {
             open: &open,
             samples: &samples,
             items: &items,
+            ai: &ai,
             scans: &scans,
         };
         match self.store.flush(&batch, now, &rollup) {
@@ -653,14 +668,17 @@ impl Engine {
                     closed,
                     samples,
                     items,
+                    ai,
                     ..Default::default()
                 };
                 kept.closed.append(&mut b.closed);
                 kept.samples.append(&mut b.samples);
                 kept.items.append(&mut b.items);
+                kept.ai.append(&mut b.ai);
                 b.closed = kept.closed;
                 b.samples = kept.samples;
                 b.items = kept.items;
+                b.ai = kept.ai;
                 // Older scan bookkeeping goes first; newer state wins.
                 let newer = std::mem::take(&mut b.scans);
                 for (name, mut old) in scans {
@@ -745,6 +763,9 @@ impl Engine {
             b.closed.retain(|r| r.collector != name);
             b.samples.retain(|r| r.collector != name);
             b.items.retain(|r| r.collector != name);
+            if name == "ai_usage" {
+                b.ai.clear();
+            }
             b.scans.remove(name);
             if let Some(o) = b.open.get_mut(name) {
                 o.start = now;

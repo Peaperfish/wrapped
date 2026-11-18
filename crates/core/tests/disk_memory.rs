@@ -83,7 +83,7 @@ impl H {
                 .set_setting("collector.disk_memory.enabled", "true")
                 .unwrap();
         }
-        let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap();
+        let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
         let p = Fake::new();
         e.set_probe(Arc::new(p.clone()));
         Self { e, c, p }

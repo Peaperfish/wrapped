@@ -37,10 +37,14 @@ fn clock() -> ManualClock {
 
 fn engine(c: &ManualClock, settings: &[(&str, String)]) -> Engine {
     let store = Store::open_in_memory().unwrap();
+    // AI usage is on by default; these tests count the scans of git and photos.
+    store
+        .set_setting("collector.ai_usage.enabled", "false")
+        .unwrap();
     for (k, v) in settings {
         store.set_setting(k, v).unwrap();
     }
-    Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap()
+    Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap()
 }
 
 fn json_list(p: &Path) -> String {
@@ -982,7 +986,7 @@ fn email_change_made_offline_resets_on_next_start() {
     {
         let s = Store::open(&path).unwrap();
         settings(&s);
-        let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin()).unwrap();
+        let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
         scan(&mut e, "git");
         assert_eq!(my_items(&e), 1);
     }
@@ -999,7 +1003,7 @@ fn email_change_made_offline_resets_on_next_start() {
         "same list: no reset"
     );
     assert_eq!(s.item_count("git").unwrap(), 0);
-    let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin()).unwrap();
+    let mut e = Engine::new(s, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
     scan(&mut e, "git");
     assert_eq!(my_items(&e), 2);
 }

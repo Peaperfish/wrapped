@@ -13,6 +13,7 @@
 //! and memory counters (Disk & Memory collector) come from IOKit, Mach VM
 //! statistics and sysctl (see `counters.rs`).
 
+mod bookmarks;
 mod counters;
 mod lock;
 mod login;

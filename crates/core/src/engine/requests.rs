@@ -39,6 +39,9 @@ impl Engine {
             ctl::CMD_SCAN => self.request_scan(&req.args),
             ctl::CMD_DELETE_ALL => self.request_delete_all(&req.args),
             ctl::CMD_FINISH_SETUP => self.request_finish_setup(&req.args),
+            ctl::CMD_AI_ADD_SOURCE => self.request_ai_add_source(&req.args),
+            ctl::CMD_AI_REMOVE_SOURCE => self.request_ai_remove_source(&req.args),
+            ctl::CMD_AI_SET_SOURCE => self.request_ai_set_source(&req.args),
             other => Err(invalid(format!("unknown command `{other}`"))),
         };
         match out {
@@ -185,6 +188,73 @@ impl Engine {
         self.after_settings_change()?;
         self.log(|| "setup finished: recording".to_string());
         Ok(json!({}))
+    }
+
+    /// `{"tool": "<id>", "path": "<folder>"}`: a custom AI source (the folder
+    /// holds that tool's logs). On macOS the folder is bookmarked too.
+    fn request_ai_add_source(&mut self, args: &Value) -> Res {
+        let tool = args["tool"]
+            .as_str()
+            .ok_or_else(|| invalid("`tool` is missing"))?;
+        let path = args["path"]
+            .as_str()
+            .ok_or_else(|| invalid("`path` is missing"))?;
+        let src = crate::ai::new_custom_source(&self.settings, tool, path, &self.scan_hooks)
+            .map_err(invalid)?;
+        let id = src.id.clone();
+        let mut sources = self.settings.ai_sources.clone();
+        sources.push(src);
+        self.store_ai_sources(sources)?;
+        // Read it soon (no-op while setup is unfinished, paused, or turned off).
+        if !self.setup_mode && !self.paused {
+            let _ = self.start_scan("ai_usage");
+        }
+        Ok(json!({ "id": id }))
+    }
+
+    /// `{"id": "<source id>"}`. A source is only ever removed by this request.
+    fn request_ai_remove_source(&mut self, args: &Value) -> Res {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| invalid("`id` is missing"))?;
+        let mut sources = self.settings.ai_sources.clone();
+        let before = sources.len();
+        sources.retain(|s| s.id != id);
+        if sources.len() == before {
+            return Err(invalid(format!("no source `{id}`")));
+        }
+        self.store_ai_sources(sources)?;
+        Ok(json!({}))
+    }
+
+    /// `{"id": "<source id>", "enabled": bool}`
+    fn request_ai_set_source(&mut self, args: &Value) -> Res {
+        let id = args["id"]
+            .as_str()
+            .ok_or_else(|| invalid("`id` is missing"))?;
+        let enabled = args["enabled"]
+            .as_bool()
+            .ok_or_else(|| invalid("`enabled` must be true or false"))?;
+        let mut sources = self.settings.ai_sources.clone();
+        let Some(s) = sources.iter_mut().find(|s| s.id == id) else {
+            return Err(invalid(format!("no source `{id}`")));
+        };
+        s.enabled = enabled;
+        self.store_ai_sources(sources)?;
+        Ok(json!({}))
+    }
+
+    fn store_ai_sources(&mut self, sources: Vec<crate::settings::AiSource>) -> Result<(), Fail> {
+        let mut s = self.settings.clone();
+        s.ai_sources = sources;
+        let json = s
+            .get_json(crate::settings::KEY_AI_SOURCES)
+            .map_err(|e| invalid(e.to_string()))?;
+        self.store
+            .set_setting(crate::settings::KEY_AI_SOURCES, &json)?;
+        let (s, _) = self.store.load_settings()?;
+        self.apply_settings(s)?;
+        Ok(())
     }
 
     /// Validate all pairs against a copy of the settings, then store them.

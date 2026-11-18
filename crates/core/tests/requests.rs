@@ -9,7 +9,7 @@ use wrapped_core::{Engine, ManualClock, Store, SystemEvent, collectors};
 
 fn engine(store: Store) -> (Engine, ManualClock) {
     let c = ManualClock::at_local(2026, 11, 16, 9, 0, 0, 480);
-    let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap();
+    let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
     e.set_auto_scans(false);
     (e, c)
 }

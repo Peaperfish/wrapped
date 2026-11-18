@@ -130,7 +130,7 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
             .set_setting("collector.disk_memory.enabled", "true")
             .unwrap();
     }
-    let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap();
+    let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
     e.set_probe(Arc::new(GrowingCounters(Mutex::new(DiskMemoryReading {
         boot_time_ms: 1_790_000_000_000,
         disk_bytes_read: 10_000_000_000,

@@ -38,7 +38,9 @@ fn meta_lists_collectors_metrics_and_data_bounds() {
             ("active_idle", true),
             ("git", true),
             ("photos", false),
-            ("disk_memory", false)
+            ("disk_memory", false),
+            // On unless turned off: a default-on collector appears for an old database too.
+            ("ai_usage", true)
         ]
     );
     // Only metrics without keys of collectors that are on; screen time first.
@@ -50,7 +52,10 @@ fn meta_lists_collectors_metrics_and_data_bounds() {
             "app_usage/app_switches",
             "active_idle/away_secs",
             "active_idle/away_periods",
-            "git/commits"
+            "git/commits",
+            "ai_usage/tokens",
+            "ai_usage/requests",
+            "ai_usage/sessions"
         ]
     );
     assert_eq!(m.metrics[0].unit, UnitName::Secs);

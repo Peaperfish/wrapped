@@ -21,4 +21,22 @@ register!(
     git::Git,
     photos::Photos,
     disk_memory::DiskMemory,
+    ai_usage::AiUsage,
 );
+
+/// Like [`builtin`], but AI usage looks for tools in a home folder that does
+/// not exist, so tests and benchmarks never read the real logs of whoever runs
+/// them.
+pub fn builtin_hermetic() -> Vec<Box<dyn crate::collector::Collector>> {
+    let env = crate::ai::Env::from_map(
+        std::path::PathBuf::from("/nonexistent-wrapped-test-home"),
+        &[],
+    );
+    let mut all = builtin();
+    for c in &mut all {
+        if c.info().name == ai_usage::NAME {
+            *c = Box::new(AiUsage::with_env(env.clone()));
+        }
+    }
+    all
+}

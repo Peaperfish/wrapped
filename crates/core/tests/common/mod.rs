@@ -125,6 +125,7 @@ impl Pending {
             open: &[],
             samples: &self.samples,
             items: &self.items,
+            ai: &[],
             scans: &[],
         };
         store.flush(&batch, now, &rollup).unwrap();

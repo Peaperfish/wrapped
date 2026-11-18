@@ -98,6 +98,49 @@ pub const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE samples ADD COLUMN data TEXT;  -- JSON object, collector-defined
     "#,
+    // v4: AI usage (Milestone 6).
+    //
+    // `ai_usage`: token counts summed per (UTC hour, tool, session, model,
+    // project). One row per request would be ~50 MB a year for Claude Code
+    // alone (about 550 requests a day here) and a random insert each; the
+    // hourly sums are a few thousand rows. Time first in the key, so new data
+    // appends. `off` is the local UTC offset at the bucket's first request
+    // (the day a bucket belongs to is decided by local time). `project` is the
+    // last path component only. Never prompt or response text, never a cost.
+    //
+    // `ai_seen`: one 64-bit hash per counted request (tool + the tool's own
+    // request id), the dedupe set that makes rescans, resumed / forked
+    // sessions and repeated log lines count once. Keyed by the hash alone: one
+    // request is written as several lines whose timestamps differ by up to
+    // minutes (measured: up to 172 s), so time cannot be part of the key. Kept
+    // forever, so a log restored from a backup months later still counts once.
+    //
+    // `scan_files` gets the byte offset after the last complete line read
+    // (`pos`) and a hash of the file's first bytes (`head`): an unchanged
+    // prefix means a log only grew, so the next scan reads from `pos`.
+    r#"
+    CREATE TABLE ai_usage (
+        hour_ms     INTEGER NOT NULL,
+        tool        TEXT    NOT NULL,
+        session     TEXT    NOT NULL,
+        model       TEXT    NOT NULL,
+        project     TEXT    NOT NULL,
+        off         INTEGER NOT NULL,
+        input       INTEGER NOT NULL DEFAULT 0,
+        output      INTEGER NOT NULL DEFAULT 0,
+        cache_read  INTEGER NOT NULL DEFAULT 0,
+        cache_write INTEGER NOT NULL DEFAULT 0,
+        requests    INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (hour_ms, tool, session, model, project)
+    ) WITHOUT ROWID;
+
+    CREATE TABLE ai_seen (
+        id_hash INTEGER PRIMARY KEY
+    ) WITHOUT ROWID;
+
+    ALTER TABLE scan_files ADD COLUMN pos  INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE scan_files ADD COLUMN head INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 pub fn schema_version(conn: &Connection) -> Result<usize, Error> {
