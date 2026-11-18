@@ -17,9 +17,10 @@ pub enum SystemEvent {
     IdleTick {
         /// Seconds since the last keyboard/mouse/trackpad input.
         secs_since_input: f64,
-        /// Processes currently holding a "keep the display awake" assertion
-        /// (macOS `PreventUserIdleDisplaySleep`). Names are for logging only.
-        display_assertion_holders: Vec<String>,
+        /// "Keep the display awake" assertions held at this tick (macOS
+        /// `PreventUserIdleDisplaySleep`), each attributed to the frontmost
+        /// app or not by the platform layer.
+        display_assertions: Vec<DisplayAssertion>,
     },
     WillSleep,
     DidWake,
@@ -32,6 +33,26 @@ pub enum SystemEvent {
     Paused,
     /// Tracking resumed (by the user or because a timed pause expired).
     Resumed,
+}
+
+/// One "keep the display awake" assertion seen at an idle tick.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DisplayAssertion {
+    /// Who holds it, e.g. `"caffeinate[49222] caffeinate command-line tool"`.
+    /// For logging only.
+    pub holder: String,
+    /// Held by the frontmost app's process (or created on its behalf).
+    /// Only these count as evidence of use; see `presence`.
+    pub front_app: bool,
+}
+
+impl DisplayAssertion {
+    pub fn new(holder: impl Into<String>, front_app: bool) -> Self {
+        Self {
+            holder: holder.into(),
+            front_app,
+        }
+    }
 }
 
 impl SystemEvent {

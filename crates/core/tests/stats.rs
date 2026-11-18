@@ -672,7 +672,7 @@ fn dst_and_offset_change_count_each_second_once() {
     let tick = |e: &mut Engine| {
         e.handle(SystemEvent::IdleTick {
             secs_since_input: 1.0,
-            display_assertion_holders: vec![],
+            display_assertions: vec![],
         })
         .unwrap();
     };

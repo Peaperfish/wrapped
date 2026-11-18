@@ -153,13 +153,8 @@ impl Presence {
             }
             SystemEvent::IdleTick {
                 secs_since_input,
-                display_assertion_holders,
-            } => self.on_tick(
-                now,
-                *secs_since_input,
-                !display_assertion_holders.is_empty(),
-                s,
-            ),
+                display_assertions,
+            } => self.on_tick(now, *secs_since_input, !display_assertions.is_empty(), s),
             SystemEvent::WillSleep => {
                 self.asleep = Some(now.utc_ms);
                 self.last_tick_ms = None;
@@ -307,7 +302,7 @@ mod tests {
     fn tick(secs: f64) -> SystemEvent {
         SystemEvent::IdleTick {
             secs_since_input: secs,
-            display_assertion_holders: vec![],
+            display_assertions: vec![],
         }
     }
     fn app(b: &str) -> SystemEvent {

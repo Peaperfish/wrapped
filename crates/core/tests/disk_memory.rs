@@ -97,7 +97,7 @@ impl H {
     fn tick_input(&mut self, secs_since_input: f64) {
         self.ev(SystemEvent::IdleTick {
             secs_since_input,
-            display_assertion_holders: vec![],
+            display_assertions: vec![],
         });
     }
     /// `n` minutes, a tick at the end of each, `per_min` bytes written per minute.

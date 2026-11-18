@@ -6,7 +6,12 @@
 //!   distributed notifications.
 //! * Once a minute (run-loop `NSTimer`): seconds since last input
 //!   (`CGEventSourceSecondsSinceLastEventType`) and processes holding a
-//!   `PreventUserIdleDisplaySleep` assertion (`IOPMCopyAssertionsByProcess`).
+//!   `PreventUserIdleDisplaySleep` assertion (`IOPMCopyAssertionsByProcess`),
+//!   each marked as held by the frontmost app or not: the holder's pid, or the
+//!   pid the assertion was created on behalf of (`AssertionOnBehalfOfPID`),
+//!   equals `frontmostApplication.processIdentifier`. Both are public APIs
+//!   with no permission. A child of the front app (e.g. `caffeinate` run in a
+//!   terminal) is a different pid and does not count.
 //!
 //! Every callback body runs inside its own autorelease pool, so autoreleased
 //! Objective-C objects are freed at the end of each callback instead of
@@ -31,7 +36,7 @@ use objc2_foundation::{
     NSDistributedNotificationCenter, NSNotification, NSNotificationName, NSObjectProtocol,
     NSOperationQueue, NSRunLoop, NSRunLoopCommonModes, NSString, NSTimer,
 };
-use wrapped_core::SystemEvent;
+use wrapped_core::{DisplayAssertion, SystemEvent};
 
 use super::deliver;
 
@@ -85,9 +90,18 @@ fn proc_name(pid: i64) -> String {
     }
 }
 
-/// `"name[pid] assertion name"` for every process holding
-/// `PreventUserIdleDisplaySleep`. Errors count as "none".
-fn display_assertion_holders() -> Vec<String> {
+/// Pid of the frontmost application, if any.
+fn front_pid() -> Option<i64> {
+    NSWorkspace::sharedWorkspace()
+        .frontmostApplication()
+        .map(|app| i64::from(app.processIdentifier()))
+        .filter(|&pid| pid > 0)
+}
+
+/// Every `PreventUserIdleDisplaySleep` assertion, as `"name[pid] assertion
+/// name"`, marked `front_app` when held by `front` or created on its behalf.
+/// Errors count as "none".
+fn display_assertions(front: Option<i64>) -> Vec<DisplayAssertion> {
     let mut out: *mut c_void = std::ptr::null_mut();
     if unsafe { IOPMCopyAssertionsByProcess(&mut out) } != 0 || out.is_null() {
         return Vec::new();
@@ -99,6 +113,9 @@ fn display_assertion_holders() -> Vec<String> {
     };
     let type_key = NSString::from_str("AssertType");
     let name_key = NSString::from_str("AssertName");
+    // kIOPMAssertionOnBehalfOfPID (IOPMLib.h): set when a daemon creates the
+    // assertion for a client app (pmset shows it as "Created for PID").
+    let behalf_key = NSString::from_str("AssertionOnBehalfOfPID");
     let mut holders = Vec::new();
     unsafe {
         let keys: *mut AnyObject = msg_send![&*dict, allKeys];
@@ -121,7 +138,14 @@ fn display_assertion_holders() -> Vec<String> {
                     } else {
                         (*nm).to_string()
                     };
-                    holders.push(format!("{}[{pid}] {name}", proc_name(pid)));
+                    let behalf: *mut AnyObject = msg_send![a, objectForKey: &*behalf_key];
+                    let behalf: Option<i64> =
+                        (!behalf.is_null()).then(|| msg_send![behalf, longLongValue]);
+                    let front_app = front.is_some_and(|f| f == pid || behalf == Some(f));
+                    holders.push(DisplayAssertion::new(
+                        format!("{}[{pid}] {name}", proc_name(pid)),
+                        front_app,
+                    ));
                 }
             }
         }
@@ -132,7 +156,7 @@ fn display_assertion_holders() -> Vec<String> {
 fn tick() {
     deliver(SystemEvent::IdleTick {
         secs_since_input: idle_secs(),
-        display_assertion_holders: display_assertion_holders(),
+        display_assertions: display_assertions(front_pid()),
     });
 }
 
