@@ -87,8 +87,10 @@
       text: fmtTokens(i.value),
     })),
   );
+  // Antigravity's logs name no model; the stored key stays "unknown".
+  const modelLabel = (k: string): string => (k === "unknown" ? "Antigravity (model unknown)" : k);
   const aiModels = $derived(
-    items(top("ai_usage", "tokens_by_model"), 6).map((i) => ({ ...i, text: fmtTokens(i.value) })),
+    items(top("ai_usage", "tokens_by_model"), 6, modelLabel).map((i) => ({ ...i, text: fmtTokens(i.value) })),
   );
   const aiProjects = $derived(
     items(top("ai_usage", "tokens_by_project"), 6).map((i) => ({ ...i, text: fmtTokens(i.value) })),
