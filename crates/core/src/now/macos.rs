@@ -681,16 +681,33 @@ impl Drop for Smc {
     }
 }
 
-/// A sensor group: key (prefix) → label. Only keys known to mean this on
-/// Apple Silicon Macs are listed (Tp / Te / Tg: CPU performance / efficiency /
-/// GPU cores, TH: storage, TB: battery, TaLP / TaRF: airflow left / right,
-/// TW: Wi-Fi); every other `T…` key is left out rather than guessed.
+const CPU_P: &str = "CPU performance cores";
+
+/// A sensor group by key. Only keys known to mean this are listed; every
+/// other `T…` key is left out rather than guessed.
+///
+/// Measured on a Mac14,9 (M2 Pro) with 8 busy `yes` processes for 20 s:
+/// * `Tp1[A-z]` and `Tp2[A-z]` rose 55-65 C (idle readings 0-8 C while the cluster
+///   is power-gated, 58-74 C under load): the P cores. The other `Tp0?` /
+///   `Tp16-18` keys rose only 4-16 C from 44-66 C, so they are not cores.
+/// * `Te0?`: the E cores. `Tg???`: GPU (the GPU was not loaded, they rose
+///   with the shared die).
+/// * `TH`: storage, `TB`: battery, `TaLP` / `TaRF`: airflow left / right,
+///   `TW`: Wi-Fi.
+///
+/// Other chips may number their sensors differently; there a group may be
+/// missing rather than wrong.
 fn temp_group(key: &str) -> Option<&'static str> {
     if matches!(key, "TaLP" | "TaRF") {
         return Some("Airflow");
     }
+    let b = key.as_bytes();
     Some(match key.get(..2)? {
-        "Tp" => "CPU performance cores",
+        "Tp" if matches!(b.get(2), Some(b'1' | b'2'))
+            && b.get(3).is_some_and(u8::is_ascii_alphabetic) =>
+        {
+            CPU_P
+        }
         "Te" => "CPU efficiency cores",
         "Tg" => "GPU",
         "TH" | "TN" => "SSD",
@@ -802,8 +819,9 @@ impl Smc {
                 continue;
             }
             // Inactive or absent sensors read 0 or nonsense: keep only keys
-            // that currently give a plausible temperature.
-            if self.float(key, 4).is_some_and(plausible_temp) {
+            // that currently give a plausible temperature. The P-core keys
+            // read ~0 while the cluster sleeps, so they are kept regardless.
+            if group == CPU_P || self.float(key, 4).is_some_and(|v| plausible_temp(group, v)) {
                 self.temps.push((key, 4, group.to_string()));
             }
         }
@@ -845,7 +863,10 @@ impl Smc {
     fn read_temps(&self) -> Vec<Temp> {
         let mut groups: BTreeMap<&str, (f64, u32)> = BTreeMap::new();
         for (key, size, label) in &self.temps {
-            if let Some(v) = self.float(*key, *size).filter(|v| plausible_temp(*v)) {
+            if let Some(v) = self
+                .float(*key, *size)
+                .filter(|v| plausible_temp(label, *v))
+            {
                 let e = groups.entry(label.as_str()).or_default();
                 e.0 += v;
                 e.1 += 1;
@@ -853,7 +874,7 @@ impl Smc {
         }
         // Fixed order: CPU, GPU, then the rest.
         let order = [
-            "CPU performance cores",
+            CPU_P,
             "CPU efficiency cores",
             "GPU",
             "SSD",
@@ -889,8 +910,11 @@ impl Smc {
     }
 }
 
-fn plausible_temp(v: f64) -> bool {
-    v > 5.0 && v < 150.0
+/// A power-gated P cluster reads 0-8 C: not a temperature, so the group has
+/// no value until it wakes up.
+fn plausible_temp(group: &str, v: f64) -> bool {
+    let min = if group == CPU_P { 15.0 } else { 5.0 };
+    v > min && v < 150.0
 }
 
 // ---------- the source ----------
@@ -954,6 +978,25 @@ mod tests {
         assert!(a.cores.is_some_and(|c| !c.is_empty()));
         assert!(a.net.is_some());
         assert!(a.swap.is_some());
+    }
+
+    #[test]
+    fn sensor_groups() {
+        assert_eq!(temp_group("Tp1A"), Some(CPU_P));
+        assert_eq!(temp_group("Tp2G"), Some(CPU_P));
+        // Rose only a little under load: not P cores.
+        assert_eq!(temp_group("Tp0A"), None);
+        assert_eq!(temp_group("Tp16"), None);
+        assert_eq!(temp_group("Te05"), Some("CPU efficiency cores"));
+        assert_eq!(temp_group("Tg0f"), Some("GPU"));
+        assert_eq!(temp_group("TaLP"), Some("Airflow"));
+        assert_eq!(temp_group("Ta0C"), None);
+        assert_eq!(temp_group("TD00"), None);
+        // A sleeping P cluster reads near 0: no value, not 5 C.
+        assert!(!plausible_temp(CPU_P, 7.4));
+        assert!(plausible_temp(CPU_P, 60.0));
+        assert!(plausible_temp("GPU", 30.0));
+        assert!(!plausible_temp("GPU", 0.0));
     }
 
     /// `cargo test --release -p wrapped-core --lib sample_cost -- --ignored --nocapture`

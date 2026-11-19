@@ -852,10 +852,15 @@ fn now(args: &[&str]) -> CliResult {
     Ok(())
 }
 
+/// Memory sizes the way Activity Monitor writes them: 1024-based, "GB".
+fn fmt_gib(bytes: u64) -> String {
+    format!("{:.2} GB", bytes as f64 / (1u64 << 30) as f64)
+}
+
 fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
     let pct = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.1}%"));
     let mbs = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{:.2} MB/s", v / 1e6));
-    let gb = |v: Option<u64>| v.map_or("-".to_string(), |v| format!("{:.2} GB", v as f64 / 1e9));
+    let gb = |v: Option<u64>| v.map_or("-".to_string(), fmt_gib);
     let deg = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.1} C"));
     println!(
         "--- sample {n}  {}",
@@ -1014,4 +1019,16 @@ fn export(db: &std::path::Path, json: bool, path: &str) -> CliResult {
         c.sessions, c.daily_metrics, c.samples, c.settings, c.items
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fmt_gib;
+
+    #[test]
+    fn memory_is_1024_based() {
+        assert_eq!(fmt_gib(17_179_869_184), "16.00 GB");
+        assert_eq!(fmt_gib(1 << 29), "0.50 GB");
+        assert_eq!(fmt_gib(0), "0.00 GB");
+    }
 }
