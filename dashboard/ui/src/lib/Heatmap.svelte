@@ -15,7 +15,7 @@
     weekday,
     weekdayShort,
   } from "./dates";
-  import { fmtValue } from "./format";
+  import { fmtTokens, fmtValue } from "./format";
 
   interface Props {
     year: number;
@@ -116,6 +116,8 @@
     }),
   );
 
+  const isAi = $derived(metric.startsWith("ai_usage/"));
+  const fmt = (v: number): string => (isAi ? fmtTokens(v) : fmtValue(v, unit));
   const unit = $derived(series?.unit ?? metrics.find((m) => m.id === metric)?.unit ?? "count");
   const daysWithData = $derived(sorted.length);
   const yearTotal = $derived(values ? values.reduce((a, b) => a + b, 0) : 0);
@@ -242,7 +244,7 @@
       {#if values}
         <span class="muted summary">
           <span class="num">{daysWithData}</span> days with data{#if series?.agg === "sum" && yearTotal > 0}
-            · <span class="num">{fmtValue(yearTotal, unit)}</span> in {year}{/if}
+            · <span class="num">{fmt(yearTotal)}</span> in {year}{/if}
         </span>
       {/if}
       <label class="muted">
@@ -295,7 +297,7 @@
       <div class="tooltip" style="left: {hover.x}px; top: {hover.y}px">
         <div>{fmtDay(hover.cell.date)}</div>
         <div class="num value">
-          {hover.cell.future ? "—" : values ? fmtValue(hover.cell.value, unit) : "…"}
+          {hover.cell.future ? "—" : values ? fmt(hover.cell.value) : "…"}
         </div>
       </div>
     {/if}
