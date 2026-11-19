@@ -1,6 +1,7 @@
 <script lang="ts">
   // The folders AI usage is read from: every supported tool with its status,
   // an on / off switch per folder, "Scan now", and custom folders.
+  import { onDestroy, tick } from "svelte";
   import { pickFolders, sendCtl } from "../api";
   import CtlNote from "../CtlNote.svelte";
   import { fmtDay } from "../dates";
@@ -72,12 +73,26 @@
     await run(() => sendCtl("ai_add_source", { tool: addTool, path }), "Folder added; reading it now.");
   }
 
+  const scanStamp = (): string => meta.ai.sources.map((s) => s.last_scan_ms ?? 0).join(",");
+  let alive = true;
+  onDestroy(() => (alive = false));
+
   async function scanNow() {
-    await run(async () => {
-      await sendCtl("scan", { what: "ai" });
-      // The scan runs in the background; look again shortly.
-      setTimeout(() => void onchanged(), 3000);
-    }, "Scanning in the background.");
+    const before = scanStamp();
+    await run(() => sendCtl("scan", { what: "ai" }), "Scanning in the background.");
+    // The scan runs in the background: look every second until a source's
+    // last scan time changes, for at most a minute.
+    for (let i = 0; i < 60 && alive; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (!alive) return;
+      await onchanged().catch(() => {});
+      await tick();
+      if (scanStamp() !== before) {
+        notice = "Scan finished.";
+        return;
+      }
+    }
+    if (alive) notice = "Still scanning; check back in a minute.";
   }
 </script>
 
