@@ -116,8 +116,10 @@ pub fn friendly_camera(label: &str) -> String {
 
 /// Friendly names for lens labels the EXIF gives (display only, like cameras).
 const FRIENDLY_LENSES: &[(&str, &str)] = &[
-    ("24.0 mm f/1.8", "Air 3S wide (24mm f/1.8)"),
-    ("70.0 mm f/2.8", "Air 3S tele"),
+    ("24.0 mm f/1.8", "DJI Air 3S Wide 24mm F1.8"),
+    ("70.0 mm f/2.8", "DJI Air 3S Tele 70mm F2.8"),
+    ("E 70-300mm F4.5-6.3 A047", "Tamron 70-300mm F4.5-6.3 Di III RXD"),
+    ("SAMYANG AF 75mm F1.8", "Samyang AF 75mm F1.8"),
 ];
 
 /// Lens labels that mean "the file says nothing about the lens".
@@ -167,8 +169,8 @@ fn lens_key(lens: Option<&str>, model: Option<&str>) -> String {
 /// Lens of a fixed-lens camera, by EXIF model code, for shots whose file has
 /// no lens field (the Air 3S has two cameras).
 const FIXED_LENS_CAMERAS: &[(&str, &str)] = &[
-    ("FC9113", "Air 3S wide (24mm f/1.8)"),
-    ("FC9184", "Air 3S tele"),
+    ("FC9113", "DJI Air 3S Wide 24mm F1.8"),
+    ("FC9184", "DJI Air 3S Tele 70mm F2.8"),
 ];
 
 fn camera_of(it: &DayItem) -> String {
@@ -362,8 +364,13 @@ mod tests {
 
     #[test]
     fn friendly_lens_names() {
-        assert_eq!(friendly_lens("24.0 mm f/1.8"), "Air 3S wide (24mm f/1.8)");
-        assert_eq!(friendly_lens("70.0 mm f/2.8"), "Air 3S tele");
+        assert_eq!(friendly_lens("24.0 mm f/1.8"), "DJI Air 3S Wide 24mm F1.8");
+        assert_eq!(friendly_lens("70.0 mm f/2.8"), "DJI Air 3S Tele 70mm F2.8");
+        assert_eq!(friendly_lens("SAMYANG AF 75mm F1.8"), "Samyang AF 75mm F1.8");
+        assert_eq!(
+            friendly_lens("E 70-300mm F4.5-6.3 A047"),
+            "Tamron 70-300mm F4.5-6.3 Di III RXD"
+        );
         assert_eq!(
             friendly_lens("24-70mm F2.8 DG DN II | Art 024"),
             "Sigma 24-70mm F2.8 DG DN II Art"
@@ -379,9 +386,9 @@ mod tests {
         assert_eq!(friendly_lens("(unknown)"), "No lens info");
         assert_eq!(
             friendly_lens("(unknown) FC9113"),
-            "Air 3S wide (24mm f/1.8)"
+            "DJI Air 3S Wide 24mm F1.8"
         );
-        assert_eq!(friendly_lens("(unknown) fc9184"), "Air 3S tele");
+        assert_eq!(friendly_lens("(unknown) fc9184"), "DJI Air 3S Tele 70mm F2.8");
         assert_eq!(friendly_lens("(unknown) ILCE-7RM5"), "No lens info");
         assert_eq!(friendly_lens("----"), "No lens info");
         // Everything else is left alone.

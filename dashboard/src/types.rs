@@ -320,6 +320,9 @@ pub struct RecordsJson {
 pub struct SummaryJson {
     pub range: RangeJson,
     pub previous: RangeJson,
+    /// Days of `range` / `previous` that have any data.
+    pub data_days: u32,
+    pub previous_data_days: u32,
     pub totals: Vec<TotalJson>,
     pub comparisons: Vec<ComparisonJson>,
     pub top: Vec<TopJson>,

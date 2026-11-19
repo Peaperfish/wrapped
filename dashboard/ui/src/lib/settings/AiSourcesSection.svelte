@@ -1,10 +1,12 @@
 <script lang="ts">
   // The folders AI usage is read from: every supported tool with its status,
   // an on / off switch per folder, "Scan now", and custom folders.
+  import { onDestroy, tick } from "svelte";
   import { pickFolders, sendCtl } from "../api";
   import CtlNote from "../CtlNote.svelte";
   import { fmtDay } from "../dates";
   import { fmtValue } from "../format";
+  import Select from "../Select.svelte";
   import Toggle from "../Toggle.svelte";
   import type { AiSourceMeta, AiToolMeta, Meta } from "../types";
 
@@ -72,12 +74,26 @@
     await run(() => sendCtl("ai_add_source", { tool: addTool, path }), "Folder added; reading it now.");
   }
 
+  const scanStamp = (): string => meta.ai.sources.map((s) => s.last_scan_ms ?? 0).join(",");
+  let alive = true;
+  onDestroy(() => (alive = false));
+
   async function scanNow() {
-    await run(async () => {
-      await sendCtl("scan", { what: "ai" });
-      // The scan runs in the background; look again shortly.
-      setTimeout(() => void onchanged(), 3000);
-    }, "Scanning in the background.");
+    const before = scanStamp();
+    await run(() => sendCtl("scan", { what: "ai" }), "Scanning in the background.");
+    // The scan runs in the background: look every second until a source's
+    // last scan time changes, for at most a minute.
+    for (let i = 0; i < 60 && alive; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      if (!alive) return;
+      await onchanged().catch(() => {});
+      await tick();
+      if (scanStamp() !== before) {
+        notice = "Scan finished.";
+        return;
+      }
+    }
+    if (alive) notice = "Still scanning; check back in a minute.";
   }
 </script>
 
@@ -137,11 +153,12 @@
   <h4>Add a folder</h4>
   <p class="muted small">For logs kept somewhere else (a backup, another account). Choose the tool whose format they use.</p>
   <div class="add">
-    <select bind:value={addTool} disabled={busy} aria-label="Log format">
-      {#each meta.ai.tools as t (t.id)}
-        <option value={t.id}>{t.title}</option>
-      {/each}
-    </select>
+    <Select
+      bind:value={addTool}
+      disabled={busy}
+      ariaLabel="Log format"
+      options={meta.ai.tools.map((t) => ({ value: t.id, label: t.title }))}
+    />
     <button disabled={busy} onclick={addFolder}>Choose folder…</button>
   </div>
 </section>
@@ -232,13 +249,5 @@
   .add {
     display: flex;
     gap: 8px;
-  }
-  select {
-    background: var(--field-bg);
-    color: var(--text);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    padding: 5px 8px;
-    font: inherit;
   }
 </style>

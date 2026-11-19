@@ -30,6 +30,8 @@ USAGE
   wrapped-collector export --csv <dir>      everything, one CSV per table
   wrapped-collector --version               print crate version and build (git hash)
   wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
+  wrapped-collector scan ai --rebuild --yes  clear AI usage and rescan every log (not while Wrapped runs;
+                                            usage whose logs are already gone is lost)
   wrapped-collector git emails             list author emails in git.folders (read-only)
   wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
   wrapped-collector recompute <from> <to> [--collector <name>]
@@ -97,6 +99,10 @@ pub fn main() -> i32 {
         ["git", "emails"] => git_emails(&db),
         ["probe", "disk-memory"] => probe_disk_memory(),
         ["scan"] => scan(&db, "all"),
+        ["scan", "ai", "--rebuild"] => {
+            Err("--rebuild needs --yes (it deletes AI usage first)".into())
+        }
+        ["scan", "ai", "--rebuild", "--yes"] => rebuild_ai(&db),
         ["scan", what] => scan(&db, what),
         ["recompute", from, to] => recompute(&db, from, to, None),
         ["recompute", from, to, "--collector", name] => recompute(&db, from, to, Some(name)),
@@ -337,6 +343,7 @@ fn recompute(db: &std::path::Path, from: &str, to: &str, only: Option<&str>) -> 
         days += 1;
         day = day.succ_opt().ok_or("date out of range")?;
     }
+    store.checkpoint()?;
     println!(
         "recomputed {days} days ({} metric rows changed) in {:.2}s",
         rows,
@@ -686,6 +693,27 @@ fn git_emails(db: &std::path::Path) -> CliResult {
     Ok(())
 }
 
+/// One-time rebuild of the AI usage (e.g. after project naming changed).
+fn rebuild_ai(db: &std::path::Path) -> CliResult {
+    if !db.exists() {
+        return Err(format!("no database at {}", db.display()).into());
+    }
+    // The lock is released at the end of the block (the scan takes it again).
+    {
+        let _lock = platform::hold_db_lock(db).map_err(|e| {
+            format!(
+                "{e}. Quit Wrapped (tray menu > Quit) first, run this again, then open Wrapped."
+            )
+        })?;
+        println!(
+            "warning: this clears all AI usage and rescans the logs that still exist; usage \
+             whose logs are already gone is lost"
+        );
+        Store::open(db)?.delete_collector_data("ai_usage")?;
+    }
+    scan(db, "ai")
+}
+
 fn scan(db: &std::path::Path, what: &str) -> CliResult {
     let what = if what == "ai" { "ai_usage" } else { what };
     let scanned: Vec<&'static str> = collectors::builtin()
@@ -736,6 +764,7 @@ fn scan(db: &std::path::Path, what: &str) -> CliResult {
     }
     let reports = engine.wait_scans()?;
     engine.shutdown()?;
+    engine.store().checkpoint()?;
     let wall = t0.elapsed().as_secs_f64();
     for r in &reports {
         println!(

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::{
-    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, folder_name, list_files, parse_ts_ms, uint,
+    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, list_files, parse_ts_ms, project_name, uint,
 };
 
 pub const INFO: ToolInfo = ToolInfo {
@@ -64,7 +64,7 @@ impl Adapter for Gemini {
             let project = f
                 .parent()
                 .and_then(Path::parent)
-                .map(project_name)
+                .map(root_project_name)
                 .unwrap_or_default();
             let stem = f
                 .file_stem()
@@ -117,10 +117,10 @@ impl Adapter for Gemini {
 }
 
 /// The project's folder name from its `.project_root` file, if it has one.
-fn project_name(dir: &Path) -> String {
+fn root_project_name(dir: &Path) -> String {
     std::fs::read_to_string(dir.join(".project_root"))
         .ok()
-        .and_then(|s| s.lines().next().map(folder_name))
+        .and_then(|s| s.lines().next().map(project_name))
         .unwrap_or_default()
 }
 

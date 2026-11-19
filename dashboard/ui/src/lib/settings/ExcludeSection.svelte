@@ -3,6 +3,7 @@
   // seen, or type a bundle id.
   import { getAppNames, recordedApps, sendCtl } from "../api";
   import CtlNote from "../CtlNote.svelte";
+  import Select from "../Select.svelte";
   import type { Meta } from "../types";
 
   interface Props {
@@ -19,7 +20,11 @@
   let pick = $state("");
 
   const excluded = $derived(meta.settings.exclude_apps);
-  const choices = $derived(recorded.filter((id) => !excluded.includes(id)));
+  // Wrapped's own entries (the app bundle, its dashboard, their executables) are not offered.
+  const own = (id: string) =>
+    id.startsWith("io.github.peaperfish.wrapped") || id.startsWith("exe:wrapped");
+  // `recorded` arrives most-used first (by screen time).
+  const choices = $derived(recorded.filter((id) => !excluded.includes(id) && !own(id)));
 
   async function resolve(ids: string[]) {
     const need = ids.filter((id) => !(id in names));
@@ -88,12 +93,14 @@
   <label>
     <span class="muted">Add from apps Wrapped has seen</span>
     <span class="inline">
-      <select bind:value={pick} disabled={busy || choices.length === 0}>
-        <option value="">{choices.length === 0 ? "No more apps" : "Choose an app…"}</option>
-        {#each choices as id (id)}
-          <option value={id}>{label(id)}</option>
-        {/each}
-      </select>
+      <Select
+        bind:value={pick}
+        searchable
+        ariaLabel="App to exclude"
+        disabled={busy || choices.length === 0}
+        placeholder={choices.length === 0 ? "No more apps" : "Choose an app…"}
+        options={choices.map((id) => ({ value: id, label: label(id), title: id }))}
+      />
       <button disabled={busy || !pick} onclick={() => add(pick)}>Add</button>
     </span>
   </label>
@@ -166,7 +173,7 @@
     display: flex;
     gap: 6px;
   }
-  .inline select,
+  .inline :global(.sel),
   .inline input {
     flex: 1;
     min-width: 0;

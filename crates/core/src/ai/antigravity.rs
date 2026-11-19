@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::{Adapter, Emitter, Env, Request, ScanCx, ToolInfo, folder_name, parse_ts_ms, uint};
+use super::{Adapter, Emitter, Env, Request, ScanCx, ToolInfo, parse_ts_ms, project_name, uint};
 
 pub const INFO: ToolInfo = ToolInfo {
     id: "antigravity",
@@ -87,7 +87,7 @@ fn history_entry(line: &str) -> Option<(String, String)> {
     let v: Value = serde_json::from_str(line).ok()?;
     let id = v["conversationId"].as_str()?;
     let ws = v["workspace"].as_str()?;
-    Some((id.to_string(), folder_name(ws)))
+    Some((id.to_string(), project_name(ws)))
 }
 
 fn parse_line(line: &str, session: &str, project: &str, em: &mut Emitter<'_>) {

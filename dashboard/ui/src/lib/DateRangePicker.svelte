@@ -8,6 +8,7 @@
   // extend the range from where the focus was, Space picks like a click,
   // Return applies. Days after today cannot be chosen.
   import { onMount, untrack } from "svelte";
+  import { lockScroll } from "./scrollLock";
   import {
     type Range,
     type Ymd,
@@ -133,7 +134,11 @@
       onclose();
     };
     document.addEventListener("pointerdown", down, true);
-    return () => document.removeEventListener("pointerdown", down, true);
+    const unlock = lockScroll();
+    return () => {
+      unlock();
+      document.removeEventListener("pointerdown", down, true);
+    };
   });
 
   const inBand = (d: Ymd): boolean => draft.from <= d && d <= draft.to;
@@ -247,6 +252,15 @@
   .months {
     display: flex;
     gap: 22px;
+  }
+  /* A narrow window shows one month (the later one) so the popover stays inside. */
+  @media (max-width: 650px) {
+    .month:first-child {
+      display: none;
+    }
+    .pop {
+      max-width: calc(100vw - 32px);
+    }
   }
   .title {
     text-align: center;

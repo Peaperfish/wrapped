@@ -90,6 +90,7 @@
     padding: 0;
     max-height: 150px;
     overflow: auto;
+    overscroll-behavior: contain;
     display: flex;
     flex-direction: column;
     gap: 2px;

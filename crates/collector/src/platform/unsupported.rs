@@ -79,6 +79,12 @@ pub fn children_cpu_secs() -> f64 {
 /// platform yet (no collector can run here), so there is nothing to hold.
 pub struct DbLock;
 
+// Empty for now (the real lock comes in M9); it keeps code written against the
+// macOS lock, which has a Drop, passing clippy here too.
+impl Drop for DbLock {
+    fn drop(&mut self) {}
+}
+
 pub fn hold_db_lock(_db: &Path) -> Result<DbLock, String> {
     Ok(DbLock)
 }

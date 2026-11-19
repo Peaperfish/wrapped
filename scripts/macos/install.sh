@@ -37,6 +37,11 @@ app_version() { # "<short version> (<build>)" of a bundle
 }
 # Pid of the collector holding the single-instance lock, or nothing.
 lock_pid() { [ -e "$LOCK" ] && lsof -t -- "$LOCK" 2>/dev/null | head -1 || true; }
+# Pid of the process whose executable is exactly $1 (anchored, dots escaped), not
+# merely one that has the lock file open (mdworker_shared once matched).
+pid_of_exe() {
+    pgrep -f "^$(printf '%s' "$1" | sed 's/[][\.*^$+?(){}|]/\\&/g')( |\$)" 2>/dev/null | head -1 || true
+}
 exe_of() { ps -p "$1" -o comm= 2>/dev/null | sed 's/^ *//'; }
 
 # 1. Build release + bundle (target/release/Wrapped.app with the dashboard nested).
@@ -107,11 +112,11 @@ rm -rf "$TMP" # holds the previous app after a swap
 open "$DEST"
 PID=""
 for _ in $(seq 1 100); do
-    PID=$(lock_pid)
+    PID=$(pid_of_exe "$DEST_EXE")
     [ -n "$PID" ] && break
     sleep 0.1
 done
-[ -n "$PID" ] || die "the new app did not start (no process holds $LOCK)"
+[ -n "$PID" ] || die "the new app did not start (no process runs $DEST_EXE)"
 [ "$(exe_of "$PID")" = "$DEST_EXE" ] || die "pid $PID is running $(exe_of "$PID"), expected $DEST_EXE"
 RUNNING=$("$DEST_EXE" --version)
 case "$RUNNING" in

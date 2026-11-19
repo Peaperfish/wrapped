@@ -223,6 +223,10 @@ design doc itself is left as written.
 - New dependency in the dashboard only: `tauri-plugin-dialog` (folder picker,
   export dialog).
 - The AI card is a full-width (L) card, not tied to a collector's `items`.
+- `summary` JSON gains `data_days` and `previous_data_days` (days with any stored
+  metric in each range), used to hide a % change against a thin previous period.
+- AI `project` is the enclosing git folder's name (was the last folder of the
+  working directory); older rows keep theirs until `scan ai --rebuild --yes`.
 
 ## Metric definitions
 

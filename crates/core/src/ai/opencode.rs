@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::cursor::open_read_only;
-use super::{Adapter, Emitter, Env, Request, ScanCx, ToolInfo, folder_name, list_files, uint};
+use super::{Adapter, Emitter, Env, Request, ScanCx, ToolInfo, list_files, project_name, uint};
 
 pub const INFO: ToolInfo = ToolInfo {
     id: "opencode",
@@ -120,7 +120,7 @@ fn message(m: &Value, session_hint: &str, em: &mut Emitter<'_>) {
         time_ms: created,
         session,
         model: m["modelID"].as_str().unwrap_or(""),
-        project: &folder_name(m["path"]["cwd"].as_str().unwrap_or("")),
+        project: &project_name(m["path"]["cwd"].as_str().unwrap_or("")),
         input: uint(&t["input"]),
         output: uint(&t["output"]) + uint(&t["reasoning"]),
         cache_read: uint(&t["cache"]["read"]),

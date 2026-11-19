@@ -10,4 +10,8 @@ import type { TotalJson } from "./TotalJson";
 /**
  * The stats engine's result for one range (`stats range --json`).
  */
-export type SummaryJson = { range: RangeJson, previous: RangeJson, totals: Array<TotalJson>, comparisons: Array<ComparisonJson>, top: Array<TopJson>, time_of_day: Array<HourProfileJson>, series: Array<SeriesJson>, records: RecordsJson, };
+export type SummaryJson = { range: RangeJson, previous: RangeJson, 
+/**
+ * Days of `range` / `previous` that have any data.
+ */
+data_days: number, previous_data_days: number, totals: Array<TotalJson>, comparisons: Array<ComparisonJson>, top: Array<TopJson>, time_of_day: Array<HourProfileJson>, series: Array<SeriesJson>, records: RecordsJson, };

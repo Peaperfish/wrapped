@@ -159,6 +159,60 @@ pub fn folder_name(path: &str) -> String {
     name.chars().take(120).collect()
 }
 
+/// The project name for a working directory: the name of the nearest folder
+/// (the directory itself or an ancestor below the home folder) that holds
+/// `.git`; `(home)` for the home folder itself. If the directory no longer
+/// exists or no repository is found, its own last folder name. Only a name
+/// ever leaves this function, never a path.
+pub fn project_name(path: &str) -> String {
+    if let Some(hit) = PROJECT_CACHE.with(|c| c.borrow().get(path).cloned()) {
+        return hit;
+    }
+    let name = project_name_uncached(path);
+    PROJECT_CACHE.with(|c| c.borrow_mut().insert(path.to_string(), name.clone()));
+    name
+}
+
+thread_local! {
+    /// Project names per working-directory string for one scan, so the `.git`
+    /// checks run once per folder, not once per log line.
+    static PROJECT_CACHE: std::cell::RefCell<std::collections::HashMap<String, String>> =
+        Default::default();
+}
+
+fn project_name_uncached(path: &str) -> String {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    project_name_in(path, home.as_deref())
+}
+
+fn project_name_in(path: &str, home: Option<&Path>) -> String {
+    let own = folder_name(path);
+    let p = Path::new(path.trim_end_matches(['/', '\\']));
+    if own.is_empty() || !p.is_dir() {
+        return own;
+    }
+    if let Some(h) = home
+        && p == h
+    {
+        return "(home)".to_string();
+    }
+    for dir in p.ancestors() {
+        if home.is_some_and(|h| dir == h) || dir.parent().is_none() {
+            break;
+        }
+        if dir.join(".git").exists() {
+            let n = dir
+                .file_name()
+                .map(|n| n.to_string_lossy().chars().take(120).collect::<String>())
+                .unwrap_or_default();
+            return if n.is_empty() { own } else { n };
+        }
+    }
+    own
+}
+
 /// An RFC 3339 timestamp as UTC milliseconds.
 pub fn parse_ts_ms(s: &str) -> Option<i64> {
     DateTime::parse_from_rfc3339(s)
@@ -324,6 +378,8 @@ pub struct ScanCx<'a> {
 
 impl<'a> ScanCx<'a> {
     pub fn new(out: &'a Sink, salt: [u64; 2]) -> Self {
+        // A new scan sees folders created or removed since the last one.
+        PROJECT_CACHE.with(|c| c.borrow_mut().clear());
         Self {
             out,
             salt,
@@ -771,6 +827,25 @@ pub fn split_roots(v: OsString) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_name_walks_up_to_the_repository() {
+        let d = std::env::temp_dir().join(format!("wrapped-pn-{}", std::process::id()));
+        let sub = d.join("repo/dashboard/ui");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::create_dir_all(d.join("repo/.git")).unwrap();
+        let home = d.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let s = |p: &Path| p.to_string_lossy().to_string();
+        assert_eq!(project_name_in(&s(&sub), Some(&home)), "repo");
+        assert_eq!(project_name_in(&s(&home), Some(&home)), "(home)");
+        assert_eq!(
+            project_name_in(&s(&d.join("repo/gone/x")), Some(&home)),
+            "x"
+        );
+        assert_eq!(project_name_in(&s(&d.join("home")), None), "home");
+        std::fs::remove_dir_all(&d).unwrap();
+    }
 
     #[test]
     fn folder_name_is_only_the_last_component() {

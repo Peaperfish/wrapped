@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { lockScroll } from "./scrollLock";
   // Settings: a centred glass dialog over the dimmed, blurred dashboard.
   // Section list on the left, the section on the right. Closes with Escape,
   // the ✕ button or a click outside; focus stays inside while open and goes
@@ -84,6 +85,8 @@
   onMount(() => {
     // The selected tab is the first stop.
     dialog?.querySelector<HTMLElement>(`#tab-${current}`)?.focus();
+    // The page behind must not scroll while the dialog is open.
+    return lockScroll();
   });
 </script>
 
@@ -149,6 +152,7 @@
     backdrop-filter: blur(var(--overlay-blur));
     -webkit-backdrop-filter: blur(var(--overlay-blur));
     padding: 24px;
+    overscroll-behavior: contain;
   }
   .modal {
     width: min(880px, 100%);
@@ -220,6 +224,7 @@
   }
   .panel {
     overflow: auto;
+    overscroll-behavior: contain;
     padding: 20px 24px 24px;
     flex: 1;
     user-select: text;
