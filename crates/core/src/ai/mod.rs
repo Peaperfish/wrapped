@@ -165,6 +165,22 @@ pub fn folder_name(path: &str) -> String {
 /// exists or no repository is found, its own last folder name. Only a name
 /// ever leaves this function, never a path.
 pub fn project_name(path: &str) -> String {
+    if let Some(hit) = PROJECT_CACHE.with(|c| c.borrow().get(path).cloned()) {
+        return hit;
+    }
+    let name = project_name_uncached(path);
+    PROJECT_CACHE.with(|c| c.borrow_mut().insert(path.to_string(), name.clone()));
+    name
+}
+
+thread_local! {
+    /// Project names per working-directory string for one scan, so the `.git`
+    /// checks run once per folder, not once per log line.
+    static PROJECT_CACHE: std::cell::RefCell<std::collections::HashMap<String, String>> =
+        Default::default();
+}
+
+fn project_name_uncached(path: &str) -> String {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
@@ -362,6 +378,8 @@ pub struct ScanCx<'a> {
 
 impl<'a> ScanCx<'a> {
     pub fn new(out: &'a Sink, salt: [u64; 2]) -> Self {
+        // A new scan sees folders created or removed since the last one.
+        PROJECT_CACHE.with(|c| c.borrow_mut().clear());
         Self {
             out,
             salt,

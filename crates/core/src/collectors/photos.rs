@@ -119,6 +119,7 @@ const FRIENDLY_LENSES: &[(&str, &str)] = &[
     ("24.0 mm f/1.8", "DJI Air 3S Wide 24mm F1.8"),
     ("70.0 mm f/2.8", "DJI Air 3S Tele 70mm F2.8"),
     ("E 70-300mm F4.5-6.3 A047", "Tamron 70-300mm F4.5-6.3 Di III RXD"),
+    ("SAMYANG AF 75mm F1.8", "Samyang AF 75mm F1.8"),
 ];
 
 /// Lens labels that mean "the file says nothing about the lens".
@@ -365,6 +366,7 @@ mod tests {
     fn friendly_lens_names() {
         assert_eq!(friendly_lens("24.0 mm f/1.8"), "DJI Air 3S Wide 24mm F1.8");
         assert_eq!(friendly_lens("70.0 mm f/2.8"), "DJI Air 3S Tele 70mm F2.8");
+        assert_eq!(friendly_lens("SAMYANG AF 75mm F1.8"), "Samyang AF 75mm F1.8");
         assert_eq!(
             friendly_lens("E 70-300mm F4.5-6.3 A047"),
             "Tamron 70-300mm F4.5-6.3 Di III RXD"
