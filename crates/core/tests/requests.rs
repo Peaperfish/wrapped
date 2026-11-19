@@ -146,13 +146,18 @@ fn fresh_database_starts_in_setup_mode_and_records_nothing() {
         &mut e,
         ctl::CMD_FINISH_SETUP,
         json!({
-            "settings": {"git.folders": ["~/code"]},
+            "settings": {"git.folders": ["~/code"], "ai.sources": [
+                {"id": "a1b2c3d4", "tool": "claude", "path": "/tmp/x", "builtin": true, "enabled": false}
+            ]},
             "collectors": {"app_usage": true, "active_idle": true, "git": false,
                            "photos": false, "disk_memory": false}
         }),
     ));
     assert!(!e.is_setup_mode());
     assert_eq!(e.settings().onboarding_done, Some(true));
+    // An unticked AI tool is stored as a source that is switched off.
+    let src = &e.settings().ai_sources;
+    assert!(src.len() == 1 && src[0].tool == "claude" && !src[0].enabled);
     assert!(!e.running_collectors().contains(&"git"));
     // Finishing twice is refused.
     assert_eq!(

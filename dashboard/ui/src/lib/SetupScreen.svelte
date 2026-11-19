@@ -26,6 +26,11 @@
   let gitFolders = $state<string[]>([...init.settings.git_folders]);
   let gitEmails = $state<string[]>([...(init.settings.git_author_emails ?? [])]);
   let photosFolders = $state<string[]>([...init.settings.photos_folders]);
+  // Only tools whose folder exists here; all on to start with.
+  const detectedAi = init.ai.tools.filter((t) => t.detected && t.detected_path);
+  let aiTicked = $state<Record<string, boolean>>(Object.fromEntries(detectedAi.map((t) => [t.id, true])));
+  const newId = (): string =>
+    Array.from(crypto.getRandomValues(new Uint8Array(4)), (b) => b.toString(16).padStart(2, "0")).join("");
   let busy = $state(false);
   let error = $state<unknown>(null);
 
@@ -39,6 +44,16 @@
         settings["git.author_emails"] = gitEmails;
       }
       if (ticked.photos) settings["photos.folders"] = photosFolders;
+      if (ticked.ai_usage && detectedAi.length > 0) {
+        // The detected folders become sources; an unticked tool stays listed but off.
+        settings["ai.sources"] = detectedAi.map((t) => ({
+          id: newId(),
+          tool: t.id,
+          path: t.detected_path,
+          builtin: true,
+          enabled: aiTicked[t.id] ?? false,
+        }));
+      }
       await sendCtl("finish_setup", { settings, collectors: ticked });
       ondone();
     } catch (e) {
@@ -84,6 +99,31 @@
             />
             <GitEmails folders={gitFolders} selected={gitEmails} onchange={(e) => (gitEmails = e)} />
           </div>
+        {:else if c.name === "ai_usage" && ticked.ai_usage}
+          <div class="more">
+            {#if detectedAi.length === 0}
+              <p class="muted small">No AI coding tools found on this Mac yet. Wrapped picks them up later when they appear.</p>
+            {:else}
+              <ul class="tools">
+                {#each detectedAi as t (t.id)}
+                  <li>
+                    <div class="text">
+                      <span>{t.title}</span>
+                      <span class="faint small">
+                        {#if !t.tokens}sessions only (no token counts on disk)
+                        {:else}{t.detected_files} log {t.detected_files === 1 ? "file" : "files"} found{/if}
+                      </span>
+                    </div>
+                    <Toggle
+                      label="Read {t.title}"
+                      checked={aiTicked[t.id] ?? false}
+                      onchange={(on) => (aiTicked[t.id] = on)}
+                    />
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         {:else if c.name === "photos" && ticked.photos}
           <div class="more">
             <FolderList
@@ -113,6 +153,28 @@
 </section>
 
 <style>
+  .tools {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .tools li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .tools .text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .small {
+    font-size: 12px;
+  }
   .setup {
     max-width: 760px;
     width: 100%;
