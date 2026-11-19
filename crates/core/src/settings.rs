@@ -389,7 +389,7 @@ fn push_unique(out: &mut Vec<String>, s: String) {
 fn folder_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
     let mut out = Vec::new();
     for s in strings(key, v, "folders")? {
-        let ok = s == "~" || s.starts_with("~/") || std::path::Path::new(s).is_absolute();
+        let ok = has_home_prefix(s) || std::path::Path::new(s).is_absolute();
         if !ok {
             return Err(SettingsError::invalid(
                 key,
@@ -429,7 +429,7 @@ fn ai_sources(key: &str, v: &Value) -> Result<Vec<AiSource>, SettingsError> {
             .filter(|t| crate::ai::tool(t).is_some())
             .ok_or_else(|| SettingsError::invalid(key, "unknown `tool`"))?;
         let path = text("path")
-            .filter(|p| *p == "~" || p.starts_with("~/") || std::path::Path::new(p).is_absolute())
+            .filter(|p| has_home_prefix(p) || std::path::Path::new(p).is_absolute())
             .ok_or_else(|| {
                 SettingsError::invalid(key, "`path` must be absolute or start with ~/")
             })?;
@@ -482,6 +482,16 @@ fn extension_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
 }
 
 /// Expand a leading `~` to the home directory.
+/// `~`, `~/x` (and `~\x` on Windows).
+fn has_home_prefix(s: &str) -> bool {
+    s == "~" || home_rest(s).is_some()
+}
+
+fn home_rest(s: &str) -> Option<&str> {
+    s.strip_prefix("~/")
+        .or_else(|| cfg!(windows).then(|| s.strip_prefix("~\\")).flatten())
+}
+
 pub fn expand_home(folder: &str) -> Option<std::path::PathBuf> {
     let home = || {
         std::env::var_os("HOME")
@@ -490,7 +500,7 @@ pub fn expand_home(folder: &str) -> Option<std::path::PathBuf> {
     };
     if folder == "~" {
         home()
-    } else if let Some(rest) = folder.strip_prefix("~/") {
+    } else if let Some(rest) = home_rest(folder) {
         Some(home()?.join(rest))
     } else {
         Some(std::path::PathBuf::from(folder))

@@ -440,8 +440,8 @@ fn a_missing_source_is_kept_checked_again_and_resumes_when_it_returns() {
     let tmp = Tmp::new("missing");
     let folder = tmp.0.join("external").join("claude-logs");
     let sources = format!(
-        r#"[{{"id":"abc123","tool":"claude","path":"{}","builtin":false,"enabled":true}}]"#,
-        folder.display()
+        r#"[{{"id":"abc123","tool":"claude","path":{},"builtin":false,"enabled":true}}]"#,
+        json_path(&folder)
     );
     let c = clock();
     let mut e = engine(&c, tmp.env(), Some(&sources));
@@ -530,8 +530,8 @@ fn disabled_and_removed_sources() {
         ),
     );
     let sources = format!(
-        r#"[{{"id":"abc123","tool":"claude","path":"{}","builtin":false,"enabled":false}}]"#,
-        folder.display()
+        r#"[{{"id":"abc123","tool":"claude","path":{},"builtin":false,"enabled":false}}]"#,
+        json_path(&folder)
     );
     let c = clock();
     let mut e = engine(&c, tmp.env(), Some(&sources));
@@ -661,10 +661,15 @@ fn a_moved_custom_folder_is_found_again_through_its_bookmark() {
 
 // ---------- the other tools (adapters written from documentation: untested on real logs) ----------
 
+/// A path as a JSON string literal (Windows paths hold backslashes).
+fn json_path(p: &Path) -> String {
+    serde_json::to_string(&p.to_string_lossy()).unwrap()
+}
+
 fn source_for(tool: &str, root: &Path) -> String {
     format!(
-        r#"[{{"id":"src1","tool":"{tool}","path":"{}","builtin":false,"enabled":true}}]"#,
-        root.display()
+        r#"[{{"id":"src1","tool":"{tool}","path":{},"builtin":false,"enabled":true}}]"#,
+        json_path(root)
     )
 }
 

@@ -142,12 +142,16 @@ fn fresh_database_starts_in_setup_mode_and_records_nothing() {
     let st = ok(req(&mut e, ctl::CMD_STATUS, Value::Null));
     assert_eq!(st["setup"], json!(true));
 
+    let abs = std::env::temp_dir()
+        .join("x")
+        .to_string_lossy()
+        .into_owned();
     ok(req(
         &mut e,
         ctl::CMD_FINISH_SETUP,
         json!({
             "settings": {"git.folders": ["~/code"], "ai.sources": [
-                {"id": "a1b2c3d4", "tool": "claude", "path": "/tmp/x", "builtin": true, "enabled": false}
+                {"id": "a1b2c3d4", "tool": "claude", "path": abs, "builtin": true, "enabled": false}
             ]},
             "collectors": {"app_usage": true, "active_idle": true, "git": false,
                            "photos": false, "disk_memory": false}
