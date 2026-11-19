@@ -222,6 +222,7 @@ design doc itself is left as written.
   and covered only by made-up fixtures.
 - New dependency in the dashboard only: `tauri-plugin-dialog` (folder picker,
   export dialog).
+- Settings → AI sources and the setup screen's tool list are not built yet (backend and `scan ai` / `ai sources` CLI exist).
 - The AI card is a full-width (L) card, not tied to a collector's `items`.
 
 ## Metric definitions

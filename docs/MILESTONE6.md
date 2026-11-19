@@ -4,7 +4,7 @@ DESIGN.md §12 (first-launch checklist, Settings) plus a new scanned collector,
 **AI usage**, which imports token counts from the local logs of AI coding
 tools. The research behind the collector is in [AI_SOURCES.md](AI_SOURCES.md).
 
-Status: **done** (see Progress).
+Status: **mostly done**; Settings → AI sources and the setup screen's tool list are not built (see Progress).
 
 ## Baseline (main @ 23cfa9c, 2026-11-18)
 
@@ -252,7 +252,7 @@ untouched until the installed app does its own first scan.
 
 ## Progress (final)
 
-Status: **done** (all items below), except the hand checks that need the installed app.
+Status: **not finished**. Not built: Settings → AI sources section (still a stub), the setup screen's detected-tools list (`ai_detect`) and `meta.ai`. Hand checks that need the installed app are also open.
 
 **Done**
 - ctl channel, setup mode, Settings modal, Tauri dialog plugin.
