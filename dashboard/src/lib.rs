@@ -253,6 +253,18 @@ fn open_wrapped(state: State<'_, AppState>) -> bool {
     ok
 }
 
+/// Title bar theme: "light" / "dark" force it, anything else follows macOS live.
+/// (App-wide on macOS: `NSApp.setAppearance`.) Done here rather than through the
+/// window plugin's JS command so a failure is reported, not swallowed.
+#[tauri::command]
+fn set_window_theme(app: tauri::AppHandle, theme: Option<String>) {
+    app.set_theme(match theme.as_deref() {
+        Some("light") => Some(tauri::Theme::Light),
+        Some("dark") => Some(tauri::Theme::Dark),
+        _ => None,
+    });
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -331,7 +343,8 @@ pub fn main() -> i32 {
             export_data,
             ctl,
             open_wrapped,
-            ready
+            ready,
+            set_window_theme
         ])
         .setup(|app| {
             let handle = app.handle().clone();
