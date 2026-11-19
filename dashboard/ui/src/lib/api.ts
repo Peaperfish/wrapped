@@ -1,7 +1,7 @@
 // Typed wrappers around the dashboard's Tauri commands (dashboard/src/lib.rs).
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { ExportResult, GitEmail, Meta, SummaryJson, YearSeries } from "./types";
+import type { ExportResult, GitEmail, Meta, NowSnapshotJson, SummaryJson, YearSeries } from "./types";
 
 export const getMeta = (): Promise<Meta> => invoke<Meta>("meta");
 
@@ -82,3 +82,6 @@ export function errorText(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
 }
+
+/** One sample of the live hardware numbers (the Now tab). */
+export const getNow = (): Promise<NowSnapshotJson> => invoke<NowSnapshotJson>("now_snapshot");

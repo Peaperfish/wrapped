@@ -11,6 +11,8 @@
   import Heatmap from "./lib/Heatmap.svelte";
   import { applyAppearance } from "./lib/theme";
   import Cards from "./lib/Cards.svelte";
+  import NowTab from "./lib/now/NowTab.svelte";
+  import { nowSampler } from "./lib/now/sampler.svelte";
   import SetupScreen from "./lib/SetupScreen.svelte";
   import SettingsModal from "./lib/SettingsModal.svelte";
   import {
@@ -41,6 +43,38 @@
   let metaError = $state<string | null>(null);
   let selection = $state.raw<Range>(presetRange("today", localToday()));
   let year = $state(yearOf(localToday()));
+
+  // Overview | Now; the last one is remembered.
+  const TAB_KEY = "wrapped.tab";
+  let tab = $state<"overview" | "now">(
+    (() => {
+      try {
+        return localStorage.getItem(TAB_KEY) === "now" ? "now" : "overview";
+      } catch {
+        return "overview";
+      }
+    })(),
+  );
+  function setTab(t: "overview" | "now") {
+    tab = t;
+    try {
+      localStorage.setItem(TAB_KEY, t);
+    } catch {
+      /* not remembered */
+    }
+  }
+  // Sample only while the Now tab is shown and the window is visible.
+  let visible = $state(document.visibilityState === "visible");
+  $effect(() => {
+    const f = () => (visible = document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", f);
+    return () => document.removeEventListener("visibilitychange", f);
+  });
+  const sampling = $derived(tab === "now" && visible);
+  $effect(() => {
+    nowSampler.setActive(sampling);
+    return () => nowSampler.setActive(false);
+  });
   let metric = $state(DEFAULT_METRIC);
 
   let series = $state.raw<YearSeries | null>(null);
@@ -289,13 +323,17 @@
     {asOf}
     refreshing={refreshing}
     {asOfFlash}
+    {tab}
+    ontab={setTab}
     onpreset={(p) => select(presetRange(p, today), true, true)}
     oncustom={(r) => select(r, true, true)}
     onrefresh={refresh}
     onsettings={(el) => openSettings(el)}
   />
 
-  {#if metaError}
+  {#if tab === "now"}
+    <NowTab />
+  {:else if metaError}
     <section class="card empty">
       <h2>Cannot read the database</h2>
       <p class="error">{metaError}</p>

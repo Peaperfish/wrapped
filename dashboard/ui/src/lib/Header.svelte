@@ -10,6 +10,8 @@
     asOf: string | null;
     refreshing: boolean;
     asOfFlash?: boolean;
+    tab: "overview" | "now";
+    ontab: (t: "overview" | "now") => void;
     onpreset: (p: Exclude<Preset, "custom">) => void;
     oncustom: (r: Range) => void;
     onrefresh: () => void;
@@ -23,6 +25,8 @@
     asOf,
     refreshing,
     asOfFlash = false,
+    tab,
+    ontab,
     onpreset,
     oncustom,
     onrefresh,
@@ -52,10 +56,17 @@
 <header class="bar">
   <div class="range">
     <span class="brand">Wrapped</span>
-    <span class="label">{rangeLabel(selection)}</span>
+    <span class="label">{tab === "now" ? "Now" : rangeLabel(selection)}</span>
   </div>
 
   <div class="right">
+    <div class="presets" role="group" aria-label="View">
+      {#each [["overview", "Overview"], ["now", "Now"]] as const as [t, title] (t)}
+        <button class:active={tab === t} aria-pressed={tab === t} onclick={() => ontab(t)}>{title}</button>
+      {/each}
+    </div>
+
+    {#if tab === "overview"}
     <div class="presets" role="group" aria-label="Range">
       {#each presets as [p, title] (p)}
         <button
@@ -77,8 +88,9 @@
         }}>Custom</button
       >
     </div>
+    {/if}
 
-    {#if showCustom}
+    {#if tab === "overview" && showCustom}
       <div class="dates">
         <button
           class="range-btn num"
@@ -103,6 +115,7 @@
       </div>
     {/if}
 
+    {#if tab === "overview"}
     <span class="asof muted" class:flash={asOfFlash}>
       {#if asOf}as of <span class="num">{asOf}</span>{:else}no data yet{/if}
     </span>
@@ -118,6 +131,7 @@
         />
       </svg>
     </button>
+    {/if}
     <button
       id="settings-gear"
       class="refresh"
