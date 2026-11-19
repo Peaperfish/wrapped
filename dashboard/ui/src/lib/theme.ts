@@ -26,6 +26,25 @@ function paint(accent: Accent) {
   el.dataset.accent = accent;
 }
 
+let titleBar: string | null = null;
+const listeners = new Set<(t: string | null) => void>();
+/** The window's effective theme as the backend reports it (for the Appearance section). */
+export function onTitleBar(cb: (t: string | null) => void): () => void {
+  listeners.add(cb);
+  cb(titleBar);
+  return () => void listeners.delete(cb);
+}
+
+/** Tell the window (title bar, background colour); null = follow macOS live. */
+function syncWindow() {
+  invoke<string>("set_window_theme", { theme: theme === "system" ? null : theme })
+    .then((t) => {
+      titleBar = t;
+      listeners.forEach((cb) => cb(t));
+    })
+    .catch((e) => console.warn("set_window_theme failed:", e));
+}
+
 /** Apply a choice now (also tells the window, so the title bar matches). */
 export function applyAppearance(t: unknown, a: unknown) {
   theme = asTheme(t);
@@ -36,10 +55,7 @@ export function applyAppearance(t: unknown, a: unknown) {
   } catch {
     /* storage can be blocked */
   }
-  // The window's theme (title bar); null = follow macOS live.
-  invoke("set_window_theme", { theme: theme === "system" ? null : theme }).catch((e) =>
-    console.warn("set_window_theme failed:", e),
-  );
+  syncWindow();
 }
 
 /** Before the first paint: the cached choice, and follow macOS live. */
@@ -52,7 +68,10 @@ export function initAppearance() {
   }
   theme = asTheme(saved.theme);
   paint(asAccent(saved.accent));
+  syncWindow(); // the window is hidden until the first frame, so no flash
   media.addEventListener("change", () => {
-    if (theme === "system") paint(asAccent(document.documentElement.dataset.accent));
+    if (theme !== "system") return;
+    paint(asAccent(document.documentElement.dataset.accent));
+    syncWindow();
   });
 }

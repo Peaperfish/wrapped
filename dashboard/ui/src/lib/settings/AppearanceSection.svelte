@@ -4,7 +4,7 @@
   // running) the old look comes back and the usual note says why.
   import { sendCtl } from "../api";
   import CtlNote from "../CtlNote.svelte";
-  import { ACCENTS, THEMES, applyAppearance, type Accent, type ThemeChoice } from "../theme";
+  import { ACCENTS, THEMES, applyAppearance, onTitleBar, type Accent, type ThemeChoice } from "../theme";
   import type { Meta } from "../types";
 
   interface Props {
@@ -17,6 +17,8 @@
   // What is on screen now (ahead of meta while a request is in flight).
   let theme = $state<string | null>(null);
   let accent = $state<string | null>(null);
+  let titleBar = $state<string | null>(null);
+  $effect(() => onTitleBar((t) => (titleBar = t)));
   const shownTheme = $derived(theme ?? meta.settings.theme);
   const shownAccent = $derived(accent ?? meta.settings.accent);
 
@@ -80,6 +82,7 @@
       >
     {/each}
   </div>
+  <p class="muted small">Title bar: {titleBar ?? "unknown"}</p>
 </section>
 
 <section>
@@ -131,6 +134,10 @@
   h4 {
     margin: 0;
     font-size: 14px;
+  }
+  .small {
+    margin: 0;
+    font-size: 12px;
   }
   .segmented {
     display: inline-flex;
