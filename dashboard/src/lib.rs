@@ -26,11 +26,12 @@ const USAGE: &str = "\
 Wrapped dashboard (read-only view of the collector's database)
 
 Usage:
-  wrapped-dashboard [--db <path>] [--debug]
+  wrapped-dashboard [--db <path>] [--debug] [--recap <id>]
   wrapped-dashboard --version
 
   --db <path>   database to show (default: WRAPPED_DB, else the collector's)
   --debug       log every command's time to stderr (also WRAPPED_DEBUG=1)
+  --recap <id>  open straight into a recap, e.g. week:2026-11-09
 ";
 
 /// If the page never reports `ready` (a script error), show the window anyway.
@@ -44,6 +45,8 @@ struct AppState {
     /// The Now tab's sampler, created on the first `now_snapshot` call; it
     /// does work only inside that call.
     now: std::sync::Mutex<Option<wrapped_core::now::NowSampler>>,
+    /// `--recap <id>`: open this recap once the page asks.
+    start_recap: std::sync::Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -123,6 +126,76 @@ fn app_names(ids: Vec<String>) -> std::collections::HashMap<String, String> {
 fn take_open_settings(state: State<'_, AppState>) -> bool {
     let Ok(db) = state.db() else { return false };
     std::fs::remove_file(wrapped_core::ctl::open_settings_flag(db)).is_ok()
+}
+
+/// The recap to open now, if any: the `--recap` argument (once), else the
+/// `open-recap` flag a notification click leaves next to the database
+/// (removed as it is read). Asked at start and when the window gains focus.
+#[tauri::command]
+fn take_open_recap(state: State<'_, AppState>) -> Option<String> {
+    if let Some(id) = state
+        .start_recap
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .take()
+    {
+        return Some(id);
+    }
+    let db = state.db().ok()?;
+    let flag = wrapped_core::ctl::open_recap_flag(db);
+    let id = std::fs::read_to_string(&flag).ok()?;
+    let _ = std::fs::remove_file(&flag);
+    let id = id.trim().to_string();
+    wrapped_core::recap::Period::parse_id(&id).map(|_| id)
+}
+
+/// Save one recap slide PNG to `~/Downloads/Wrapped/<period>/<file>`. The
+/// body is the PNG bytes; the `x-period` and `x-file` headers name it (both
+/// validated: nothing can be written outside that folder). Returns the path.
+#[tauri::command]
+fn save_recap_png(request: tauri::ipc::Request<'_>) -> data::Result<String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected the PNG bytes as the request body".to_string());
+    };
+    let header = |k: &str| {
+        request
+            .headers()
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| format!("missing header {k}"))
+    };
+    let home = data::home_dir().ok_or("no home folder")?;
+    let path = data::save_recap_png(
+        &data::export_base(&home),
+        &header("x-period")?,
+        &header("x-file")?,
+        bytes,
+    )?;
+    Ok(path.display().to_string())
+}
+
+/// Show a saved slide (or its folder) in Finder / Explorer. Only paths inside
+/// `~/Downloads/Wrapped`.
+#[tauri::command(async)]
+fn reveal_export(path: String) -> data::Result<()> {
+    let home = data::home_dir().ok_or("no home folder")?;
+    let p = data::inside_export(&data::export_base(&home), Path::new(&path))?;
+    let status = if cfg!(target_os = "macos") {
+        std::process::Command::new("/usr/bin/open")
+            .arg("-R")
+            .arg(&p)
+            .status()
+    } else if cfg!(windows) {
+        let mut arg = std::ffi::OsString::from("/select,");
+        arg.push(p.as_os_str());
+        std::process::Command::new("explorer").arg(arg).status()
+    } else {
+        std::process::Command::new("xdg-open")
+            .arg(p.parent().unwrap_or(&p))
+            .status()
+    };
+    status.map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// Recorded app bundle ids, most time first (exclude list suggestions).
@@ -337,6 +410,7 @@ pub fn main() -> i32 {
     let started = Instant::now();
     let mut debug = std::env::var("WRAPPED_DEBUG").is_ok_and(|v| !v.is_empty() && v != "0");
     let mut db: Option<PathBuf> = None;
+    let mut start_recap: Option<String> = None;
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -360,6 +434,17 @@ pub fn main() -> i32 {
                     return 2;
                 }
             },
+            "--recap" => match args.next() {
+                Some(id) if wrapped_core::recap::Period::parse_id(&id).is_some() => {
+                    start_recap = Some(id);
+                }
+                _ => {
+                    eprint!(
+                        "wrapped-dashboard: --recap needs an id like week:2026-11-09\n\n{USAGE}"
+                    );
+                    return 2;
+                }
+            },
             // macOS may add its own arguments (e.g. -psn_…); ignore them.
             _ => {}
         }
@@ -370,6 +455,7 @@ pub fn main() -> i32 {
         started,
         shown: AtomicBool::new(false),
         now: std::sync::Mutex::new(None),
+        start_recap: std::sync::Mutex::new(start_recap),
     };
     state.log(&format!(
         "start, database {}",
@@ -397,6 +483,9 @@ pub fn main() -> i32 {
             now_snapshot,
             recap_list,
             recap_get,
+            take_open_recap,
+            save_recap_png,
+            reveal_export,
             set_window_theme
         ])
         .setup(|app| {

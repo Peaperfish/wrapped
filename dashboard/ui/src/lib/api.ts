@@ -1,7 +1,16 @@
 // Typed wrappers around the dashboard's Tauri commands (dashboard/src/lib.rs).
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-import type { ExportResult, GitEmail, Meta, NowSnapshotJson, SummaryJson, YearSeries } from "./types";
+import type {
+  ExportResult,
+  GitEmail,
+  Meta,
+  NowSnapshotJson,
+  RecapEntryJson,
+  RecapJson,
+  SummaryJson,
+  YearSeries,
+} from "./types";
 
 export const getMeta = (): Promise<Meta> => invoke<Meta>("meta");
 
@@ -85,3 +94,20 @@ export function errorText(e: unknown): string {
 
 /** One sample of the live hardware numbers (the Now tab). */
 export const getNow = (): Promise<NowSnapshotJson> => invoke<NowSnapshotJson>("now_snapshot");
+
+/** Every available recap: years, months, weeks, newest first. */
+export const getRecapList = (): Promise<RecapEntryJson[]> => invoke<RecapEntryJson[]>("recap_list");
+
+/** One recap with its slides (`week:2026-11-09`; any date inside works). */
+export const getRecap = (id: string): Promise<RecapJson> => invoke<RecapJson>("recap_get", { id });
+
+/** A recap to open now (start argument or a notification click), once. */
+export const takeOpenRecap = (): Promise<string | null> =>
+  invoke<string | null>("take_open_recap").catch(() => null);
+
+/** Save a slide PNG to ~/Downloads/Wrapped/<period>/<file>; resolves with the path. */
+export const saveRecapPng = (period: string, file: string, png: Uint8Array): Promise<string> =>
+  invoke<string>("save_recap_png", png, { headers: { "x-period": period, "x-file": file } });
+
+/** Show a saved slide in Finder (only inside ~/Downloads/Wrapped). */
+export const revealExport = (path: string): Promise<void> => invoke<void>("reveal_export", { path });

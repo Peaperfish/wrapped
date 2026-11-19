@@ -373,3 +373,86 @@ pub fn recap_get(db: &Path, id: &str, today: NaiveDate) -> Result<Value> {
         .map(|r| r.to_json())
         .ok_or_else(|| format!("{} has not started yet", period.label()))
 }
+
+// ---------- recap export ----------
+
+/// Where recap slides are saved: `<home>/Downloads/Wrapped`.
+pub fn export_base(home: &Path) -> PathBuf {
+    home.join("Downloads").join("Wrapped")
+}
+
+/// The home folder (`HOME`, else `USERPROFILE`).
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|h| !h.is_empty()))
+        .map(PathBuf::from)
+}
+
+/// A period folder name: `week-2026-11-09` (lowercase letters, digits, `-`).
+fn valid_period_dir(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 40
+        && !s.starts_with('-')
+        && s.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// A slide file name: `03-top_apps.png`.
+fn valid_slide_file(s: &str) -> bool {
+    let Some(stem) = s.strip_suffix(".png") else {
+        return false;
+    };
+    let b = stem.as_bytes();
+    b.len() >= 4
+        && b.len() <= 40
+        && b[0].is_ascii_digit()
+        && b[1].is_ascii_digit()
+        && b[2] == b'-'
+        && b[3..].iter().all(|c| c.is_ascii_lowercase() || *c == b'_')
+}
+
+/// The path a slide is written to, `<base>/<period>/<file>`, after checking
+/// both names (no separators, no `..`, nothing but the expected characters)
+/// and that the folder really is inside `base` once links are resolved.
+/// Creates the folder.
+pub fn recap_export_path(base: &Path, period: &str, file: &str) -> Result<PathBuf> {
+    if !valid_period_dir(period) || period.contains("..") {
+        return Err(format!("bad recap folder name: {period:?}"));
+    }
+    if !valid_slide_file(file) || file.contains("..") {
+        return Err(format!("bad slide file name: {file:?}"));
+    }
+    let dir = base.join(period);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let (Ok(real_base), Ok(real_dir)) = (base.canonicalize(), dir.canonicalize()) else {
+        return Err("cannot resolve the export folder".to_string());
+    };
+    if real_dir.parent() != Some(real_base.as_path()) {
+        return Err(format!("{} is outside {}", dir.display(), base.display()));
+    }
+    Ok(real_dir.join(file))
+}
+
+/// Write one PNG (checked to start with the PNG signature) and return its path.
+pub fn save_recap_png(base: &Path, period: &str, file: &str, bytes: &[u8]) -> Result<PathBuf> {
+    const PNG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    if !bytes.starts_with(PNG) {
+        return Err("not a PNG".to_string());
+    }
+    let path = recap_export_path(base, period, file)?;
+    std::fs::write(&path, bytes).map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok(path)
+}
+
+/// `path` if it is an existing file or folder inside `base` (for "Show in Finder").
+pub fn inside_export(base: &Path, path: &Path) -> Result<PathBuf> {
+    let (Ok(real_base), Ok(real)) = (base.canonicalize(), path.canonicalize()) else {
+        return Err(format!("{} does not exist", path.display()));
+    };
+    if real.starts_with(&real_base) {
+        Ok(real)
+    } else {
+        Err(format!("{} is outside {}", path.display(), base.display()))
+    }
+}

@@ -6,6 +6,7 @@
   import Card from "./Card.svelte";
   import HourBars from "./HourBars.svelte";
   import Ring from "./Ring.svelte";
+  import { AI_TOOLS, modelLabel } from "./aiNames";
   import { fmtBytes, fmtSecs, fmtTokens, fmtValue } from "./format";
   import { type Preset, fmtDay, rangeLabel } from "./dates";
   import type { Meta, StreakJson, SummaryJson, TopJson } from "./types";
@@ -65,15 +66,7 @@
   const shots = $derived(total("photos", "shots"));
   const cameras = $derived(items(top("photos", "shots_by_camera"), 5));
   const lenses = $derived(items(top("photos", "shots_by_lens"), 5));
-  const TOOLS: Record<string, string> = {
-    claude: "Claude Code",
-    codex: "Codex",
-    copilot: "Copilot CLI",
-    antigravity: "Antigravity",
-    gemini: "Gemini CLI",
-    cursor: "Cursor CLI",
-    opencode: "opencode",
-  };
+  const TOOLS = AI_TOOLS;
   const tokens = $derived(total("ai_usage", "tokens"));
   const aiRequests = $derived(total("ai_usage", "requests") ?? 0);
   const aiDays = $derived(
@@ -89,8 +82,6 @@
       text: fmtTokens(i.value),
     })),
   );
-  // "unknown" is stored when an Antigravity conversation has no model id in its database.
-  const modelLabel = (k: string): string => (k === "unknown" ? "Antigravity (model unknown)" : k);
   const aiModels = $derived(
     items(top("ai_usage", "tokens_by_model"), 6, modelLabel).map((i) => ({ ...i, text: fmtTokens(i.value) })),
   );

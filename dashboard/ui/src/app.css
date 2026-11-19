@@ -46,6 +46,11 @@
   --switch-knob-shadow: none;
   --tip-bg: rgba(18, 21, 30, 0.95);
   --popover-bg: rgba(18, 21, 30, 0.88);
+  /* Recap player: the letterbox around the 9:16 stage and its buttons. */
+  --player-bg: rgba(5, 6, 10, 0.94);
+  --player-btn: rgba(255, 255, 255, 0.08);
+  --player-btn-border: rgba(255, 255, 255, 0.14);
+  --player-ink: #e8ebf2;
 
   /* Heatmap: empty, four levels of the accent, future days. */
   --cell-empty: rgba(255, 255, 255, 0.055);
@@ -109,6 +114,10 @@
   --switch-knob-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
   --tip-bg: rgba(255, 255, 255, 0.97);
   --popover-bg: rgba(255, 255, 255, 0.95);
+  --player-bg: rgba(222, 227, 237, 0.96);
+  --player-btn: rgba(255, 255, 255, 0.8);
+  --player-btn-border: rgba(15, 23, 42, 0.14);
+  --player-ink: #141925;
 
   --cell-empty: rgba(15, 23, 42, 0.075);
   --heat-empty-selected: rgba(15, 23, 42, 0.15);

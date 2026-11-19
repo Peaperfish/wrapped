@@ -112,3 +112,45 @@ fn recap_list_and_get_match_the_ts_types() {
     assert!(data::recap_get(&db, "week:2027-01-01", today).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn slide_export_only_writes_inside_the_wrapped_folder() {
+    let dir = temp_dir("recap-export");
+    let base = data::export_base(&dir);
+    std::fs::create_dir_all(&base).unwrap();
+    let png = b"\x89PNG\r\n\x1a\nrest";
+    let p = data::save_recap_png(&base, "week-2026-11-09", "03-top_apps.png", png).unwrap();
+    assert!(p.ends_with(std::path::Path::new("week-2026-11-09").join("03-top_apps.png")));
+    assert_eq!(std::fs::read(&p).unwrap(), png);
+    for (period, file) in [
+        ("..", "01-intro.png"),
+        ("week-2026-11-09/..", "01-intro.png"),
+        ("week..2026", "01-intro.png"),
+        ("week:2026-11-09", "01-intro.png"),
+        ("Week-2026", "01-intro.png"),
+        ("week-2026-11-09", "../01-intro.png"),
+        ("week-2026-11-09", "01-intro.png.exe"),
+        ("week-2026-11-09", "1-intro.png"),
+        ("week-2026-11-09", "01-intro\\x.png"),
+        ("", "01-intro.png"),
+    ] {
+        assert!(
+            data::save_recap_png(&base, period, file, png).is_err(),
+            "{period} {file}"
+        );
+    }
+    // Not a PNG.
+    assert!(data::save_recap_png(&base, "week-2026-11-09", "01-intro.png", b"<svg/>").is_err());
+    // A folder link leading outside is refused.
+    #[cfg(unix)]
+    {
+        let outside = dir.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::os::unix::fs::symlink(&outside, base.join("week-2026-01-05")).unwrap();
+        assert!(data::save_recap_png(&base, "week-2026-01-05", "01-intro.png", png).is_err());
+        assert!(!outside.join("01-intro.png").exists());
+    }
+    assert!(data::inside_export(&base, &p).is_ok());
+    assert!(data::inside_export(&base, &dir).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

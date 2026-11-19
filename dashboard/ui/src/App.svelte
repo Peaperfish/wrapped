@@ -12,6 +12,9 @@
   import { applyAppearance } from "./lib/theme";
   import Cards from "./lib/Cards.svelte";
   import NowTab from "./lib/now/NowTab.svelte";
+  import RecapsTab from "./lib/recaps/RecapsTab.svelte";
+  import StoryPlayer from "./lib/recaps/StoryPlayer.svelte";
+  import { markSeen } from "./lib/recaps/seen";
   import { nowSampler } from "./lib/now/sampler.svelte";
   import SetupScreen from "./lib/SetupScreen.svelte";
   import SettingsModal from "./lib/SettingsModal.svelte";
@@ -23,6 +26,7 @@
     getSeries,
     getSummary,
     ready,
+    takeOpenRecap,
     takeOpenSettings,
   } from "./lib/api";
   import {
@@ -44,18 +48,20 @@
   let selection = $state.raw<Range>(presetRange("today", localToday()));
   let year = $state(yearOf(localToday()));
 
-  // Overview | Now; the last one is remembered.
+  // Overview | Now | Recaps; the last one is remembered.
+  type Tab = "overview" | "now" | "recaps";
   const TAB_KEY = "wrapped.tab";
-  let tab = $state<"overview" | "now">(
+  let tab = $state<Tab>(
     (() => {
       try {
-        return localStorage.getItem(TAB_KEY) === "now" ? "now" : "overview";
+        const t = localStorage.getItem(TAB_KEY);
+        return t === "now" || t === "recaps" ? t : "overview";
       } catch {
         return "overview";
       }
     })(),
   );
-  function setTab(t: "overview" | "now") {
+  function setTab(t: Tab) {
     tab = t;
     try {
       localStorage.setItem(TAB_KEY, t);
@@ -226,6 +232,27 @@
     void loadSeries();
   }
 
+  // The recap story player (over everything); `recapVersion` makes the list
+  // re-read its "New" marks and data.
+  let recapOpen = $state<string | null>(null);
+  let recapVersion = $state(0);
+  // Bumped after a refresh or a settings change: the recap list is read again.
+  let dataVersion = $state(0);
+  function openRecap(id: string) {
+    markSeen(id);
+    recapVersion++;
+    recapOpen = id;
+  }
+  /** A notification click or `--recap` asked for a recap. */
+  async function checkOpenRecap() {
+    if (meta?.setup) return;
+    const id = await takeOpenRecap();
+    if (!id) return;
+    if (settingsOpen) await closeSettings();
+    setTab("recaps");
+    openRecap(id);
+  }
+
   // Settings dialog. Focus goes back to whatever opened it (the gear).
   let settingsOpen = $state(false);
   let settingsOpener: HTMLElement | null = null;
@@ -243,6 +270,7 @@
 
   /** A change was made by the collector: fetch everything again. */
   async function settingsChanged() {
+    dataVersion++;
     seriesCache.clear();
     await loadMeta();
     year = clampYear(year);
@@ -256,7 +284,10 @@
   }
 
   onMount(() => {
-    const f = () => void checkOpenSettingsFlag();
+    const f = () => {
+      void checkOpenSettingsFlag();
+      void checkOpenRecap();
+    };
     window.addEventListener("focus", f);
     return () => window.removeEventListener("focus", f);
   });
@@ -283,6 +314,7 @@
         }
       }
       seriesCache.clear();
+      dataVersion++;
       await loadMeta();
       year = clampYear(year);
       await Promise.all([loadSeries(), loadSummary()]);
@@ -301,6 +333,7 @@
     await tick();
     void ready();
     await checkOpenSettingsFlag();
+    await checkOpenRecap();
   });
 </script>
 
@@ -315,7 +348,7 @@
     />
   </main>
 {:else}
-<main inert={settingsOpen}>
+<main inert={settingsOpen || recapOpen !== null}>
   <Header
     {selection}
     {preset}
@@ -333,6 +366,8 @@
 
   {#if tab === "now"}
     <NowTab />
+  {:else if tab === "recaps"}
+    <RecapsTab onopen={openRecap} version={recapVersion} reload={dataVersion} />
   {:else if metaError}
     <section class="card empty">
       <h2>Cannot read the database</h2>
@@ -378,6 +413,9 @@
     </p>
   {/if}
 </main>
+{#if recapOpen}
+  <StoryPlayer id={recapOpen} onclose={() => (recapOpen = null)} />
+{/if}
 {#if settingsOpen && meta}
   <SettingsModal {meta} onchanged={settingsChanged} onclose={closeSettings} />
 {/if}

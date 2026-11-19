@@ -283,6 +283,12 @@ pub fn open_settings_flag(db: &Path) -> PathBuf {
     dir_for(db).join("open-settings")
 }
 
+/// The "open the dashboard on this recap" flag a notification click leaves
+/// for the dashboard; it holds the recap id (`week:2026-11-09`).
+pub fn open_recap_flag(db: &Path) -> PathBuf {
+    dir_for(db).join("open-recap")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

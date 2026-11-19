@@ -93,6 +93,39 @@ for (const [theme, build] of Object.entries(themes)) {
     }
   }
 }
+// Recap slides (dashboard/ui/src/lib/recaps/palette.js): text, secondary
+// text and highlights on every background they can sit on, for every slide
+// kind, theme and accent; and the player's buttons on its letterbox.
+const { allPalettes, contrast } = await import(
+  new URL("../dashboard/ui/src/lib/recaps/palette.js", import.meta.url).href
+);
+const hex = ({ rgb }) => "#" + rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("");
+for (const [theme, build] of Object.entries(themes)) {
+  for (const a of accents) {
+    const vars = build(a);
+    for (const p of allPalettes(hex(parse(vars["--accent"], vars)), theme)) {
+      for (const role of ["ink", "dim", "hi"]) {
+        const r = Math.min(...p.bgs.map((bg) => contrast(p[role], bg)));
+        const key = `${theme}/slide-${role}`;
+        if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a: `${a} ${p.kind}` };
+        if (r < 4.5) {
+          failed = true;
+          console.log(`FAIL ${theme} ${a} slide ${p.kind} ${role}: ${r.toFixed(2)} < 4.5`);
+        }
+      }
+    }
+    const page = over(parse(vars["--bg-glow-1"], vars), parse(vars["--bg"], vars));
+    const letterbox = over(parse(vars["--player-bg"], vars), page);
+    const btn = over(parse(vars["--player-btn"], vars), letterbox);
+    const r = ratio(parse(vars["--player-ink"], vars), btn);
+    const key = `${theme}/player-btn`;
+    if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a };
+    if (r < 4.5) {
+      failed = true;
+      console.log(`FAIL ${theme} ${a} player-btn: ${r.toFixed(2)} < 4.5`);
+    }
+  }
+}
 for (const [k, { r, a }] of Object.entries(lowest))
   console.log(`${k.padEnd(14)} lowest ${r.toFixed(2)} (${a})`);
 process.exit(failed ? 1 : 0);

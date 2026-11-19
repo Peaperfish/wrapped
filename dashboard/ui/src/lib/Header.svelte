@@ -10,8 +10,8 @@
     asOf: string | null;
     refreshing: boolean;
     asOfFlash?: boolean;
-    tab: "overview" | "now";
-    ontab: (t: "overview" | "now") => void;
+    tab: "overview" | "now" | "recaps";
+    ontab: (t: "overview" | "now" | "recaps") => void;
     onpreset: (p: Exclude<Preset, "custom">) => void;
     oncustom: (r: Range) => void;
     onrefresh: () => void;
@@ -56,12 +56,12 @@
 <header class="bar">
   <div class="range">
     <span class="brand">Wrapped</span>
-    <span class="label">{tab === "now" ? "Now" : rangeLabel(selection)}</span>
+    <span class="label">{tab === "now" ? "Now" : tab === "recaps" ? "Recaps" : rangeLabel(selection)}</span>
   </div>
 
   <div class="right">
     <div class="presets" role="group" aria-label="View">
-      {#each [["overview", "Overview"], ["now", "Now"]] as const as [t, title] (t)}
+      {#each [["overview", "Overview"], ["now", "Now"], ["recaps", "Recaps"]] as const as [t, title] (t)}
         <button class:active={tab === t} aria-pressed={tab === t} onclick={() => ontab(t)}>{title}</button>
       {/each}
     </div>
