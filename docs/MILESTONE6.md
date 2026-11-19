@@ -4,7 +4,7 @@ DESIGN.md §12 (first-launch checklist, Settings) plus a new scanned collector,
 **AI usage**, which imports token counts from the local logs of AI coding
 tools. The research behind the collector is in [AI_SOURCES.md](AI_SOURCES.md).
 
-Status: **plan** (phase 1). "What was built" follows in phase 2.
+Status: **done** (see Progress).
 
 ## Baseline (main @ 23cfa9c, 2026-11-18)
 
@@ -250,26 +250,26 @@ untouched until the installed app does its own first scan.
    every scan, added as a source once found). Setup lists only the detected
    ones. Or should undetected tools be hidden in Settings too?
 
-## Progress (partial run, stopped by request)
+## Progress (final)
 
-Commits on `m6`: ctl channel, setup mode, settings modal, `wip: m6 phase 2 (partial)`.
+Status: **done** (all items below), except the hand checks that need the installed app.
 
 **Done**
-- ctl channel (request files + SIGUSR2, `wrapped-collector ctl`, errors for "not running"), with tests.
-- Setup mode: `onboarding.done`, existing installs skipped, dashboard setup screen, tray "Settings…" / "Finish Setup…", checked end to end on a scratch DB.
-- Settings modal (Tracking, Exclude list, Folders, Data), gear button, tray flag, Tauri dialog plugin.
-- AI usage backend written: schema v4, `ai` module, adapters for all 7 tools, `ai_usage` collector, sources / bookmarks, AI requests on the ctl channel, export of `ai_usage`.
+- ctl channel, setup mode, Settings modal, Tauri dialog plugin.
+- AI backend: schema v4, `ai` module, 7 adapters (Claude Code and Antigravity tested on real logs), `ai_usage` collector, sources / bookmarks, ctl requests, export.
+- Adapter tests (`crates/core/tests/ai.rs`) compile and pass; lint and format clean. Fixed on the way: Antigravity session id taken from the wrong path level.
+- AI usage card (tokens in + out, cache separate, by tool / model / project) and "AI tokens" in the heatmap picker. The Delete-all confirmation already says that usage whose logs are gone cannot be re-imported.
 
-**In progress**
-- `crates/core/tests/ai.rs` (adapter tests) written, does not compile yet; none of its tests have run.
-- Existing tests were adjusted for the new default-on collector (`builtin_hermetic`).
+**Measurements** (release build, scratch DB `/tmp/wrapped-m6.db`, ~487 MB of Claude Code logs; `/usr/bin/time -l`)
 
-**Not started**
-- AI sources section in Settings (stub only), AI card, heatmap entry for AI tokens, setup-screen tool list (`ai_detect`), `meta.ai`.
-- Docs (DESIGN.md, DEVIATIONS.md incl. SIGUSR2 macOS-only, CHANGELOG), measurements, `install.sh`, final report.
+| What | Before | After |
+|---|---|---|
+| Collector binary | 3,895,360 B | 4,297,024 B |
+| Dashboard JS + CSS | 75,695 + 11,339 B | 104,197 + 20,456 B |
+| First AI scan: wall / max RSS / peak footprint | n/a | 2.32 s / 23.3 MB / 14.6 MB |
+| Scratch DB after first scan | n/a (real DB 1.14 MB) | 294,912 B (366 `ai_usage` rows, 12,287 requests, 12,287 `ai_seen`; 25,634 usage lines seen) |
+| Second scan: wall / max RSS / peak footprint | n/a | 0.03 s / 11.9 MB / 3.2 MB |
 
-**Checks failing right now**
-- `cargo fmt --check`: fails (needs `cargo fmt`).
-- `cargo clippy -D warnings`: fails (`is_multiple_of` x2, redundant closure x1, complex type x3).
-- `cargo test`: `wrapped-core` lib tests and `tests/ai.rs` do not compile (6 errors in core with tests enabled, 1 `?` error in `ai.rs`); other test targets were passing before this.
-- `npm run check` and `npm run build`: pass.
+The second scan read 1 changed file (the live session log) and saw 3 new requests. Idle memory needs the installed app and is not measured yet.
+
+**Not tested**: Codex, Gemini CLI, Copilot CLI, Cursor CLI and opencode adapters (no logs on this Mac).
