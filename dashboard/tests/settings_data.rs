@@ -56,11 +56,12 @@ fn meta_carries_collector_info_and_settings() {
 fn meta_lists_every_ai_tool_and_the_configured_sources() {
     let dir = temp_dir("meta-ai");
     let db = build(&dir);
+    let missing = dir.join("nonexistent").join("x");
     let store = Store::open(&db).unwrap();
     store
         .set_setting(
             "ai.sources",
-            r#"[{"id":"abc","tool":"codex","path":"/nonexistent/x","builtin":false,"enabled":false}]"#,
+            &serde_json::json!([{"id":"abc","tool":"codex","path":missing.to_string_lossy(),"builtin":false,"enabled":false}]).to_string(),
         )
         .unwrap();
     drop(store);
