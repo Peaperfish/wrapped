@@ -13,6 +13,8 @@
   --card-bg-strong: rgba(255, 255, 255, 0.06);
   --card-border: rgba(255, 255, 255, 0.08);
   --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  /* Cards scroll with the page, so theirs is a small, cheap shadow. */
+  --card-shadow-flat: 0 4px 12px rgba(0, 0, 0, 0.3);
   --card-blur: 18px;
   --radius: 14px;
   --radius-sm: 8px;
@@ -83,6 +85,7 @@
   --card-bg-strong: rgba(15, 23, 42, 0.05);
   --card-border: rgba(15, 23, 42, 0.12);
   --card-shadow: 0 8px 24px rgba(30, 41, 59, 0.08);
+  --card-shadow-flat: 0 3px 10px rgba(30, 41, 59, 0.08);
 
   --text: #141925;
   --text-dim: #4a5367;
@@ -184,11 +187,7 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(1200px 600px at 10% -10%, var(--bg-glow-1), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 60%),
-    var(--bg);
-  background-attachment: fixed;
+  background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 14px;
@@ -197,6 +196,20 @@ body {
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
+}
+
+/* The background glows: one fixed layer of its own on the GPU, so scrolling
+   never repaints them (no background-attachment: fixed). */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, var(--bg-glow-1), transparent 60%),
+    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 60%);
+  transform: translateZ(0);
 }
 
 /* Numbers: tabular figures in the monospace face, so columns line up. */
@@ -210,10 +223,15 @@ body {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
-  box-shadow: var(--card-shadow);
-  backdrop-filter: blur(var(--card-blur)) saturate(140%);
-  -webkit-backdrop-filter: blur(var(--card-blur)) saturate(140%);
+  box-shadow: var(--card-shadow-flat);
   padding: 18px 20px;
+}
+/* Cards sit on a static background, so no live backdrop blur: the
+   semi-opaque --card-bg is the glass. Containment keeps a card's layout and
+   paint work to itself; the heatmap card is left out because its tooltip and
+   menu reach outside it. */
+.card:not(.heatmap) {
+  contain: content;
 }
 
 .card h2 {
