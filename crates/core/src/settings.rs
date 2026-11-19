@@ -12,6 +12,8 @@
 //! | `git.author_emails`                  | array of emails, or `null` = resolve from `git config --global user.email` when git is turned on | `null` |
 //! | `photos.folders`                     | array of folders                        | `["~/Pictures"]` |
 //! | `photos.extensions`                  | array of extensions (case-insensitive)  | jpg jpeg heic heif arw dng |
+//! | `ai.sources`                         | array of `{id, tool, path, builtin, enabled, bookmark?}`: folders the AI usage collector reads | `[]` (tools found on this machine are added at the first scan) |
+//! | `onboarding.done`                    | `true` / `false`, or `null` = not decided yet (see `Engine::begin_onboarding`) | `null` |
 //!
 //! Keys starting with `internal.` are bookkeeping owned by the store and are
 //! not user settings.
@@ -32,6 +34,8 @@ pub const KEY_GIT_FOLDERS: &str = "git.folders";
 pub const KEY_GIT_EMAILS: &str = "git.author_emails";
 pub const KEY_PHOTOS_FOLDERS: &str = "photos.folders";
 pub const KEY_PHOTOS_EXTENSIONS: &str = "photos.extensions";
+pub const KEY_ONBOARDING_DONE: &str = "onboarding.done";
+pub const KEY_AI_SOURCES: &str = "ai.sources";
 pub const DEFAULT_PHOTO_EXTENSIONS: &[&str] = &["jpg", "jpeg", "heic", "heif", "arw", "dng"];
 pub const INTERNAL_PREFIX: &str = "internal.";
 
@@ -93,6 +97,36 @@ impl Pause {
     }
 }
 
+/// A folder the AI usage collector reads, and the tool whose log format it
+/// holds. Never removed automatically (see `crate::ai`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AiSource {
+    /// Stable id (survives the path changing).
+    pub id: String,
+    /// A tool id from `crate::ai::TOOLS`.
+    pub tool: String,
+    /// Absolute folder (or `~/...`).
+    pub path: String,
+    /// Found by the collector (a tool's default folder) rather than added by the user.
+    pub builtin: bool,
+    pub enabled: bool,
+    /// Hex of a folder bookmark (macOS custom folders), to find a moved folder.
+    pub bookmark: Option<String>,
+}
+
+impl AiSource {
+    fn to_json(&self) -> Value {
+        let mut v = json!({
+            "id": self.id, "tool": self.tool, "path": self.path,
+            "builtin": self.builtin, "enabled": self.enabled,
+        });
+        if let Some(b) = &self.bookmark {
+            v["bookmark"] = json!(b);
+        }
+        v
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     /// Explicit on/off per collector. Collectors missing here use `default_on`.
@@ -108,6 +142,10 @@ pub struct Settings {
     pub photos_folders: Vec<String>,
     /// Lowercase, without the dot.
     pub photos_extensions: Vec<String>,
+    /// `None` until the collector has decided (existing data) or the user has
+    /// finished the first-launch checklist.
+    pub onboarding_done: Option<bool>,
+    pub ai_sources: Vec<AiSource>,
 }
 
 impl Default for Settings {
@@ -126,6 +164,8 @@ impl Default for Settings {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
+            onboarding_done: None,
+            ai_sources: Vec::new(),
         }
     }
 }
@@ -194,6 +234,16 @@ impl Settings {
                 }
             }
             KEY_PHOTOS_EXTENSIONS => self.photos_extensions = extension_list(key, v)?,
+            KEY_AI_SOURCES => self.ai_sources = ai_sources(key, v)?,
+            KEY_ONBOARDING_DONE => {
+                self.onboarding_done = if v.is_null() {
+                    None
+                } else {
+                    Some(v.as_bool().ok_or_else(|| {
+                        SettingsError::invalid(key, "expected true, false or null")
+                    })?)
+                }
+            }
             _ => {
                 if let Some(name) = key
                     .strip_prefix("collector.")
@@ -242,6 +292,8 @@ impl Settings {
             KEY_GIT_EMAILS => json!(self.git_author_emails),
             KEY_PHOTOS_FOLDERS => json!(self.photos_folders),
             KEY_PHOTOS_EXTENSIONS => json!(self.photos_extensions),
+            KEY_ONBOARDING_DONE => json!(self.onboarding_done),
+            KEY_AI_SOURCES => Value::Array(self.ai_sources.iter().map(AiSource::to_json).collect()),
             _ => {
                 let name = key
                     .strip_prefix("collector.")
@@ -269,6 +321,8 @@ impl Settings {
             KEY_GIT_EMAILS,
             KEY_PHOTOS_FOLDERS,
             KEY_PHOTOS_EXTENSIONS,
+            KEY_ONBOARDING_DONE,
+            KEY_AI_SOURCES,
         ]
         .iter()
         .map(|k| (k.to_string(), self.get_json(k).expect("known key")))
@@ -351,6 +405,50 @@ fn folder_list(key: &str, v: &Value) -> Result<Vec<String>, SettingsError> {
                 t.to_string()
             },
         );
+    }
+    Ok(out)
+}
+
+/// `ai.sources`: objects with a plain id, a known tool and a folder.
+fn ai_sources(key: &str, v: &Value) -> Result<Vec<AiSource>, SettingsError> {
+    let arr = v
+        .as_array()
+        .ok_or_else(|| SettingsError::invalid(key, "expected a JSON array of sources"))?;
+    let mut out: Vec<AiSource> = Vec::new();
+    for item in arr {
+        let text = |k: &str| item.get(k).and_then(Value::as_str).map(str::trim);
+        let id = text("id")
+            .filter(|s| {
+                !s.is_empty()
+                    && s.len() <= 32
+                    && s.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            })
+            .ok_or_else(|| SettingsError::invalid(key, "every source needs a plain `id`"))?;
+        let tool = text("tool")
+            .filter(|t| crate::ai::tool(t).is_some())
+            .ok_or_else(|| SettingsError::invalid(key, "unknown `tool`"))?;
+        let path = text("path")
+            .filter(|p| *p == "~" || p.starts_with("~/") || std::path::Path::new(p).is_absolute())
+            .ok_or_else(|| {
+                SettingsError::invalid(key, "`path` must be absolute or start with ~/")
+            })?;
+        if out.iter().any(|s| s.id == id) {
+            return Err(SettingsError::invalid(key, "duplicate source `id`"));
+        }
+        out.push(AiSource {
+            id: id.to_string(),
+            tool: tool.to_string(),
+            path: path.to_string(),
+            builtin: item
+                .get("builtin")
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            enabled: item.get("enabled").and_then(Value::as_bool).unwrap_or(true),
+            bookmark: text("bookmark")
+                .filter(|b| !b.is_empty())
+                .map(str::to_string),
+        });
     }
     Ok(out)
 }

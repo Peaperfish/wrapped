@@ -15,7 +15,7 @@
     weekday,
     weekdayShort,
   } from "./dates";
-  import { fmtValue } from "./format";
+  import { fmtTokens, fmtValue } from "./format";
 
   interface Props {
     year: number;
@@ -48,6 +48,39 @@
     onyear,
     onmetric,
   }: Props = $props();
+
+  type Pt = [number, number];
+
+  /** A closed polygon of axis-aligned points with rounded corners. */
+  function roundedPath(pts: Pt[], r: number): string {
+    // Drop repeated and collinear points so every corner is a real one.
+    const p = pts.filter((q, i) => {
+      const a = pts[(i + pts.length - 1) % pts.length]!;
+      const b = pts[(i + 1) % pts.length]!;
+      if (q[0] === a[0] && q[1] === a[1]) return false;
+      return !((a[0] === q[0] && q[0] === b[0]) || (a[1] === q[1] && q[1] === b[1]));
+    });
+    const n = p.length;
+    const toward = (from: Pt, to: Pt, d: number): Pt => {
+      const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
+      return [from[0] + ((to[0] - from[0]) / len) * d, from[1] + ((to[1] - from[1]) / len) * d];
+    };
+    let d = "";
+    for (let i = 0; i < n; i++) {
+      const prev = p[(i + n - 1) % n]!;
+      const cur = p[i]!;
+      const next = p[(i + 1) % n]!;
+      const rr = Math.min(
+        r,
+        Math.hypot(prev[0] - cur[0], prev[1] - cur[1]) / 2,
+        Math.hypot(next[0] - cur[0], next[1] - cur[1]) / 2,
+      );
+      const a = toward(cur, prev, rr);
+      const b = toward(cur, next, rr);
+      d += `${i === 0 ? "M" : "L"}${a[0]} ${a[1]}Q${cur[0]} ${cur[1]} ${b[0]} ${b[1]}`;
+    }
+    return `${d}Z`;
+  }
 
   const CELL = 12;
   const STEP = 15;
@@ -116,12 +149,55 @@
     }),
   );
 
+  const isAi = $derived(metric.startsWith("ai_usage/"));
+  const fmt = (v: number): string => (isAi ? fmtTokens(v) : fmtValue(v, unit));
   const unit = $derived(series?.unit ?? metrics.find((m) => m.id === metric)?.unit ?? "count");
   const daysWithData = $derived(sorted.length);
   const yearTotal = $derived(values ? values.reduce((a, b) => a + b, 0) : 0);
 
   const inSelection = (d: Ymd): boolean => selection.from <= d && d <= selection.to;
   const single = $derived(selection.from === selection.to);
+
+  /** One thin rounded outline around the outer edge of the selected days
+   *  (clipped to this year), as a single SVG path. Not for a single day (it
+   *  has its own ring) or a selection outside the year. */
+  const outline = $derived.by((): string | null => {
+    if (single) return null;
+    const a = Math.max(dayNumber(selection.from) - jan1, 0);
+    const b = Math.min(dayNumber(selection.to) - jan1, nDays - 1);
+    if (a > b) return null;
+    const pad = (STEP - CELL) / 2;
+    const x0 = (c: number) => LEFT + c * STEP - pad;
+    const x1 = (c: number) => LEFT + c * STEP + CELL + pad;
+    const yt = (r: number) => TOP + r * STEP - pad;
+    const yb = (r: number) => TOP + r * STEP + CELL + pad;
+    const [c1, r1] = [Math.floor((a + offset) / 7), (a + offset) % 7];
+    const [c2, r2] = [Math.floor((b + offset) / 7), (b + offset) % 7];
+    const box = (ca: number, cb: number, ra: number, rb: number): Pt[] => [
+      [x0(ca), yt(ra)],
+      [x1(cb), yt(ra)],
+      [x1(cb), yb(rb)],
+      [x0(ca), yb(rb)],
+    ];
+    if (c1 === c2) return roundedPath(box(c1, c2, r1, r2), 4);
+    // Two pieces that only meet at a corner (or not at all): one outline each.
+    if (c2 === c1 + 1 && r2 < r1) {
+      return roundedPath(box(c1, c1, r1, 6), 4) + roundedPath(box(c2, c2, 0, r2), 4);
+    }
+    return roundedPath(
+      [
+        [x0(c1), yt(r1)],
+        [x0(c1 + 1), yt(r1)],
+        [x0(c1 + 1), yt(0)],
+        [x1(c2), yt(0)],
+        [x1(c2), yb(r2)],
+        [x0(c2), yb(r2)],
+        [x0(c2), yb(6)],
+        [x0(c1), yb(6)],
+      ],
+      4,
+    );
+  });
 
   // ---------- pointer and keyboard ----------
 
@@ -225,7 +301,13 @@
   }
 
   const fill = (c: Cell): string =>
-    c.future ? "var(--cell-future)" : c.level === 0 ? "var(--cell-empty)" : `var(--cell-${c.level})`;
+    c.future
+      ? "var(--cell-future)"
+      : c.level === 0
+        ? inSelection(c.date) && !single
+          ? "var(--heat-empty-selected)"
+          : "var(--cell-empty)"
+        : `var(--cell-${c.level})`;
 </script>
 
 <section class="card heatmap">
@@ -241,8 +323,7 @@
     <div class="controls">
       {#if values}
         <span class="muted summary">
-          <span class="num">{daysWithData}</span> days with data{#if series?.agg === "sum" && yearTotal > 0}
-            · <span class="num">{fmtValue(yearTotal, unit)}</span> in {year}{/if}
+          <span class="num">{daysWithData}</span> days with data{#if series?.agg === "sum" && yearTotal > 0}{" "}· <span class="num">{fmt(yearTotal)}</span> in {year}{/if}
         </span>
       {/if}
       <label class="muted">
@@ -289,13 +370,16 @@
           class:today={c.date === today}
         />
       {/each}
+      {#if outline}
+        <path class="outline" d={outline} />
+      {/if}
     </svg>
 
     {#if hover}
       <div class="tooltip" style="left: {hover.x}px; top: {hover.y}px">
         <div>{fmtDay(hover.cell.date)}</div>
         <div class="num value">
-          {hover.cell.future ? "—" : values ? fmtValue(hover.cell.value, unit) : "…"}
+          {hover.cell.future ? "—" : values ? fmt(hover.cell.value) : "…"}
         </div>
       </div>
     {/if}
@@ -352,6 +436,10 @@
   .summary {
     font-size: 12px;
   }
+  /* Proportional digits here: the mono space in "22h 27m" looks like two. */
+  .summary .num {
+    font-family: var(--font);
+  }
   .grid-wrap {
     position: relative;
   }
@@ -383,7 +471,15 @@
     transition: opacity 0.12s;
   }
   rect.dim {
-    opacity: 0.35;
+    opacity: 0.28;
+  }
+  /* The selected range's outer edge. */
+  .outline {
+    fill: none;
+    stroke: var(--heat-outline);
+    stroke-width: 1;
+    stroke-linejoin: round;
+    pointer-events: none;
   }
   /* One day: a thin accent ring instead of a band. */
   rect.ring {

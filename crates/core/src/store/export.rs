@@ -17,7 +17,23 @@ pub struct ExportCounts {
     pub samples: usize,
     pub settings: usize,
     pub items: usize,
+    /// AI usage rows (hourly sums per tool / session / model / project).
+    pub ai_usage: usize,
 }
+
+const AI_USAGE_COLS: &[&str] = &[
+    "tool",
+    "hour_utc_ms",
+    "hour_local",
+    "session",
+    "model",
+    "project",
+    "input_tokens",
+    "output_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "requests",
+];
 
 const SESSION_COLS: &[&str] = &[
     "collector",
@@ -157,6 +173,36 @@ impl Store {
         Ok(n)
     }
 
+    /// AI usage: hourly sums per tool, session, model and project. Token counts
+    /// and ids only; there is no text in the database to export.
+    fn each_ai_usage(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
+        let mut st = self.conn.prepare(
+            "SELECT tool, hour_ms, off, session, model, project,
+                    input, output, cache_read, cache_write, requests
+             FROM ai_usage ORDER BY hour_ms, tool, session, model, project",
+        )?;
+        let mut rows = st.query([])?;
+        let mut n = 0;
+        while let Some(r) = rows.next()? {
+            let t = Timestamp::new(r.get(1)?, r.get(2)?);
+            f(vec![
+                json!(r.get::<_, String>(0)?),
+                json!(t.utc_ms),
+                json!(t.to_rfc3339()),
+                json!(r.get::<_, String>(3)?),
+                json!(r.get::<_, String>(4)?),
+                json!(r.get::<_, String>(5)?),
+                json!(r.get::<_, i64>(6)?),
+                json!(r.get::<_, i64>(7)?),
+                json!(r.get::<_, i64>(8)?),
+                json!(r.get::<_, i64>(9)?),
+                json!(r.get::<_, i64>(10)?),
+            ])?;
+            n += 1;
+        }
+        Ok(n)
+    }
+
     /// User settings only (no `internal.` rows), as stored JSON text.
     fn each_setting(&self, mut f: impl FnMut(Vec<Value>) -> Result<()>) -> Result<usize> {
         let mut st = self.conn.prepare(
@@ -185,12 +231,13 @@ impl Store {
             json!(now.to_rfc3339())
         )?;
         type Each<'a> = fn(&'a Store, &mut dyn FnMut(Vec<Value>) -> Result<()>) -> Result<usize>;
-        let tables: [(&str, &[&str], Each<'_>); 5] = [
+        let tables: [(&str, &[&str], Each<'_>); 6] = [
             ("sessions", SESSION_COLS, |s, f| s.each_session(f)),
             ("daily_metrics", METRIC_COLS, |s, f| s.each_metric(f)),
             ("samples", SAMPLE_COLS, |s, f| s.each_sample(f)),
             ("settings", SETTING_COLS, |s, f| s.each_setting(f)),
             ("items", ITEM_COLS, |s, f| s.each_item(f)),
+            ("ai_usage", AI_USAGE_COLS, |s, f| s.each_ai_usage(f)),
         ];
         for (i, (name, cols, each)) in tables.into_iter().enumerate() {
             write!(w, ",\"{name}\":[")?;
@@ -211,7 +258,8 @@ impl Store {
                 1 => c.daily_metrics = n,
                 2 => c.samples = n,
                 3 => c.settings = n,
-                _ => c.items = n,
+                4 => c.items = n,
+                _ => c.ai_usage = n,
             }
         }
         w.write_all(b"}\n")?;
@@ -220,7 +268,7 @@ impl Store {
     }
 
     /// Write `sessions.csv`, `daily_metrics.csv`, `samples.csv`,
-    /// `settings.csv` and `items.csv` into `dir` (created if needed).
+    /// `settings.csv`, `items.csv` and `ai_usage.csv` into `dir` (created if needed).
     pub fn export_csv(&self, dir: &Path) -> Result<ExportCounts> {
         std::fs::create_dir_all(dir)?;
         let open = |name: &str, cols: &[&str]| -> Result<BufWriter<File>> {
@@ -248,12 +296,16 @@ impl Store {
         let mut w = open("items.csv", ITEM_COLS)?;
         let items = self.each_item(|v| row(&mut w, v))?;
         w.flush()?;
+        let mut w = open("ai_usage.csv", AI_USAGE_COLS)?;
+        let ai_usage = self.each_ai_usage(|v| row(&mut w, v))?;
+        w.flush()?;
         Ok(ExportCounts {
             sessions,
             daily_metrics,
             samples,
             settings,
             items,
+            ai_usage,
         })
     }
 }

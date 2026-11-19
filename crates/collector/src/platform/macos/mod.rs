@@ -13,6 +13,7 @@
 //! and memory counters (Disk & Memory collector) come from IOKit, Mach VM
 //! statistics and sysctl (see `counters.rs`).
 
+mod bookmarks;
 mod counters;
 mod lock;
 mod login;
@@ -108,6 +109,12 @@ pub fn running_pid(db: &Path) -> Option<i32> {
 pub fn request_flush(db: &Path) -> Option<i32> {
     let pid = running_pid(db)?;
     (unsafe { libc::kill(pid, libc::SIGUSR1) } == 0).then_some(pid)
+}
+
+/// Wake the running collector so it reads its request folder (SIGUSR2).
+/// False when none is running.
+pub fn wake_for_ctl(db: &Path) -> bool {
+    running_pid(db).is_some_and(|pid| unsafe { libc::kill(pid, libc::SIGUSR2) } == 0)
 }
 
 /// Timestamped line on stderr.
@@ -258,8 +265,36 @@ pub(crate) fn deliver(ev: SystemEvent) {
         }
     });
     if is_tick {
-        tray::refresh();
+        process_ctl();
     }
+}
+
+/// Answer every request waiting in the request folder (SIGUSR2, and at each
+/// minute tick as a safety net). Each is handled to completion on the main
+/// thread before the next.
+pub(crate) fn process_ctl() {
+    with_state(|st| {
+        for (id, req) in wrapped_core::ctl::take_pending(&st.db) {
+            let reply = st.engine.handle_request(&req);
+            if st.debug || matches!(reply, wrapped_core::ctl::Reply::Err { .. }) {
+                log(&format!(
+                    "request {}: {}",
+                    req.cmd,
+                    match &reply {
+                        wrapped_core::ctl::Reply::Ok(_) => "ok".to_string(),
+                        wrapped_core::ctl::Reply::Err { code, error } => format!("{code}: {error}"),
+                    }
+                ));
+            }
+            wrapped_core::ctl::reply(&st.db, &id, &reply);
+            // Anything that wrote records (delete, pause) is visible at once;
+            // a status poll writes nothing.
+            if !matches!(req.cmd.as_str(), "ping" | "status") {
+                st.measured("request", |e| e.flush().map(Some));
+            }
+        }
+    });
+    tray::refresh();
 }
 
 /// A scan thread wants a flush, or has finished (via the main queue).
@@ -317,6 +352,17 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
             return 1;
         }
     };
+    // Requests left by a previous run are meaningless now.
+    wrapped_core::ctl::clear(db);
+    // First-launch checklist: an existing install is marked done and left
+    // alone; only an empty, undecided database waits for the user.
+    let setup = match engine.begin_onboarding() {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("wrapped-collector: cannot decide onboarding: {e}");
+            return 1;
+        }
+    };
     engine.set_own_app_id(own_app_id());
     engine.set_scan_hooks(scan_hooks());
     engine.set_probe(Arc::new(counters::MacProbe));
@@ -330,7 +376,13 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
         db.display(),
         engine.recovered_sessions(),
         engine.running_collectors().join(", "),
-        if engine.is_paused() { ", PAUSED" } else { "" }
+        if setup {
+            ", SETUP MODE (nothing is recorded until setup is finished)"
+        } else if engine.is_paused() {
+            ", PAUSED"
+        } else {
+            ""
+        }
     ));
     STATE.with(|s| {
         *s.borrow_mut() = Some(State {
@@ -352,6 +404,9 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
     tray::install(&delegate, mtm);
     let _sources = sources::install();
     sources::send_initial_state();
+    if setup && let Err(e) = open_dashboard(db) {
+        log(&format!("setup: cannot open the dashboard: {e}"));
+    }
     app.run();
     // `run` only returns if the app is stopped without terminating.
     shutdown();

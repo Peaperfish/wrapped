@@ -21,6 +21,8 @@
 //! when a scan ends. Sleep, power-off, quit, pause and turning the collector
 //! off cancel a scan; it saves its progress and the next scan resumes.
 
+mod requests;
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -32,7 +34,7 @@ use crate::collector::{
 };
 use crate::event::SystemEvent;
 use crate::probe::SystemProbe;
-use crate::settings::{KEY_PAUSE, Pause, Settings};
+use crate::settings::{KEY_ONBOARDING_DONE, KEY_PAUSE, Pause, Settings};
 use crate::store::{Batch, Error, FlushReport, Result, Store};
 use crate::time::{Clock, MS_PER_DAY, MS_PER_MIN, Timestamp};
 
@@ -95,6 +97,9 @@ pub struct Engine {
     reports: Vec<ScanReport>,
     /// Settings fingerprints already checked against the store.
     fingerprints: BTreeMap<&'static str, String>,
+    /// First-launch checklist not finished: everything is held like a pause
+    /// that only `finish_setup` lifts (see [`Engine::begin_onboarding`]).
+    setup_mode: bool,
 }
 
 impl Engine {
@@ -141,6 +146,7 @@ impl Engine {
             scan_cancel_after: None,
             reports: Vec::new(),
             fingerprints: BTreeMap::new(),
+            setup_mode: false,
         };
         e.shared.has_writer.store(true, Ordering::SeqCst);
         e.apply_settings(settings)?;
@@ -211,6 +217,41 @@ impl Engine {
     /// Sessions closed by crash recovery at startup.
     pub fn recovered_sessions(&self) -> usize {
         self.recovered
+    }
+
+    /// True while the first-launch checklist is unfinished: nothing is
+    /// recorded and no scan runs.
+    pub fn is_setup_mode(&self) -> bool {
+        self.setup_mode
+    }
+
+    /// Decide once at collector startup whether the first-launch checklist
+    /// applies. An existing install (any recorded data, or `onboarding.done`
+    /// already stored) never sees it, and its settings are not touched beyond
+    /// storing `onboarding.done = true`. Only a database with no data and no
+    /// decision enters setup mode. Not part of `Engine::new`, so the core and
+    /// the CLI scans keep recording on a fresh database. Returns the new
+    /// `is_setup_mode()`.
+    pub fn begin_onboarding(&mut self) -> Result<bool> {
+        let setup = match self.settings.onboarding_done {
+            Some(done) => !done,
+            None => {
+                if self.store.has_any_data()? {
+                    self.store.set_setting(KEY_ONBOARDING_DONE, "true")?;
+                    let (s, _) = self.store.load_settings()?;
+                    self.apply_settings(s)?;
+                    false
+                } else {
+                    true
+                }
+            }
+        };
+        if setup != self.setup_mode {
+            self.setup_mode = setup;
+            let s = self.settings.clone();
+            self.apply_settings(s)?;
+        }
+        Ok(self.setup_mode)
     }
 
     pub fn is_paused(&self) -> bool {
@@ -367,6 +408,19 @@ impl Engine {
         let Some(mut scanner) = self.slots[i].collector.scanner() else {
             return Err(Error::Scan(format!("`{name}` has no scanner")));
         };
+        // Settings the collector wants stored first (AI usage: tools found on
+        // this machine, folders that moved), on this thread, the only writer.
+        let updates = self.slots[i]
+            .collector
+            .prepare_scan(&self.settings, &self.scan_hooks);
+        if !updates.is_empty() {
+            for (k, v) in &updates {
+                self.store.set_setting(k, v)?;
+            }
+            let (s, _) = self.store.load_settings()?;
+            *self.shared.settings.write().expect("settings lock") = Arc::new(s.clone());
+            self.settings = s;
+        }
         let info = self.store.scan_info(name)?;
         let files = self.store.scan_files(name)?;
         let ctx = Arc::new(
@@ -571,16 +625,17 @@ impl Engine {
     /// Write everything buffered now, in one transaction.
     pub fn flush(&mut self) -> Result<FlushReport> {
         let now = self.now();
-        let (closed, samples, open, items, scans) = {
+        let (closed, samples, open, items, ai, scans) = {
             let mut b = self.shared.buffer.lock().expect("buffer lock");
             let closed = std::mem::take(&mut b.closed);
             let samples = std::mem::take(&mut b.samples);
             let items = std::mem::take(&mut b.items);
+            let ai = std::mem::take(&mut b.ai);
             let scans: Vec<(&'static str, ScanUpdate)> =
                 std::mem::take(&mut b.scans).into_iter().collect();
             let open: Vec<_> = b.open.iter().map(|(c, o)| (*c, o.clone())).collect();
             self.shared.wake_sent.store(false, Ordering::SeqCst);
-            (closed, samples, open, items, scans)
+            (closed, samples, open, items, ai, scans)
         };
         // Blocked scan threads may continue as soon as the buffer is drained.
         self.shared.drained.notify_all();
@@ -596,6 +651,7 @@ impl Engine {
             open: &open,
             samples: &samples,
             items: &items,
+            ai: &ai,
             scans: &scans,
         };
         match self.store.flush(&batch, now, &rollup) {
@@ -612,14 +668,17 @@ impl Engine {
                     closed,
                     samples,
                     items,
+                    ai,
                     ..Default::default()
                 };
                 kept.closed.append(&mut b.closed);
                 kept.samples.append(&mut b.samples);
                 kept.items.append(&mut b.items);
+                kept.ai.append(&mut b.ai);
                 b.closed = kept.closed;
                 b.samples = kept.samples;
                 b.items = kept.items;
+                b.ai = kept.ai;
                 // Older scan bookkeeping goes first; newer state wins.
                 let newer = std::mem::take(&mut b.scans);
                 for (name, mut old) in scans {
@@ -704,6 +763,9 @@ impl Engine {
             b.closed.retain(|r| r.collector != name);
             b.samples.retain(|r| r.collector != name);
             b.items.retain(|r| r.collector != name);
+            if name == "ai_usage" {
+                b.ai.clear();
+            }
             b.scans.remove(name);
             if let Some(o) = b.open.get_mut(name) {
                 o.start = now;
@@ -739,7 +801,7 @@ impl Engine {
         }
         *self.shared.settings.write().expect("settings lock") = Arc::new(new.clone());
 
-        let want_paused = new.pause.is_active(now);
+        let want_paused = new.pause.is_active(now) || self.setup_mode;
         for i in 0..self.slots.len() {
             let want = new.collector_enabled(self.slots[i].name, self.slots[i].default_on);
             let slot = &mut self.slots[i];

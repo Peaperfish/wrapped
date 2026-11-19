@@ -2,7 +2,8 @@
 //!
 //! Reopening the app while it runs opens the dashboard too.
 //!
-//! Menu: status line, Open Dashboard…, Pause for 1 hour / until tomorrow /
+//! Menu: status line, Open Dashboard…, Settings… (Finish Setup… until the
+//! first-launch checklist is done), Pause for 1 hour / until tomorrow /
 //! indefinitely, Resume, Open data folder, Quit. One main-thread-only Objective-C class is
 //! the app delegate (to flush on termination), the menu delegate (to refresh
 //! the status line when the menu opens) and the target of every menu item.
@@ -32,7 +33,9 @@ pub struct Ivars {
     status_item: OnceCell<Retained<NSStatusItem>>,
     status_line: OnceCell<Retained<NSMenuItem>>,
     resume_item: OnceCell<Retained<NSMenuItem>>,
+    settings_item: OnceCell<Retained<NSMenuItem>>,
     shown_paused: std::cell::Cell<Option<bool>>,
+    shown_setup: std::cell::Cell<Option<bool>>,
 }
 
 define_class!(
@@ -102,6 +105,25 @@ define_class!(
             }
         }
 
+        /// "Settings…": the dashboard with the Settings window open (or, until
+        /// the first-launch checklist is done, the checklist). The dashboard
+        /// finds `open-settings` next to the database when it starts or gains focus.
+        #[unsafe(method(openSettings:))]
+        fn open_settings(&self, _sender: Option<&AnyObject>) {
+            let in_setup = with_state(|st| st.engine.is_setup_mode()).unwrap_or(false);
+            let db = &self.ivars().db;
+            if !in_setup {
+                let flag = wrapped_core::ctl::open_settings_flag(db);
+                if let Some(dir) = flag.parent() {
+                    let _ = std::fs::create_dir_all(dir);
+                }
+                let _ = std::fs::write(&flag, "1");
+            }
+            if let Err(e) = super::open_dashboard(db) {
+                log(&format!("tray: Settings: {e}"));
+            }
+        }
+
         #[unsafe(method(openDataFolder:))]
         fn open_data_folder(&self, _sender: Option<&AnyObject>) {
             autoreleasepool(|_| {
@@ -130,7 +152,9 @@ impl Delegate {
             status_item: OnceCell::new(),
             status_line: OnceCell::new(),
             resume_item: OnceCell::new(),
+            settings_item: OnceCell::new(),
             shown_paused: std::cell::Cell::new(None),
+            shown_setup: std::cell::Cell::new(None),
         });
         unsafe { msg_send![super(this), init] }
     }
@@ -152,14 +176,29 @@ impl Delegate {
     fn refresh(&self) {
         let Some(pause) = with_state(|st| {
             let p = st.engine.settings().pause;
-            (st.engine.is_paused(), p)
+            (st.engine.is_paused(), p, st.engine.is_setup_mode())
         }) else {
             return;
         };
-        let (paused, p) = pause;
+        let (paused, p, setup) = pause;
         let iv = self.ivars();
         if let Some(line) = iv.status_line.get() {
-            line.setTitle(&NSString::from_str(&status_text(paused, p)));
+            let text = if setup {
+                "Wrapped: finish setup to start recording".to_string()
+            } else {
+                status_text(paused, p)
+            };
+            line.setTitle(&NSString::from_str(&text));
+        }
+        if iv.shown_setup.get() != Some(setup)
+            && let Some(it) = iv.settings_item.get()
+        {
+            iv.shown_setup.set(Some(setup));
+            it.setTitle(&NSString::from_str(if setup {
+                "Finish Setup…"
+            } else {
+                "Settings…"
+            }));
         }
         if let Some(r) = iv.resume_item.get() {
             r.setEnabled(paused);
@@ -261,6 +300,8 @@ pub fn install(delegate: &Retained<Delegate>, mtm: MainThreadMarker) {
         "d",
         delegate,
     ));
+    let settings_item = item(mtm, "Settings…", Some(sel!(openSettings:)), ",", delegate);
+    menu.addItem(&settings_item);
     menu.addItem(&NSMenuItem::separatorItem(mtm));
     menu.addItem(&item(
         mtm,
@@ -301,6 +342,7 @@ pub fn install(delegate: &Retained<Delegate>, mtm: MainThreadMarker) {
     let _ = iv.status_item.set(status_item);
     let _ = iv.status_line.set(status_line);
     let _ = iv.resume_item.set(resume);
+    let _ = iv.settings_item.set(settings_item);
     TRAY.with(|t| *t.borrow_mut() = Some(delegate.clone()));
     delegate.refresh();
 }

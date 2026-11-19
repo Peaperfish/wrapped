@@ -182,6 +182,22 @@ pub struct DaySample {
     pub data: serde_json::Value,
 }
 
+/// One stored AI usage bucket (one hour of one tool / session / model /
+/// project) whose local date is the day being rolled up.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiDayRow {
+    pub time: Timestamp,
+    pub tool: String,
+    pub session: String,
+    pub model: String,
+    pub project: String,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+    pub requests: u64,
+}
+
 /// Everything a collector needs to compute one local day of metrics.
 #[derive(Debug, Clone)]
 pub struct DayInput<'a> {
@@ -195,6 +211,9 @@ pub struct DayInput<'a> {
     /// sorted by time then metric. The collector decides which part of each
     /// sample belongs to the day.
     pub samples: &'a [DaySample],
+    /// AI usage buckets of the day (only filled for the `ai_usage` collector),
+    /// sorted by time.
+    pub ai: &'a [AiDayRow],
 }
 
 /// The plugin trait. Adding a collector = one new file in `collectors/` plus
@@ -229,6 +248,12 @@ pub trait Collector: Send {
     /// everything under the new rule. `None` = no such settings.
     fn scan_fingerprint(&self, _settings: &Settings) -> Option<String> {
         None
+    }
+    /// Scanned collectors: settings to store just before a scan starts, on
+    /// the main thread (AI usage: tools found on this machine, sources whose
+    /// folder moved). `hooks` carries platform helpers.
+    fn prepare_scan(&self, _settings: &Settings, _hooks: &ScanHooks) -> Vec<(String, String)> {
+        Vec::new()
     }
     /// Settings to store explicitly when the collector is turned on, given the
     /// current settings (e.g. git's author emails). Empty by default.
@@ -285,12 +310,48 @@ pub struct ItemRecord {
     pub attrs: String,
 }
 
+/// One AI request found by the AI usage scan (see `ai_usage`, `ai_seen`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct AiRecord {
+    /// Dedupe key: hash of the tool and the tool's own request id. The same
+    /// id is counted once, however often it is emitted.
+    pub id: u64,
+    pub time: Timestamp,
+    /// Stable tool id (`claude`, `codex`, ...).
+    pub tool: &'static str,
+    pub session: String,
+    /// `unknown` when the log does not say.
+    pub model: String,
+    /// Last path component of the project folder, or empty.
+    pub project: String,
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_write: u64,
+}
+
 /// Per-file incremental cache entry (see `scan_files`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FileStamp {
     pub path_hash: u64,
     pub size: u64,
     pub mtime_ms: i64,
+    /// Byte offset after the last complete line read (0 = not tracked).
+    pub pos: u64,
+    /// Hash of the file's first bytes (0 = not tracked).
+    pub head: u64,
+}
+
+impl FileStamp {
+    pub const fn new(path_hash: u64, size: u64, mtime_ms: i64) -> Self {
+        Self {
+            path_hash,
+            size,
+            mtime_ms,
+            pos: 0,
+            head: 0,
+        }
+    }
 }
 
 /// A scanned collector's pending bookkeeping, written in the same transaction
@@ -325,6 +386,8 @@ pub struct Buffer {
     pub samples: Vec<SampleRecord>,
     /// Items from scanned collectors, in emission order.
     pub items: Vec<ItemRecord>,
+    /// AI requests from the AI usage scan, in emission order.
+    pub ai: Vec<AiRecord>,
     pub scans: BTreeMap<&'static str, ScanUpdate>,
 }
 
@@ -334,11 +397,13 @@ impl Buffer {
             && self.open.is_empty()
             && self.samples.is_empty()
             && self.items.is_empty()
+            && self.ai.is_empty()
             && self.scans.values().all(ScanUpdate::is_empty)
     }
     /// Scan output waiting to be written (drives early flushes / backpressure).
     pub fn scan_pending(&self) -> usize {
         self.items.len()
+            + self.ai.len()
             + self
                 .scans
                 .values()
@@ -360,6 +425,22 @@ pub struct ScanHooks {
     pub thread_setup: Option<fn()>,
     /// Applied to every child process a scan starts (macOS: background priority).
     pub command_setup: Option<fn(&mut std::process::Command)>,
+    /// A bookmark for a folder that survives it being moved or renamed on the
+    /// same volume (macOS). Opaque bytes, stored with the AI source.
+    pub bookmark_create: Option<BookmarkCreate>,
+    /// Where a bookmark points now, and a refreshed bookmark if it went stale.
+    pub bookmark_resolve: Option<BookmarkResolve>,
+}
+
+pub type BookmarkCreate = fn(&std::path::Path) -> Option<Vec<u8>>;
+pub type BookmarkResolve = fn(&[u8]) -> Option<ResolvedBookmark>;
+
+/// The result of resolving a folder bookmark.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ResolvedBookmark {
+    pub path: std::path::PathBuf,
+    /// A new bookmark to store when the old one is stale.
+    pub refreshed: Option<Vec<u8>>,
 }
 
 /// One running scan's shared context: cancellation, the previous incremental
@@ -632,6 +713,29 @@ impl Sink {
             attrs,
         });
         self.after_push(b);
+    }
+
+    /// Emit one AI request. Blocks like [`Sink::item`] while too much scan
+    /// output is waiting for the writer.
+    pub fn ai(&self, rec: AiRecord) {
+        if self.discarding() {
+            return;
+        }
+        let mut b = self.shared.buffer.lock().expect("buffer lock");
+        b.ai.push(rec);
+        self.after_push(b);
+    }
+
+    /// The stored cache entry of a file (marks it as present), whatever its
+    /// current size and mtime: the caller decides what changed.
+    pub fn file_prev(&self, path_hash: u64) -> Option<FileStamp> {
+        let ctx = self.scan.as_ref()?;
+        let i = ctx
+            .files
+            .binary_search_by_key(&path_hash, |f| f.path_hash)
+            .ok()?;
+        ctx.visited.lock().expect("visited lock")[i] = true;
+        Some(ctx.files[i])
     }
 
     fn after_push(&self, mut b: std::sync::MutexGuard<'_, Buffer>) {

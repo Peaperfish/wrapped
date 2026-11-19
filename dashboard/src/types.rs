@@ -56,6 +56,45 @@ pub struct CollectorMeta {
     pub name: String,
     pub title: String,
     pub enabled: bool,
+    /// What it records, in plain words (setup and Settings).
+    pub description: String,
+    /// Permission needed, or "None".
+    pub permissions: String,
+    pub cost: String,
+    pub default_on: bool,
+}
+
+/// The settings the dashboard shows and edits (through the collector).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct SettingsMeta {
+    pub exclude_apps: Vec<String>,
+    pub git_folders: Vec<String>,
+    /// `None` = not chosen yet (resolved from `git config` when git is on).
+    pub git_author_emails: Option<Vec<String>>,
+    pub photos_folders: Vec<String>,
+    /// `"off"`, `"indefinite"` or `"until"` (a timed pause still running).
+    pub pause: String,
+    pub pause_until_ms: Option<i64>,
+}
+
+/// One author email found by `git_emails` (setup and Settings).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct GitEmail {
+    pub email: String,
+    pub commits: u32,
+    pub repos: u32,
+    /// The email from `git config --global user.email`.
+    pub mine: bool,
+}
+
+/// What `export_data` wrote.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct ExportResult {
+    pub path: String,
+    pub sessions: u32,
+    pub daily_metrics: u32,
+    pub samples: u32,
+    pub items: u32,
 }
 
 /// A metric the heatmap can colour by (a metric without keys of a collector
@@ -68,6 +107,48 @@ pub struct HeatmapMetric {
     pub title: String,
     pub unit: UnitName,
     pub agg: AggName,
+}
+
+/// One AI tool and whether its default folder exists on this machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiToolMeta {
+    pub id: String,
+    pub title: String,
+    /// The tool writes token counts to disk (false: sessions only).
+    pub tokens: bool,
+    /// Checked against real logs (false: written from documentation).
+    pub tested: bool,
+    pub note: String,
+    /// The tool's default folder exists.
+    pub detected: bool,
+    /// That folder (the first one found), for setup.
+    pub detected_path: Option<String>,
+    /// Log files found there.
+    pub detected_files: u32,
+}
+
+/// One configured AI source (a folder) and what the last scan saw of it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiSourceMeta {
+    pub id: String,
+    pub tool: String,
+    pub path: String,
+    /// Found by the collector (the tool's default folder) rather than added by the user.
+    pub builtin: bool,
+    pub enabled: bool,
+    /// `"ok"`, `"missing"`, `"error"` or `"new"` (not scanned yet).
+    pub state: String,
+    pub last_seen_ms: Option<i64>,
+    pub last_scan_ms: Option<i64>,
+    pub files: u32,
+    pub requests: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiMeta {
+    /// Every supported tool, in display order.
+    pub tools: Vec<AiToolMeta>,
+    pub sources: Vec<AiSourceMeta>,
 }
 
 /// Everything the window needs before it asks for numbers.
@@ -89,6 +170,11 @@ pub struct Meta {
     pub last_flush_ms: Option<i64>,
     /// Heatmap metrics of the collectors that are on, screen time first.
     pub metrics: Vec<HeatmapMetric>,
+    /// The first-launch checklist applies: onboarding is not done and nothing
+    /// has been recorded yet (also true without a database file).
+    pub setup: bool,
+    pub settings: SettingsMeta,
+    pub ai: AiMeta,
 }
 
 // ---------- series(year, metric) ----------
@@ -258,6 +344,12 @@ pub fn typescript_files() -> Vec<(String, String)> {
         UnitName,
         AggName,
         CollectorMeta,
+        SettingsMeta,
+        AiToolMeta,
+        AiSourceMeta,
+        AiMeta,
+        GitEmail,
+        ExportResult,
         HeatmapMetric,
         Meta,
         RangeJson,

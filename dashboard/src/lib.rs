@@ -113,6 +113,39 @@ fn app_names(ids: Vec<String>) -> std::collections::HashMap<String, String> {
     names::app_names(&ids)
 }
 
+/// The tray's "Settings…" leaves a flag file next to the database; the page
+/// asks for it at start and when the window gains focus. True (and the flag
+/// removed) when Settings should open now.
+#[tauri::command]
+fn take_open_settings(state: State<'_, AppState>) -> bool {
+    let Ok(db) = state.db() else { return false };
+    std::fs::remove_file(wrapped_core::ctl::open_settings_flag(db)).is_ok()
+}
+
+/// Recorded app bundle ids, most time first (exclude list suggestions).
+#[tauri::command(async)]
+fn recorded_apps(state: State<'_, AppState>) -> data::Result<Vec<String>> {
+    state.timed("recorded_apps", || data::recorded_apps(state.db()?))
+}
+
+/// Author emails found under `folders` (read-only, may take a few seconds).
+#[tauri::command(async)]
+fn git_emails(folders: Vec<String>) -> Vec<types::GitEmail> {
+    data::git_emails(&folders)
+}
+
+/// Write an export to a path the user picked (JSON file or CSV folder).
+#[tauri::command(async)]
+fn export_data(
+    state: State<'_, AppState>,
+    kind: String,
+    path: String,
+) -> data::Result<types::ExportResult> {
+    state.timed("export_data", || {
+        data::export_data(state.db()?, &kind, Path::new(&path))
+    })
+}
+
 /// The collector binary that goes with this dashboard: `Wrapped.app/Contents/
 /// MacOS/wrapped-collector` when this is the nested app, else the one next to
 /// this executable.
@@ -154,6 +187,70 @@ fn flush_collector(state: State<'_, AppState>) -> bool {
         .is_ok_and(|s| s.success());
     state.log(&format!("flush_collector: asked = {asked}"));
     asked
+}
+
+/// Send one request to the running collector (`wrapped-collector ctl`): the
+/// dashboard never writes, the collector does. Always returns the reply as
+/// `{ok: true, data}` or `{ok: false, code, error}`; `code` is `not_running`
+/// when no collector is running and `timeout` when it did not answer.
+#[tauri::command(async)]
+fn ctl(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Value {
+    let fail = |code: &str, error: String| serde_json::json!({ "ok": false, "code": code, "error": error });
+    let (Some(exe), Ok(db)) = (collector_exe(), state.db()) else {
+        return fail(
+            "no_collector",
+            "The Wrapped collector was not found next to the dashboard.".into(),
+        );
+    };
+    let out = std::process::Command::new(exe)
+        .arg("ctl")
+        .arg(&cmd)
+        .arg(args.unwrap_or(Value::Null).to_string())
+        .env("WRAPPED_DB", db)
+        .stdin(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .output();
+    let reply = match out {
+        Ok(o) => serde_json::from_slice::<Value>(&o.stdout)
+            .unwrap_or_else(|_| fail("io", "The collector gave no usable answer.".into())),
+        Err(e) => fail("io", format!("Cannot run the collector: {e}")),
+    };
+    state.log(&format!("ctl {cmd}: ok = {}", reply["ok"]));
+    reply
+}
+
+/// Open the Wrapped app (the collector), for "Wrapped isn't running".
+#[tauri::command(async)]
+fn open_wrapped(state: State<'_, AppState>) -> bool {
+    let Some(exe) = collector_exe() else {
+        return false;
+    };
+    // <bundle>/Contents/MacOS/wrapped-collector -> <bundle>
+    let bundle = exe
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .filter(|p| p.extension().is_some_and(|e| e == "app"));
+    let ok = match (bundle, cfg!(target_os = "macos")) {
+        (Some(b), true) => std::process::Command::new("/usr/bin/open")
+            .arg(b)
+            .status()
+            .is_ok_and(|s| s.success()),
+        _ => {
+            // A bare binary: start it detached, with the same database.
+            let mut c = std::process::Command::new(&exe);
+            if let Ok(db) = state.db() {
+                c.env("WRAPPED_DB", db);
+            }
+            c.stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+        }
+    };
+    state.log(&format!("open_wrapped: {ok}"));
+    ok
 }
 
 /// The page has rendered its first frame with data: show the window.
@@ -220,6 +317,7 @@ pub fn main() -> i32 {
             .map_or("(none)".into(), |p| p.display().to_string())
     ));
     let result = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             meta,
@@ -227,6 +325,12 @@ pub fn main() -> i32 {
             series,
             app_names,
             flush_collector,
+            take_open_settings,
+            recorded_apps,
+            git_emails,
+            export_data,
+            ctl,
+            open_wrapped,
             ready
         ])
         .setup(|app| {

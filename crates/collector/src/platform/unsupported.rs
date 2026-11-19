@@ -22,6 +22,13 @@ pub fn request_flush(_db: &Path) -> Option<i32> {
     None
 }
 
+/// No collector can run here yet, so there is nothing to wake. Windows needs
+/// its own wake-up (a named event) in Milestone 9; the request files in
+/// `wrapped_core::ctl` are already platform-neutral.
+pub fn wake_for_ctl(_db: &Path) -> bool {
+    false
+}
+
 /// Start the dashboard (`wrapped-dashboard[.exe]` next to this executable)
 /// on `db`. No single-instance handling yet: a second call opens a second
 /// window (Windows port, Milestone 9).

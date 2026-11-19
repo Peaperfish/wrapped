@@ -86,6 +86,7 @@ Adding a collector \= 1 new file \+ 1 registration line. Later (optional): exter
 | Active / idle | Live | Away periods | None | On | v1 |
 | Git | Scanned | Commit times \+ repo names (no code) | Pick folders \+ author emails | Off | v1 |
 | Photos | Scanned | EXIF only (date, camera, lens, settings) | Pick folders (Mac asks once) | Off | v1 |
+| AI usage | Scanned | Token counts per hour, tool, model and project folder name from AI coding tools' local logs (never prompt or response text) | None (reads the tools' own folders) | On | v1 |
 | Disk & Memory | Live (5 min) | Disk GB read/written, swap in/out, memory pressure, compressed memory (Mac) | None | Off | v1 |
 | Hardware history | Live (5 min avg) | CPU/GPU load \+ temps | None | Off | v1.x |
 | Network usage | Live | MB up/down per day | None | Off | v1.x |
@@ -120,6 +121,25 @@ Live CPU/GPU/RAM, temps, fans, disk read/write speed, network speed, swap. Updat
 - Weekly (Mondays), monthly (1st), yearly (December). Optional “Your week is ready” notification.  
 - Story-style full-screen slides; same stats engine with a different date range.  
 - Export slides as PNG (video later).
+
+### AI usage (Milestone 6)
+
+- Reads the local logs of Claude Code, Codex, Gemini CLI, Google Antigravity,
+  Copilot CLI, Cursor CLI and opencode (research and per-tool formats:
+  [AI_SOURCES.md](AI_SOURCES.md)). Only Claude Code and Antigravity are tested
+  against real logs; the rest are written from documentation.
+- Stored per UTC hour, tool, session, model and project folder name: input,
+  output, cache read and cache write tokens and a request count (table
+  `ai_usage`). A small `ai_seen` table of 64-bit hashes stops a request that
+  appears in several files (resumed sessions, repeated lines) from counting
+  twice. Rows are never deleted when a log disappears. No text, no full paths.
+- Headline and heatmap = input + output tokens; cache read / write are shown
+  next to it, not added in (cache reads are 10-100x the rest).
+- Scans run at startup, daily, on dashboard Refresh and with
+  `wrapped-collector scan ai`; they are incremental (stored byte offsets).
+  Sources are listed in Settings → AI sources (add a folder, switch one off,
+  scan now); custom folders follow a move through a macOS bookmark.
+- Tools that log no token counts (Cursor CLI) show sessions only.
 
 ## 12\. Privacy & control
 

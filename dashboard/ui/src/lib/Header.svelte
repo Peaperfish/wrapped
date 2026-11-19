@@ -13,8 +13,21 @@
     onpreset: (p: Exclude<Preset, "custom">) => void;
     oncustom: (r: Range) => void;
     onrefresh: () => void;
+    /** Open Settings; the gear button is where focus returns on close. */
+    onsettings: (opener: HTMLElement) => void;
   }
-  let { selection, preset, today, asOf, refreshing, asOfFlash = false, onpreset, oncustom, onrefresh }: Props = $props();
+  let {
+    selection,
+    preset,
+    today,
+    asOf,
+    refreshing,
+    asOfFlash = false,
+    onpreset,
+    oncustom,
+    onrefresh,
+    onsettings,
+  }: Props = $props();
 
   const presets: [Exclude<Preset, "custom">, string][] = [
     ["today", "Today"],
@@ -103,6 +116,25 @@
           stroke-linecap="round"
           stroke-linejoin="round"
         />
+      </svg>
+    </button>
+    <button
+      id="settings-gear"
+      class="refresh"
+      aria-label="Settings"
+      aria-haspopup="dialog"
+      title="Settings"
+      onclick={(e) => onsettings(e.currentTarget)}
+    >
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+        <path
+          d="M6.7 1.6h2.6l.4 1.7c.4.15.8.35 1.1.6l1.6-.6 1.3 2.2-1.3 1.2c.05.25.08.5.08.75s-.03.5-.08.75l1.3 1.2-1.3 2.2-1.6-.6c-.35.25-.7.45-1.1.6l-.4 1.7H6.7l-.4-1.7c-.4-.15-.8-.35-1.1-.6l-1.6.6-1.3-2.2 1.3-1.2A4 4 0 0 1 3.5 8c0-.25.03-.5.08-.75l-1.3-1.2 1.3-2.2 1.6.6c.35-.25.7-.45 1.1-.6z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.2"
+          stroke-linejoin="round"
+        />
+        <circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2" />
       </svg>
     </button>
   </div>

@@ -36,6 +36,10 @@ USAGE
                                             rebuild the daily metrics of each local day in the range
                                             from the stored items / sessions (quit Wrapped first)
   wrapped-collector flush                 ask the running collector to flush now
+  wrapped-collector ctl <cmd> [<json args>]
+                                          send one request to the running collector (what the
+                                          dashboard does) and print its JSON reply. Exit 0 ok,
+                                          3 no collector running, 4 no answer, 1 refused
   wrapped-collector dashboard             open the dashboard window on this database
   wrapped-collector login enable|disable|status   launch at login (macOS 13+, .app only)
 
@@ -106,6 +110,8 @@ pub fn main() -> i32 {
             }
             None => Err("no running collector found".into()),
         },
+        ["ctl", cmd] => return ctl_command(&db, cmd, "null"),
+        ["ctl", cmd, args] => return ctl_command(&db, cmd, args),
         ["login", cmd @ ("enable" | "disable" | "status")] => return platform::login(cmd),
         _ => {
             eprint!("{USAGE}");
@@ -165,7 +171,66 @@ fn settings_get(db: &std::path::Path, key: Option<&str>) -> CliResult {
     Ok(())
 }
 
+/// Send one request to the running collector; prints the reply as JSON.
+/// Exit codes: 0 ok, 1 refused, 3 not running, 4 no answer.
+fn ctl_command(db: &std::path::Path, cmd: &str, args: &str) -> i32 {
+    use wrapped_core::ctl::{self, CallError, Reply, Request};
+    let args: serde_json::Value = match serde_json::from_str(args) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("wrapped-collector: ctl arguments are not JSON: {e}");
+            return 2;
+        }
+    };
+    let out = ctl::call(
+        db,
+        &Request::new(cmd, args),
+        &|| platform::wake_for_ctl(db),
+        ctl::REPLY_TIMEOUT,
+    );
+    match out {
+        Ok(reply) => {
+            println!("{}", reply.to_json("cli"));
+            i32::from(matches!(reply, Reply::Err { .. }))
+        }
+        Err(e) => {
+            let code = match e {
+                CallError::NotRunning => 3,
+                CallError::Timeout => 4,
+                CallError::Io(_) => 1,
+            };
+            println!(
+                "{}",
+                serde_json::json!({ "ok": false, "code": e.code(), "error": e.to_string() })
+            );
+            code
+        }
+    }
+}
+
 fn settings_set(db: &std::path::Path, key: &str, value: &str) -> CliResult {
+    // A running collector is the single writer: ask it, so the change applies
+    // at once and nothing else writes the database meanwhile.
+    if platform::running_pid(db).is_some() {
+        use wrapped_core::ctl::{self, CallError, Reply, Request};
+        let v: serde_json::Value =
+            serde_json::from_str(value).unwrap_or_else(|_| serde_json::Value::String(value.into()));
+        let req = Request::new(
+            ctl::CMD_SET_SETTINGS,
+            serde_json::json!({ "settings": { key: v } }),
+        );
+        match ctl::call(db, &req, &|| platform::wake_for_ctl(db), ctl::REPLY_TIMEOUT) {
+            Ok(Reply::Ok(_)) => {
+                let (s, _) = Store::open_read_only(db)?.load_settings()?;
+                println!("{key} = {}", s.get_json(key)?);
+                println!("(applied by the running collector)");
+                return Ok(());
+            }
+            Ok(Reply::Err { error, .. }) => return Err(error.into()),
+            Err(CallError::NotRunning) => {} // it just quit: write directly below
+            Err(e) => return Err(e.to_string().into()),
+        }
+    }
     if let Some(name) = key
         .strip_prefix("collector.")
         .and_then(|r| r.strip_suffix(".enabled"))
@@ -622,6 +687,7 @@ fn git_emails(db: &std::path::Path) -> CliResult {
 }
 
 fn scan(db: &std::path::Path, what: &str) -> CliResult {
+    let what = if what == "ai" { "ai_usage" } else { what };
     let scanned: Vec<&'static str> = collectors::builtin()
         .iter()
         .filter(|c| c.kind() == Kind::Scanned)

@@ -1,4 +1,5 @@
-//! SIGTERM / SIGINT (quit, with a final flush) and SIGUSR1 (flush now).
+//! SIGTERM / SIGINT (quit, with a final flush), SIGUSR1 (flush now) and
+//! SIGUSR2 (look for requests from the dashboard / CLI, see `wrapped_core::ctl`).
 //!
 //! The signals are blocked in every thread and received synchronously by one
 //! `sigwait` thread, which hands them to the main queue. Nothing runs in an
@@ -12,7 +13,7 @@ fn signal_set() -> libc::sigset_t {
     unsafe {
         let mut set: libc::sigset_t = std::mem::zeroed();
         libc::sigemptyset(&mut set);
-        for s in [libc::SIGTERM, libc::SIGINT, libc::SIGUSR1] {
+        for s in [libc::SIGTERM, libc::SIGINT, libc::SIGUSR1, libc::SIGUSR2] {
             libc::sigaddset(&mut set, s);
         }
         set
@@ -40,6 +41,10 @@ pub fn install() {
 fn on_signal(sig: libc::c_int) {
     if sig == libc::SIGUSR1 {
         super::flush_now();
+        return;
+    }
+    if sig == libc::SIGUSR2 {
+        super::process_ctl();
         return;
     }
     super::log(if sig == libc::SIGTERM {

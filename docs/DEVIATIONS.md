@@ -195,6 +195,35 @@ design doc itself is left as written.
   a little.
   "Times away" cannot exclude sleep: only the total period count is stored.
 
+## Onboarding, settings and AI usage (§7, §12; Milestone 6)
+
+- **AI usage is stored as hourly sums, not `items`.** The design has scanned
+  collectors store items; Claude Code alone wrote ~550 requests a day here, so
+  one row each would be ~50 MB a year. `ai_usage` (per UTC hour, tool,
+  session, model, project) plus 25-byte `ai_seen` dedupe rows stays within the
+  write budget. `ai_seen` is kept forever (a log restored from a backup must
+  not count twice; ~5 MB a year).
+- **Dashboard to collector commands** (`ctl`): the dashboard stays read-only on
+  the database and sends requests to the running collector as small files in
+  `<data dir>/ctl/` plus a **SIGUSR2** wake-up. SIGUSR2 is macOS-only; Windows
+  gets a named event in Milestone 9 and `ctl` answers "not running" there
+  until then. The CLI `settings set` goes through the same channel when a
+  collector is running.
+- **Setup mode.** A fresh install records nothing until the first-launch
+  checklist is confirmed; existing databases get `onboarding.done = true` and
+  nothing else.
+- **Headline = input + output tokens**; cache is shown separately.
+- **Antigravity model is `unknown`** (the transcript has none).
+- **Delete all data** keeps settings and `onboarding.done` and resets AI file
+  positions; AI usage whose logs are gone cannot be re-imported (the
+  confirmation says so).
+- **Five of seven AI adapters are untested** (Codex, Gemini CLI, Copilot CLI,
+  Cursor CLI, opencode): no logs on this Mac. Each is marked `TESTED = false`
+  and covered only by made-up fixtures.
+- New dependency in the dashboard only: `tauri-plugin-dialog` (folder picker,
+  export dialog).
+- The AI card is a full-width (L) card, not tied to a collector's `items`.
+
 ## Metric definitions
 
 - `app_usage/app_switches`: number of sessions that start exactly where the

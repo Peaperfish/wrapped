@@ -156,6 +156,7 @@ pub fn build(dir: &Path) -> PathBuf {
         open: &open,
         samples: &[],
         items: &items,
+        ai: &[],
         scans: &[],
     };
     store.flush(&batch, last_flush(), &rollup).unwrap();

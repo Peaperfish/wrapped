@@ -6,7 +6,7 @@
   import Card from "./Card.svelte";
   import HourBars from "./HourBars.svelte";
   import Ring from "./Ring.svelte";
-  import { fmtBytes, fmtSecs, fmtValue } from "./format";
+  import { fmtBytes, fmtSecs, fmtTokens, fmtValue } from "./format";
   import { type Preset, fmtDay, rangeLabel } from "./dates";
   import type { Meta, StreakJson, SummaryJson, TopJson } from "./types";
 
@@ -63,6 +63,42 @@
   const shots = $derived(total("photos", "shots"));
   const cameras = $derived(items(top("photos", "shots_by_camera"), 5));
   const lenses = $derived(items(top("photos", "shots_by_lens"), 5));
+  const TOOLS: Record<string, string> = {
+    claude: "Claude Code",
+    codex: "Codex",
+    copilot: "Copilot CLI",
+    antigravity: "Antigravity",
+    gemini: "Gemini CLI",
+    cursor: "Cursor CLI",
+    opencode: "opencode",
+  };
+  const tokens = $derived(total("ai_usage", "tokens"));
+  const aiRequests = $derived(total("ai_usage", "requests") ?? 0);
+  const aiDays = $derived(
+    (summary?.series.find((s) => s.collector === "ai_usage" && s.metric === "tokens")?.days ?? []).filter(
+      (v) => v > 0,
+    ).length,
+  );
+  const kind = (k: string): number =>
+    top("ai_usage", "tokens_by_kind")?.keys.find((x) => x.key === k)?.value ?? 0;
+  const aiTools = $derived(
+    items(top("ai_usage", "tokens_by_tool"), 6, (k) => TOOLS[k] ?? k).map((i) => ({
+      ...i,
+      text: fmtTokens(i.value),
+    })),
+  );
+  const aiModels = $derived(
+    items(top("ai_usage", "tokens_by_model"), 6).map((i) => ({ ...i, text: fmtTokens(i.value) })),
+  );
+  const aiProjects = $derived(
+    items(top("ai_usage", "tokens_by_project"), 6).map((i) => ({ ...i, text: fmtTokens(i.value) })),
+  );
+  // Tools that log requests but no token counts (Cursor CLI).
+  const noTokenTools = $derived(
+    (top("ai_usage", "requests_by_tool")?.keys ?? [])
+      .filter((k) => !aiTools.some((t) => t.label === (TOOLS[k.key] ?? k.key)))
+      .map((k) => TOOLS[k.key] ?? k.key),
+  );
   const rec = $derived(summary?.records);
   const noRecords = $derived(
     !rec || (!rec.longest_session && !rec.latest_night && !rec.active_streak && !rec.commit_streak),
@@ -209,6 +245,58 @@
       </Card>
     {/if}
 
+    {#if on.has("ai_usage")}
+      <Card
+        title="AI usage"
+        subtitle="Input + output tokens; cache shown separately"
+        size="L"
+        empty={(tokens ?? 0) === 0 && aiRequests === 0}
+      >
+        <div class="ai">
+          <div class="aitop">
+            <BigNumber
+              value={fmtTokens(tokens ?? 0)}
+              label="Tokens"
+              {soFar}
+              cmp={cmp("ai_usage", "tokens")}
+            />
+            <dl class="cache">
+              <dt class="muted">Input</dt>
+              <dd class="num" title="{fmtValue(kind('input'), 'count')} tokens">{fmtTokens(kind("input"))}</dd>
+              <dt class="muted">Output</dt>
+              <dd class="num" title="{fmtValue(kind('output'), 'count')} tokens">{fmtTokens(kind("output"))}</dd>
+              <dt class="muted">Cache read</dt>
+              <dd class="num" title="{fmtValue(kind('cache_read'), 'count')} tokens">{fmtTokens(kind("cache_read"))}</dd>
+              <dt class="muted">Cache write</dt>
+              <dd class="num" title="{fmtValue(kind('cache_write'), 'count')} tokens">{fmtTokens(kind("cache_write"))}</dd>
+            </dl>
+            <p class="line muted">
+              <span class="num">{fmtValue(aiRequests, "count")}</span> requests,
+              <span class="num">{fmtValue(total("ai_usage", "sessions") ?? 0, "count")}</span> sessions
+              <span class="faint">({plural(aiDays, "active day")})</span>
+            </p>
+          </div>
+          <div class="three">
+            <div>
+              <h3 class="muted">By tool</h3>
+              <BarList items={aiTools} />
+            </div>
+            <div>
+              <h3 class="muted">By model</h3>
+              <BarList items={aiModels} />
+            </div>
+            <div>
+              <h3 class="muted">By project</h3>
+              <BarList items={aiProjects} />
+            </div>
+          </div>
+          {#if noTokenTools.length > 0}
+            <p class="line faint">{noTokenTools.join(", ")}: sessions only (no token counts on disk).</p>
+          {/if}
+        </div>
+      </Card>
+    {/if}
+
     {#if on.has("disk_memory")}
       <Card
         title="Disk & Swap"
@@ -317,6 +405,28 @@
     margin: 0 0 8px;
     font-size: 12px;
     font-weight: 600;
+  }
+  .ai {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .aitop {
+    display: flex;
+    gap: 28px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .cache {
+    font-size: 13px;
+  }
+  .three {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+  }
+  .three > div {
+    min-width: 0;
   }
   .quad {
     display: grid;

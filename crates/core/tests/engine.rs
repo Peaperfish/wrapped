@@ -18,7 +18,11 @@ struct H {
 }
 
 fn engine_at(store: Store, c: &ManualClock) -> Engine {
-    Engine::new(store, Arc::new(c.clone()), collectors::builtin()).unwrap()
+    let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
+    // AI usage is on by default and scans on the first tick; these tests are about
+    // sessions and flush timing, and scans have their own tests (scan.rs, ai.rs).
+    e.set_auto_scans(false);
+    e
 }
 
 impl H {
@@ -1156,7 +1160,7 @@ fn disable_collector_keep_or_delete() {
     assert!(!h.sessions(AI).is_empty());
 
     h.e.disable_collector(AI, true).unwrap();
-    assert_eq!(h.e.running_collectors(), vec![AU]);
+    assert_eq!(h.e.running_collectors(), vec![AU, "ai_usage"]);
     assert!(!h.sessions(AI).is_empty(), "kept");
     assert!(
         !h.e.store()

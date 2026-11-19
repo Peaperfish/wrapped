@@ -34,6 +34,15 @@ export function fmtValue(v: number, unit: UnitName): string {
   }
 }
 
+/** Token counts: 950, 12.3K, 4.56M, 1.20B. */
+export function fmtTokens(v: number): string {
+  const a = Math.abs(v);
+  if (a < 1000) return String(Math.round(v));
+  if (a < 1e6) return `${(v / 1e3).toFixed(a < 1e4 ? 2 : 1)}K`;
+  if (a < 1e9) return `${(v / 1e6).toFixed(2)}M`;
+  return `${(v / 1e9).toFixed(2)}B`;
+}
+
 /** "+12.5%", "−3.0%", "0%", or "new" when there was nothing before. */
 export function fmtPct(p: number | null): string {
   if (p === null) return "new";

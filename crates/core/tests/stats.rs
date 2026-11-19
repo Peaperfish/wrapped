@@ -6,7 +6,7 @@ mod common;
 use std::sync::Arc;
 
 use common::*;
-use wrapped_core::collector::{Agg, DayInput, DayItem, DaySample, Slice, Unit};
+use wrapped_core::collector::{Agg, AiDayRow, DayInput, DayItem, DaySample, Slice, Unit};
 use wrapped_core::stats::{DateRange, Stats, pct_change, streak};
 use wrapped_core::time::MS_PER_MIN;
 use wrapped_core::{Engine, ManualClock, Store, SystemEvent, Timestamp, collectors};
@@ -73,11 +73,38 @@ fn exercise_all_rollups() -> Vec<(&'static str, Vec<String>)> {
         value: 300.0,
         data: serde_json::json!({ "r": 1.0, "w": 2.0, "si": 3.0, "so": 4.0, "c": 5.0, "p": "warning" }),
     }];
+    let ai = vec![
+        AiDayRow {
+            time: t(15),
+            tool: "claude".into(),
+            session: "s1".into(),
+            model: "m1".into(),
+            project: "proj".into(),
+            input: 10,
+            output: 20,
+            cache_read: 300,
+            cache_write: 40,
+            requests: 2,
+        },
+        AiDayRow {
+            time: t(16),
+            tool: "cursor".into(),
+            session: "s2".into(),
+            model: "m2".into(),
+            project: String::new(),
+            input: 0,
+            output: 0,
+            cache_read: 0,
+            cache_write: 0,
+            requests: 1,
+        },
+    ];
     let input = DayInput {
         date,
         slices: &slices,
         items: &items,
         samples: &samples,
+        ai: &ai,
     };
     collectors::builtin()
         .iter()

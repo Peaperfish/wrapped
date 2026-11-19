@@ -24,9 +24,26 @@
   --accent-rgb: 61, 220, 151;
   --accent-ink: #06150e;
   --danger: #ff7a7a;
+  --danger-rgb: 255, 122, 122;
+  --warn: #f2c14e;
+  --warn-rgb: 242, 193, 78;
+
+  /* Dialogs: the dimmed, blurred page behind and the glass panel. */
+  --overlay-bg: rgba(6, 8, 13, 0.55);
+  --overlay-blur: 10px;
+  --modal-bg: rgba(20, 24, 33, 0.86);
+  --modal-border: rgba(255, 255, 255, 0.12);
+  --modal-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  --field-bg: rgba(255, 255, 255, 0.05);
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --switch-off: rgba(255, 255, 255, 0.16);
+  --switch-knob: #f4f6fb;
 
   /* Heatmap: empty, four levels of the accent, future days. */
   --cell-empty: rgba(255, 255, 255, 0.055);
+  /* Empty days inside a selected range, and the outline around the range. */
+  --heat-empty-selected: rgba(255, 255, 255, 0.12);
+  --heat-outline: rgba(var(--accent-rgb), 0.5);
   --cell-1: rgba(var(--accent-rgb), 0.22);
   --cell-2: rgba(var(--accent-rgb), 0.42);
   --cell-3: rgba(var(--accent-rgb), 0.68);
@@ -93,6 +110,23 @@ body {
 
 .muted {
   color: var(--text-dim);
+}
+.primary {
+  background: rgba(var(--accent-rgb), 0.9);
+  border-color: transparent;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.primary:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: transparent;
+}
+.danger {
+  color: var(--danger);
+  border-color: rgba(var(--danger-rgb), 0.4);
+}
+.danger:hover:not(:disabled) {
+  border-color: rgba(var(--danger-rgb), 0.8);
 }
 .faint {
   color: var(--text-faint);

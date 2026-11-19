@@ -242,11 +242,8 @@ impl Collector for Photos {
                     return Flow::Stop;
                 }
                 out.count("files_seen", 1);
-                let stamp = FileStamp {
-                    path_hash: scan::path_hash(salt, path),
-                    size: info.size,
-                    mtime_ms: info.mtime_ms,
-                };
+                let stamp =
+                    FileStamp::new(scan::path_hash(salt, path), info.size, info.mtime_ms);
                 if out.file_unchanged(stamp) {
                     out.count("files_unchanged", 1);
                     return Flow::Continue;

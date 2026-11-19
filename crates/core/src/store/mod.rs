@@ -29,14 +29,16 @@ use chrono::NaiveDate;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::collector::{
-    DayInput, DayItem, DaySample, FileStamp, ItemRecord, MAX_SAMPLE_WINDOW_MS, MetricValue,
-    OpenSession, SampleRecord, ScanUpdate, SessionRecord, Slice,
+    AiDayRow, AiRecord, DayInput, DayItem, DaySample, FileStamp, ItemRecord, MAX_SAMPLE_WINDOW_MS,
+    MetricValue, OpenSession, SampleRecord, ScanUpdate, SessionRecord, Slice,
 };
 use crate::settings::{Settings, SettingsError, collector_enabled_key};
 use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_midnight_ms};
 
 /// Local offsets in use worldwide span UTC-12..UTC+14; pad to be safe.
 const OFFSET_MARGIN_MS: i64 = 15 * MS_PER_HOUR;
+/// The AI usage collector's name (its data lives in `ai_usage` / `ai_seen`).
+const AI_USAGE: &str = "ai_usage";
 const KEY_MAX_SESSION: &str = "internal.max_session_ms";
 const SCAN_REQUEST_PREFIX: &str = "internal.scan_request.";
 const SCAN_FINGERPRINT_PREFIX: &str = "internal.scan_fingerprint.";
@@ -99,6 +101,8 @@ pub struct FlushReport {
     pub items_written: usize,
     /// `scan_state` / `scan_files` rows written or deleted.
     pub scan_rows_changed: usize,
+    /// New AI requests counted (repeats of a counted request id are not).
+    pub ai_requests_written: usize,
 }
 
 /// Everything one flush writes, in one transaction.
@@ -108,6 +112,7 @@ pub struct Batch<'a> {
     pub open: &'a [(&'static str, OpenSession)],
     pub samples: &'a [SampleRecord],
     pub items: &'a [ItemRecord],
+    pub ai: &'a [AiRecord],
     pub scans: &'a [(&'static str, ScanUpdate)],
 }
 
@@ -276,6 +281,12 @@ impl Store {
                 [collector],
             )?;
         }
+        if collector == AI_USAGE {
+            // The dedupe set goes too: the logs that still exist are counted
+            // again by the next scan (their positions went with scan_files).
+            tx.execute("DELETE FROM ai_usage", [])?;
+            tx.execute("DELETE FROM ai_seen", [])?;
+        }
         tx.execute(
             "DELETE FROM settings WHERE key = ?1",
             [format!("{SCAN_REQUEST_PREFIX}{collector}")],
@@ -308,15 +319,17 @@ impl Store {
 
     /// The per-file cache of a collector.
     pub fn scan_files(&self, collector: &str) -> Result<Vec<FileStamp>> {
-        let mut st = self
-            .conn
-            .prepare("SELECT path_hash, size, mtime_ms FROM scan_files WHERE collector = ?1")?;
+        let mut st = self.conn.prepare(
+            "SELECT path_hash, size, mtime_ms, pos, head FROM scan_files WHERE collector = ?1",
+        )?;
         let rows = st
             .query_map([collector], |r| {
                 Ok(FileStamp {
                     path_hash: r.get::<_, i64>(0)? as u64,
                     size: r.get::<_, i64>(1)? as u64,
                     mtime_ms: r.get(2)?,
+                    pos: r.get::<_, i64>(3)? as u64,
+                    head: r.get::<_, i64>(4)? as u64,
                 })
             })?
             .collect::<std::result::Result<_, _>>()?;
@@ -393,6 +406,22 @@ impl Store {
             .collect())
     }
 
+    /// True if anything has been recorded (any session, sample, item or daily
+    /// metric): the database of an existing install.
+    pub fn has_any_data(&self) -> Result<bool> {
+        for table in ["sessions", "samples", "items", "daily_metrics"] {
+            let any: bool =
+                self.conn
+                    .query_row(&format!("SELECT EXISTS(SELECT 1 FROM {table})"), [], |r| {
+                        r.get(0)
+                    })?;
+            if any {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn item_count(&self, collector: &str) -> Result<i64> {
         Ok(self.conn.query_row(
             "SELECT count(*) FROM items WHERE collector = ?1",
@@ -416,6 +445,7 @@ impl Store {
             open,
             samples,
             items,
+            ai,
             scans,
         } = *batch;
         let mut report = FlushReport::default();
@@ -498,20 +528,59 @@ impl Store {
             }
         }
 
+        for r in ai {
+            // Counted once per request id, however often it is emitted.
+            let fresh = tx
+                .prepare_cached("INSERT OR IGNORE INTO ai_seen(id_hash) VALUES (?1)")?
+                .execute([r.id as i64])?;
+            if fresh == 0 {
+                continue;
+            }
+            let hour = r.time.utc_ms.div_euclid(MS_PER_HOUR) * MS_PER_HOUR;
+            tx.prepare_cached(
+                "INSERT INTO ai_usage(hour_ms, tool, session, model, project, off,
+                                      input, output, cache_read, cache_write, requests)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1)
+                 ON CONFLICT(hour_ms, tool, session, model, project) DO UPDATE SET
+                    input = input + excluded.input,
+                    output = output + excluded.output,
+                    cache_read = cache_read + excluded.cache_read,
+                    cache_write = cache_write + excluded.cache_write,
+                    requests = requests + 1",
+            )?
+            .execute(params![
+                hour,
+                r.tool,
+                r.session,
+                r.model,
+                r.project,
+                r.time.offset_min,
+                r.input as i64,
+                r.output as i64,
+                r.cache_read as i64,
+                r.cache_write as i64
+            ])?;
+            report.ai_requests_written += 1;
+            touched.insert((AI_USAGE.to_string(), r.time.local_date()));
+        }
+
         for (collector, u) in scans {
             for f in &u.files_put {
                 report.scan_rows_changed += tx
                     .prepare_cached(
-                        "INSERT INTO scan_files(collector, path_hash, size, mtime_ms)
-                         VALUES (?1, ?2, ?3, ?4)
+                        "INSERT INTO scan_files(collector, path_hash, size, mtime_ms, pos, head)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                          ON CONFLICT(collector, path_hash) DO UPDATE SET
-                            size = excluded.size, mtime_ms = excluded.mtime_ms",
+                            size = excluded.size, mtime_ms = excluded.mtime_ms,
+                            pos = excluded.pos, head = excluded.head",
                     )?
                     .execute(params![
                         collector,
                         f.path_hash as i64,
                         f.size as i64,
-                        f.mtime_ms
+                        f.mtime_ms,
+                        f.pos as i64,
+                        f.head as i64
                     ])?;
             }
             for h in &u.files_del {
@@ -909,6 +978,47 @@ fn day_items(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<V
     Ok(out)
 }
 
+/// AI usage buckets whose local date is `date` (the `ai_usage` collector only).
+fn day_ai(tx: &Transaction<'_>, collector: &str, date: NaiveDate) -> Result<Vec<AiDayRow>> {
+    if collector != AI_USAGE {
+        return Ok(Vec::new());
+    }
+    let day0 = local_midnight_ms(date);
+    let mut stmt = tx.prepare_cached(
+        "SELECT hour_ms, off, tool, session, model, project,
+                input, output, cache_read, cache_write, requests
+         FROM ai_usage WHERE hour_ms >= ?1 AND hour_ms < ?2 ORDER BY hour_ms",
+    )?;
+    let rows = stmt.query_map(
+        params![
+            day0 - OFFSET_MARGIN_MS,
+            day0 + MS_PER_DAY + OFFSET_MARGIN_MS
+        ],
+        |r| {
+            Ok(AiDayRow {
+                time: Timestamp::new(r.get(0)?, r.get(1)?),
+                tool: r.get(2)?,
+                session: r.get(3)?,
+                model: r.get(4)?,
+                project: r.get(5)?,
+                input: r.get::<_, i64>(6)? as u64,
+                output: r.get::<_, i64>(7)? as u64,
+                cache_read: r.get::<_, i64>(8)? as u64,
+                cache_write: r.get::<_, i64>(9)? as u64,
+                requests: r.get::<_, i64>(10)? as u64,
+            })
+        },
+    )?;
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row?;
+        if row.time.local_date() == date {
+            out.push(row);
+        }
+    }
+    Ok(out)
+}
+
 /// Samples of `collector` whose local time is on `date` or up to
 /// [`MAX_SAMPLE_WINDOW_MS`] after it, sorted by time then metric.
 ///
@@ -983,8 +1093,9 @@ fn recompute_day(
     let slices = day_slices(tx, collector, date, max_session_ms)?;
     let items = day_items(tx, collector, date)?;
     let samples = day_samples(tx, collector, date)?;
+    let ai = day_ai(tx, collector, date)?;
     let fresh: BTreeMap<(String, String), f64> =
-        if slices.is_empty() && items.is_empty() && samples.is_empty() {
+        if slices.is_empty() && items.is_empty() && samples.is_empty() && ai.is_empty() {
             BTreeMap::new()
         } else {
             let input = DayInput {
@@ -992,6 +1103,7 @@ fn recompute_day(
                 slices: &slices,
                 items: &items,
                 samples: &samples,
+                ai: &ai,
             };
             match rollup(collector, &input) {
                 Some(rows) => rows
@@ -1127,13 +1239,58 @@ mod tests {
             [],
         )
         .unwrap();
-        assert_eq!(migrations::migrate(&mut conn).unwrap(), 3);
+        assert_eq!(
+            migrations::migrate(&mut conn).unwrap(),
+            migrations::MIGRATIONS.len()
+        );
         let row: (f64, Option<String>) = conn
             .query_row("SELECT value, data FROM samples", [], |r| {
                 Ok((r.get(0)?, r.get(1)?))
             })
             .unwrap();
         assert_eq!(row, (2.5, None));
+    }
+
+    #[test]
+    fn upgrade_from_v3_keeps_every_row_and_adds_ai_tables() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        for sql in &migrations::MIGRATIONS[..3] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 3).unwrap();
+        conn.execute_batch(
+            "INSERT INTO sessions VALUES ('app_usage', 1000, 60, 2000, 60, 'com.x', 0);
+             INSERT INTO samples(collector, metric, time_ms, time_off, value, data)
+                 VALUES ('disk_memory', 'm', 1000, 60, 2.5, '{}');
+             INSERT INTO items VALUES ('git', 'abc', 1000, 60, '{\"repo\":\"r\"}');
+             INSERT INTO scan_files VALUES ('photos', 77, 10, 20);
+             INSERT INTO settings VALUES ('exclude.apps', '[\"a\"]');
+             INSERT INTO daily_metrics VALUES ('2026-01-01', 'app_usage', 'screen_time_secs', '', 5);",
+        )
+        .unwrap();
+        migrations::migrate(&mut conn).unwrap();
+        let count = |t: &str| -> i64 {
+            conn.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
+                .unwrap()
+        };
+        for t in [
+            "sessions",
+            "samples",
+            "items",
+            "scan_files",
+            "settings",
+            "daily_metrics",
+        ] {
+            assert_eq!(count(t), 1, "{t}");
+        }
+        let (pos, head): (i64, i64) = conn
+            .query_row("SELECT pos, head FROM scan_files", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((pos, head), (0, 0));
+        assert_eq!(count("ai_usage"), 0);
+        assert_eq!(count("ai_seen"), 0);
     }
 
     #[test]
