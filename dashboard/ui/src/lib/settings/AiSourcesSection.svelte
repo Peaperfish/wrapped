@@ -6,6 +6,7 @@
   import CtlNote from "../CtlNote.svelte";
   import { fmtDay } from "../dates";
   import { fmtValue } from "../format";
+  import Select from "../Select.svelte";
   import Toggle from "../Toggle.svelte";
   import type { AiSourceMeta, AiToolMeta, Meta } from "../types";
 
@@ -152,11 +153,12 @@
   <h4>Add a folder</h4>
   <p class="muted small">For logs kept somewhere else (a backup, another account). Choose the tool whose format they use.</p>
   <div class="add">
-    <select bind:value={addTool} disabled={busy} aria-label="Log format">
-      {#each meta.ai.tools as t (t.id)}
-        <option value={t.id}>{t.title}</option>
-      {/each}
-    </select>
+    <Select
+      bind:value={addTool}
+      disabled={busy}
+      ariaLabel="Log format"
+      options={meta.ai.tools.map((t) => ({ value: t.id, label: t.title }))}
+    />
     <button disabled={busy} onclick={addFolder}>Choose folder…</button>
   </div>
 </section>
@@ -247,13 +249,5 @@
   .add {
     display: flex;
     gap: 8px;
-  }
-  select {
-    background: var(--field-bg);
-    color: var(--text);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
-    padding: 5px 8px;
-    font: inherit;
   }
 </style>

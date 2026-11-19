@@ -15,6 +15,7 @@
     weekday,
     weekdayShort,
   } from "./dates";
+  import Select from "./Select.svelte";
   import { fmtTokens, fmtValue } from "./format";
 
   interface Props {
@@ -327,14 +328,14 @@
           <span class="num">{daysWithData}</span> days with data{#if series?.agg === "sum" && yearTotal > 0}{" "}· <span class="num">{fmt(yearTotal)}</span> in {year}{/if}
         </span>
       {/if}
-      <label class="muted">
-        <span class="visually-hidden">Colour by</span>
-        <select value={metric} onchange={(e) => onmetric(e.currentTarget.value)}>
-          {#each metrics as m (m.id)}
-            <option value={m.id}>{m.title}</option>
-          {/each}
-        </select>
-      </label>
+      <div class="muted">
+        <Select
+          value={metric}
+          ariaLabel="Colour by"
+          onchange={onmetric}
+          options={metrics.map((m) => ({ value: m.id, label: m.title }))}
+        />
+      </div>
     </div>
   </header>
 
@@ -517,12 +518,5 @@
     width: 10px;
     height: 10px;
     border-radius: 2px;
-  }
-  .visually-hidden {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
   }
 </style>
