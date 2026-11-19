@@ -8,6 +8,7 @@
   // extend the range from where the focus was, Space picks like a click,
   // Return applies. Days after today cannot be chosen.
   import { onMount, untrack } from "svelte";
+  import { lockScroll } from "./scrollLock";
   import {
     type Range,
     type Ymd,
@@ -133,7 +134,11 @@
       onclose();
     };
     document.addEventListener("pointerdown", down, true);
-    return () => document.removeEventListener("pointerdown", down, true);
+    const unlock = lockScroll();
+    return () => {
+      unlock();
+      document.removeEventListener("pointerdown", down, true);
+    };
   });
 
   const inBand = (d: Ymd): boolean => draft.from <= d && d <= draft.to;

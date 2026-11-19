@@ -5,6 +5,7 @@
   // The list is drawn outside the card (on <body>) so it is never clipped, opens
   // upward when there is no room below, and stays inside the window.
   import { tick } from "svelte";
+  import { lockScroll } from "./scrollLock";
 
   export interface Option {
     value: string;
@@ -177,10 +178,12 @@
       if (!popup?.contains(t) && !trigger?.contains(t)) hide(false);
     };
     const away = () => hide(false);
+    const unlock = lockScroll();
     window.addEventListener("pointerdown", down, true);
     window.addEventListener("resize", away);
     window.addEventListener("blur", away);
     return () => {
+      unlock();
       window.removeEventListener("pointerdown", down, true);
       window.removeEventListener("resize", away);
       window.removeEventListener("blur", away);
