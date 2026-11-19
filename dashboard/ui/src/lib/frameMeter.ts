@@ -1,5 +1,5 @@
-// A tiny frame-rate overlay for checking scroll smoothness. Off by default;
-// ⌥⌘F toggles it and the choice is remembered. While off, no requestAnimationFrame
+// A tiny frame-rate overlay for explicit debug sessions. ⌥⌘F toggles it and
+// the choice is remembered for later debug launches. While off, no requestAnimationFrame
 // loop runs and no element exists. Shows the average fps and the slowest frame
 // over the last 2 seconds.
 import { invoke } from "@tauri-apps/api/core";
@@ -82,6 +82,7 @@ function start() {
 function stop() {
   cancelAnimationFrame(raf);
   raf = 0;
+  mark = null;
   el?.remove();
   el = null;
 }

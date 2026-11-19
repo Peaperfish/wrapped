@@ -387,6 +387,12 @@ async fn recap_get(app: tauri::AppHandle, id: String) -> Result<Value, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Whether this dashboard was launched with debug diagnostics enabled.
+#[tauri::command]
+fn debug_enabled(state: State<'_, AppState>) -> bool {
+    state.debug
+}
+
 /// A line from the page for the `--debug` log (the frame meter's marks).
 #[tauri::command]
 fn debug_log(state: State<'_, AppState>, msg: String) {
@@ -492,6 +498,7 @@ pub fn main() -> i32 {
             take_open_recap,
             save_recap_png,
             reveal_export,
+            debug_enabled,
             debug_log,
             set_window_theme
         ])
