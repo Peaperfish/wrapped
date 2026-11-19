@@ -9,6 +9,7 @@
   import { onMount, tick } from "svelte";
   import Header from "./lib/Header.svelte";
   import Heatmap from "./lib/Heatmap.svelte";
+  import { applyAppearance } from "./lib/theme";
   import Cards from "./lib/Cards.svelte";
   import SetupScreen from "./lib/SetupScreen.svelte";
   import SettingsModal from "./lib/SettingsModal.svelte";
@@ -85,6 +86,7 @@
     try {
       meta = await getMeta();
       metaError = null;
+      applyAppearance(meta.settings.theme, meta.settings.accent);
     } catch (e) {
       metaError = errorText(e);
       return;

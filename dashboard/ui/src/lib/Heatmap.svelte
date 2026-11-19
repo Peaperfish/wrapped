@@ -493,7 +493,7 @@
     transform: translate(-50%, calc(-100% - 12px));
     pointer-events: none;
     white-space: nowrap;
-    background: rgba(18, 21, 30, 0.95);
+    background: var(--tip-bg);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-sm);
     padding: 6px 10px;

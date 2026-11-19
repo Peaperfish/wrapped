@@ -11,4 +11,12 @@ git_author_emails: Array<string> | null, photos_folders: Array<string>,
 /**
  * `"off"`, `"indefinite"` or `"until"` (a timed pause still running).
  */
-pause: string, pause_until_ms: number | null, };
+pause: string, pause_until_ms: number | null, 
+/**
+ * `"system"`, `"light"` or `"dark"`.
+ */
+theme: string, 
+/**
+ * `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"`.
+ */
+accent: string, };

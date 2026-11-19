@@ -13,6 +13,8 @@
 //! | `photos.folders`                     | array of folders                        | `["~/Pictures"]` |
 //! | `photos.extensions`                  | array of extensions (case-insensitive)  | jpg jpeg heic heif arw dng |
 //! | `ai.sources`                         | array of `{id, tool, path, builtin, enabled, bookmark?}`: folders the AI usage collector reads | `[]` (tools found on this machine are added at the first scan) |
+//! | `appearance.theme`                   | `"system"`, `"light"` or `"dark"`        | `"system"` |
+//! | `appearance.accent`                  | `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"` | `"green"` |
 //! | `onboarding.done`                    | `true` / `false`, or `null` = not decided yet (see `Engine::begin_onboarding`) | `null` |
 //!
 //! Keys starting with `internal.` are bookkeeping owned by the store and are
@@ -36,6 +38,10 @@ pub const KEY_PHOTOS_FOLDERS: &str = "photos.folders";
 pub const KEY_PHOTOS_EXTENSIONS: &str = "photos.extensions";
 pub const KEY_ONBOARDING_DONE: &str = "onboarding.done";
 pub const KEY_AI_SOURCES: &str = "ai.sources";
+pub const KEY_THEME: &str = "appearance.theme";
+pub const KEY_ACCENT: &str = "appearance.accent";
+pub const THEMES: &[&str] = &["system", "light", "dark"];
+pub const ACCENTS: &[&str] = &["green", "blue", "purple", "orange", "pink"];
 pub const DEFAULT_PHOTO_EXTENSIONS: &[&str] = &["jpg", "jpeg", "heic", "heif", "arw", "dng"];
 pub const INTERNAL_PREFIX: &str = "internal.";
 
@@ -146,6 +152,10 @@ pub struct Settings {
     /// finished the first-launch checklist.
     pub onboarding_done: Option<bool>,
     pub ai_sources: Vec<AiSource>,
+    /// One of `THEMES`.
+    pub theme: String,
+    /// One of `ACCENTS`.
+    pub accent: String,
 }
 
 impl Default for Settings {
@@ -166,6 +176,8 @@ impl Default for Settings {
                 .collect(),
             onboarding_done: None,
             ai_sources: Vec::new(),
+            theme: THEMES[0].to_string(),
+            accent: ACCENTS[0].to_string(),
         }
     }
 }
@@ -235,6 +247,8 @@ impl Settings {
             }
             KEY_PHOTOS_EXTENSIONS => self.photos_extensions = extension_list(key, v)?,
             KEY_AI_SOURCES => self.ai_sources = ai_sources(key, v)?,
+            KEY_THEME => self.theme = one_of(key, v, THEMES)?,
+            KEY_ACCENT => self.accent = one_of(key, v, ACCENTS)?,
             KEY_ONBOARDING_DONE => {
                 self.onboarding_done = if v.is_null() {
                     None
@@ -292,6 +306,8 @@ impl Settings {
             KEY_GIT_EMAILS => json!(self.git_author_emails),
             KEY_PHOTOS_FOLDERS => json!(self.photos_folders),
             KEY_PHOTOS_EXTENSIONS => json!(self.photos_extensions),
+            KEY_THEME => json!(self.theme),
+            KEY_ACCENT => json!(self.accent),
             KEY_ONBOARDING_DONE => json!(self.onboarding_done),
             KEY_AI_SOURCES => Value::Array(self.ai_sources.iter().map(AiSource::to_json).collect()),
             _ => {
@@ -323,6 +339,8 @@ impl Settings {
             KEY_PHOTOS_EXTENSIONS,
             KEY_ONBOARDING_DONE,
             KEY_AI_SOURCES,
+            KEY_THEME,
+            KEY_ACCENT,
         ]
         .iter()
         .map(|k| (k.to_string(), self.get_json(k).expect("known key")))
@@ -335,6 +353,16 @@ impl Settings {
 
     pub fn pause_json(p: Pause) -> String {
         p.to_json().to_string()
+    }
+}
+
+fn one_of(key: &str, v: &Value, allowed: &[&str]) -> Result<String, SettingsError> {
+    match v.as_str() {
+        Some(s) if allowed.contains(&s) => Ok(s.to_string()),
+        _ => Err(SettingsError::invalid(
+            key,
+            &format!("expected one of: {}", allowed.join(", ")),
+        )),
     }
 }
 
@@ -532,6 +560,8 @@ mod tests {
             .unwrap();
         s.apply("collector.active_idle.enabled", "false").unwrap();
         s.apply("pause", "indefinite").unwrap();
+        s.apply("appearance.theme", "dark").unwrap();
+        s.apply("appearance.accent", "\"purple\"").unwrap();
         let rows = s.to_rows();
         let (back, skipped) =
             Settings::from_rows(rows.iter().map(|(k, v)| (k.as_str(), v.as_str())));
@@ -550,6 +580,8 @@ mod tests {
         assert!(s.apply("exclude.apps", "com.x").is_err());
         assert!(s.apply("nope", "1").is_err());
         assert!(s.apply("pause", "sometimes").is_err());
+        assert!(s.apply("appearance.theme", "\"sepia\"").is_err());
+        assert!(s.apply("appearance.accent", "3").is_err());
         assert_eq!(s, Settings::default());
     }
 
