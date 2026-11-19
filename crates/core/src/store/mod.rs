@@ -1273,7 +1273,14 @@ mod tests {
             conn.query_row(&format!("SELECT count(*) FROM {t}"), [], |r| r.get(0))
                 .unwrap()
         };
-        for t in ["sessions", "samples", "items", "scan_files", "settings", "daily_metrics"] {
+        for t in [
+            "sessions",
+            "samples",
+            "items",
+            "scan_files",
+            "settings",
+            "daily_metrics",
+        ] {
             assert_eq!(count(t), 1, "{t}");
         }
         let (pos, head): (i64, i64) = conn

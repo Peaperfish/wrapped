@@ -175,7 +175,10 @@ const USER_LINE: &str = r#"{"type":"user","timestamp":"2026-11-18T10:00:00.000Z"
 "#;
 
 fn claude_dir(tmp: &Tmp) -> PathBuf {
-    tmp.home().join(".claude").join("projects").join("-Users-x-code-proj")
+    tmp.home()
+        .join(".claude")
+        .join("projects")
+        .join("-Users-x-code-proj")
 }
 
 #[test]
@@ -183,20 +186,56 @@ fn claude_counts_each_request_once_across_lines_files_resumes_and_rescans() {
     let tmp = Tmp::new("claude");
     let s1 = claude_dir(&tmp).join("s1.jsonl");
     let s2 = claude_dir(&tmp).join("s2.jsonl");
-    let m1 = claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (10, 5, 100, 20));
+    let m1 = claude_line(
+        "m1",
+        "2026-11-18T10:00:00.000Z",
+        "s1",
+        "model-a",
+        (10, 5, 100, 20),
+    );
     // The same response again: another content block, 2 s later, same usage.
-    let m1b = claude_line("m1", "2026-11-18T10:00:02.000Z", "s1", "model-a", (10, 5, 100, 20));
-    let m2 = claude_line("m2", "2026-11-18T10:05:00.000Z", "s1", "model-a", (1, 2, 3, 4));
-    let synthetic = claude_line("m3", "2026-11-18T10:06:00.000Z", "s1", "<synthetic>", (0, 0, 0, 0));
+    let m1b = claude_line(
+        "m1",
+        "2026-11-18T10:00:02.000Z",
+        "s1",
+        "model-a",
+        (10, 5, 100, 20),
+    );
+    let m2 = claude_line(
+        "m2",
+        "2026-11-18T10:05:00.000Z",
+        "s1",
+        "model-a",
+        (1, 2, 3, 4),
+    );
+    let synthetic = claude_line(
+        "m3",
+        "2026-11-18T10:06:00.000Z",
+        "s1",
+        "<synthetic>",
+        (0, 0, 0, 0),
+    );
     // The tool is in the middle of writing a line.
-    let m6 = claude_line("m6", "2026-11-18T10:30:00.000Z", "s1", "model-a", (2, 2, 2, 2));
+    let m6 = claude_line(
+        "m6",
+        "2026-11-18T10:30:00.000Z",
+        "s1",
+        "model-a",
+        (2, 2, 2, 2),
+    );
     let (m6_head, m6_tail) = m6.split_at(40);
     write(
         &s1,
         &format!("{USER_LINE}{m1}{m1b}{m2}{synthetic}{m6_head}"),
     );
     // A forked session: earlier lines copied into a new file, plus one new response.
-    let m5 = claude_line("m5", "2026-11-18T11:00:00.000Z", "s2", "model-b", (7, 7, 0, 0));
+    let m5 = claude_line(
+        "m5",
+        "2026-11-18T11:00:00.000Z",
+        "s2",
+        "model-b",
+        (7, 7, 0, 0),
+    );
     write(&s2, &format!("{USER_LINE}{m1}{m2}{m5}"));
 
     let c = clock();
@@ -227,15 +266,30 @@ fn claude_counts_each_request_once_across_lines_files_resumes_and_rescans() {
     assert_eq!(totals(&e), t(18, 14, 103, 24, 3));
 
     // The tool finishes the line and writes one more: only those two are read.
-    let m4 = claude_line("m4", "2026-11-18T10:40:00.000Z", "s1", "model-a", (4, 4, 0, 0));
+    let m4 = claude_line(
+        "m4",
+        "2026-11-18T10:40:00.000Z",
+        "s1",
+        "model-a",
+        (4, 4, 0, 0),
+    );
     append(&s1, &format!("{m6_tail}{m4}"));
     let grown = scan(&mut e);
-    assert_eq!(grown["lines"], 2, "read from the saved position, not from the start");
+    assert_eq!(
+        grown["lines"], 2,
+        "read from the saved position, not from the start"
+    );
     assert_eq!(totals(&e), t(24, 20, 105, 26, 5));
 
     // The log is replaced by a different file (rotated): read again from the
     // start, and what was counted before is not counted twice.
-    let n1 = claude_line("n1", "2026-11-19T08:00:00.000Z", "s9", "model-a", (1, 1, 1, 1));
+    let n1 = claude_line(
+        "n1",
+        "2026-11-19T08:00:00.000Z",
+        "s9",
+        "model-a",
+        (1, 1, 1, 1),
+    );
     write(&s1, &format!("{n1}{m1}{m2}"));
     let rotated = scan(&mut e);
     assert_eq!(rotated["files_read"], 1);
@@ -254,7 +308,13 @@ fn delete_all_ai_data_then_rescan_recounts_logs_that_still_exist() {
     let tmp = Tmp::new("claude-delete");
     write(
         &claude_dir(&tmp).join("s1.jsonl"),
-        &claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (10, 5, 100, 20)),
+        &claude_line(
+            "m1",
+            "2026-11-18T10:00:00.000Z",
+            "s1",
+            "model-a",
+            (10, 5, 100, 20),
+        ),
     );
     let c = clock();
     let mut e = engine(&c, tmp.env(), None);
@@ -278,8 +338,20 @@ fn daily_metrics_are_rolled_up_from_the_buckets() {
         &claude_dir(&tmp).join("s1.jsonl"),
         &format!(
             "{}{}",
-            claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (10, 5, 100, 20)),
-            claude_line("m2", "2026-11-18T11:00:00.000Z", "s1", "model-b", (1, 2, 3, 4))
+            claude_line(
+                "m1",
+                "2026-11-18T10:00:00.000Z",
+                "s1",
+                "model-a",
+                (10, 5, 100, 20)
+            ),
+            claude_line(
+                "m2",
+                "2026-11-18T11:00:00.000Z",
+                "s1",
+                "model-b",
+                (1, 2, 3, 4)
+            )
         ),
     );
     let c = clock();
@@ -351,7 +423,10 @@ fn antigravity_reads_only_the_full_transcript_and_takes_only_the_folder_name() {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })
         .unwrap();
-    assert_eq!((model.as_str(), project.as_str(), session.as_str()), ("unknown", "demo", conv));
+    assert_eq!(
+        (model.as_str(), project.as_str(), session.as_str()),
+        ("unknown", "demo", conv)
+    );
     assert_clean(&e);
     // Again: nothing new.
     scan(&mut e);
@@ -383,7 +458,13 @@ fn a_missing_source_is_kept_checked_again_and_resumes_when_it_returns() {
     // It appears: scanned, remembered.
     write(
         &folder.join("p").join("s.jsonl"),
-        &claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (3, 3, 3, 3)),
+        &claude_line(
+            "m1",
+            "2026-11-18T10:00:00.000Z",
+            "s1",
+            "model-a",
+            (3, 3, 3, 3),
+        ),
     );
     c.advance_ms(3_600_000);
     scan(&mut e);
@@ -401,15 +482,31 @@ fn a_missing_source_is_kept_checked_again_and_resumes_when_it_returns() {
     assert_eq!(s.state, "missing");
     assert_eq!(s.last_seen_ms, Some(seen));
     assert_eq!(totals(&e).requests, 1);
-    assert_eq!(e.settings().ai_sources.len(), 1, "never removed automatically");
+    assert_eq!(
+        e.settings().ai_sources.len(),
+        1,
+        "never removed automatically"
+    );
 
     // It comes back with more: the old part is not counted twice.
     write(
         &folder.join("p").join("s.jsonl"),
         &format!(
             "{}{}",
-            claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (3, 3, 3, 3)),
-            claude_line("m2", "2026-11-18T10:10:00.000Z", "s1", "model-a", (1, 1, 1, 1))
+            claude_line(
+                "m1",
+                "2026-11-18T10:00:00.000Z",
+                "s1",
+                "model-a",
+                (3, 3, 3, 3)
+            ),
+            claude_line(
+                "m2",
+                "2026-11-18T10:10:00.000Z",
+                "s1",
+                "model-a",
+                (1, 1, 1, 1)
+            )
         ),
     );
     c.advance_ms(3_600_000);
@@ -424,7 +521,13 @@ fn disabled_and_removed_sources() {
     let folder = tmp.0.join("logs");
     write(
         &folder.join("s.jsonl"),
-        &claude_line("m1", "2026-11-18T10:00:00.000Z", "s1", "model-a", (3, 3, 3, 3)),
+        &claude_line(
+            "m1",
+            "2026-11-18T10:00:00.000Z",
+            "s1",
+            "model-a",
+            (3, 3, 3, 3),
+        ),
     );
     let sources = format!(
         r#"[{{"id":"abc123","tool":"claude","path":"{}","builtin":false,"enabled":false}}]"#,
@@ -482,7 +585,10 @@ fn tools_on_this_machine_become_sources_once_with_env_overrides() {
     assert_eq!(found.iter().filter(|s| s.tool == "claude").count(), 2);
 
     let d = ai::detect(&env);
-    assert_eq!(d.iter().map(|d| d.tool.id).collect::<Vec<_>>(), ["claude", "antigravity"]);
+    assert_eq!(
+        d.iter().map(|d| d.tool.id).collect::<Vec<_>>(),
+        ["claude", "antigravity"]
+    );
     // Nothing found, nothing added.
     let empty = Env::from_map(tmp.0.join("nope"), &[]);
     assert!(ai::prepare_sources(&settings, &hooks, &empty).is_none());
@@ -495,8 +601,12 @@ fn bookmark_create(p: &Path) -> Option<Vec<u8>> {
 }
 
 fn bookmark_resolve(b: &[u8]) -> Option<ResolvedBookmark> {
-    b.starts_with(b"bk:").then(|| ResolvedBookmark {
-        path: MOVED_TO.lock().unwrap().clone()?,
+    if !b.starts_with(b"bk:") {
+        return None;
+    }
+    let path = MOVED_TO.lock().unwrap().clone()?;
+    Some(ResolvedBookmark {
+        path,
         refreshed: Some(b"bk:new".to_vec()),
     })
 }
@@ -517,7 +627,15 @@ fn a_moved_custom_folder_is_found_again_through_its_bookmark() {
     // The same folder twice, a missing one and an unknown tool are refused.
     settings.ai_sources.push(src.clone());
     assert!(ai::new_custom_source(&settings, "codex", old.to_str().unwrap(), &hooks).is_err());
-    assert!(ai::new_custom_source(&settings, "claude", tmp.0.join("nope").to_str().unwrap(), &hooks).is_err());
+    assert!(
+        ai::new_custom_source(
+            &settings,
+            "claude",
+            tmp.0.join("nope").to_str().unwrap(),
+            &hooks
+        )
+        .is_err()
+    );
     assert!(ai::new_custom_source(&settings, "nonsense", old.to_str().unwrap(), &hooks).is_err());
 
     // The folder is renamed on the same volume.
@@ -529,7 +647,10 @@ fn a_moved_custom_folder_is_found_again_through_its_bookmark() {
     assert_eq!(fixed.len(), 1);
     assert_eq!(fixed[0].id, src.id, "same source, new path");
     assert_eq!(fixed[0].path, new.to_string_lossy());
-    assert_eq!(fixed[0].bookmark.as_deref(), Some(&*ai::hex_encode(b"bk:new")));
+    assert_eq!(
+        fixed[0].bookmark.as_deref(),
+        Some(&*ai::hex_encode(b"bk:new"))
+    );
 
     // Without a bookmark hook (Windows) nothing is guessed.
     assert!(ai::prepare_sources(&settings, &ScanHooks::default(), &env).is_none());
@@ -569,7 +690,11 @@ fn codex_turns_cumulative_totals_into_requests_and_ignores_replayed_history() {
     let file1 = day.join("rollout-2026-11-18T10-00-00-aaaa.jsonl");
     write(
         &file1,
-        &format!("{}{t1}{t1}{t3}{}", meta("sess-a"), "{\"timestamp\":\"x\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":null}}\n"),
+        &format!(
+            "{}{t1}{t1}{t3}{}",
+            meta("sess-a"),
+            "{\"timestamp\":\"x\",\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\",\"info\":null}}\n"
+        ),
     );
     // A fork replays the history under a new session id, then continues.
     let t4 = tc("2026-11-18T10:04:00.000Z", 400, 100, 50, 450);
@@ -585,7 +710,9 @@ fn codex_turns_cumulative_totals_into_requests_and_ignores_replayed_history() {
     let (model, project): (String, String) = e
         .store()
         .conn()
-        .query_row("SELECT DISTINCT model, project FROM ai_usage", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_row("SELECT DISTINCT model, project FROM ai_usage", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .unwrap();
     assert_eq!((model.as_str(), project.as_str()), ("gpt-test", "cx"));
     assert_clean(&e);
@@ -615,7 +742,9 @@ fn gemini_reads_session_documents_and_jsonl() {
     let (model, project): (String, String) = e
         .store()
         .conn()
-        .query_row("SELECT model, project FROM ai_usage", [], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_row("SELECT model, project FROM ai_usage", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .unwrap();
     assert_eq!((model.as_str(), project.as_str()), ("gemini-test", "gproj"));
     assert_clean(&e);
@@ -636,21 +765,31 @@ fn copilot_counts_usage_events_or_falls_back_to_sessions() {
     let tmp = Tmp::new("copilot");
     let root = tmp.home().join(".copilot");
     let ev = |ty: &str, ts: &str, extra: &str| {
-        format!("{{\"type\":\"{ty}\",\"id\":\"e-{ts}\",\"timestamp\":\"{ts}\",\"data\":{{\"content\":\"SECRET\"{extra}}}}}\n")
+        format!(
+            "{{\"type\":\"{ty}\",\"id\":\"e-{ts}\",\"timestamp\":\"{ts}\",\"data\":{{\"content\":\"SECRET\"{extra}}}}}\n"
+        )
     };
     write(
         &root.join("session-state/sess-1/events.jsonl"),
         &format!(
             "{}{}{}",
             ev("session.start", "2026-11-18T09:00:00Z", ""),
-            ev("assistant.usage", "2026-11-18T09:00:05Z", ",\"model\":\"cp-test\",\"inputTokens\":50,\"outputTokens\":5,\"cacheReadTokens\":10,\"cacheWriteTokens\":2"),
+            ev(
+                "assistant.usage",
+                "2026-11-18T09:00:05Z",
+                ",\"model\":\"cp-test\",\"inputTokens\":50,\"outputTokens\":5,\"cacheReadTokens\":10,\"cacheWriteTokens\":2"
+            ),
             ev("assistant.message", "2026-11-18T09:00:06Z", "")
         ),
     );
     // A session whose usage events were not saved: one request, no tokens.
     write(
         &root.join("session-state/sess-2/events.jsonl"),
-        &format!("{}{}", ev("session.start", "2026-11-18T10:00:00Z", ""), ev("assistant.message", "2026-11-18T10:00:06Z", "")),
+        &format!(
+            "{}{}",
+            ev("session.start", "2026-11-18T10:00:00Z", ""),
+            ev("assistant.message", "2026-11-18T10:00:06Z", "")
+        ),
     );
     let c = clock();
     let mut e = engine(&c, tmp.env(), Some(&source_for("copilot", &root)));
@@ -672,8 +811,16 @@ fn cursor_records_sessions_without_tokens() {
         conn.execute_batch("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT); CREATE TABLE blobs (id TEXT, data BLOB);")
             .unwrap();
         let json = r#"{"agentId":"a1","name":"SECRET-TITLE","createdAt":1793581200000,"lastUsedModel":"cursor-test"}"#;
-        conn.execute("INSERT INTO meta VALUES ('0', ?1)", [ai::hex_encode(json.as_bytes())]).unwrap();
-        conn.execute("INSERT INTO blobs VALUES ('x', ?1)", [b"SECRET message blob".to_vec()]).unwrap();
+        conn.execute(
+            "INSERT INTO meta VALUES ('0', ?1)",
+            [ai::hex_encode(json.as_bytes())],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO blobs VALUES ('x', ?1)",
+            [b"SECRET message blob".to_vec()],
+        )
+        .unwrap();
     }
     let c = clock();
     let mut e = engine(&c, tmp.env(), Some(&source_for("cursor", &root)));
@@ -695,13 +842,23 @@ fn opencode_reads_finished_message_files_and_the_database() {
     let tmp = Tmp::new("opencode");
     let root = tmp.home().join(".local/share/opencode");
     let msg = |id: &str, done: bool, i: u64| {
-        let completed = if done { ",\"completed\":1793581300000" } else { "" };
+        let completed = if done {
+            ",\"completed\":1793581300000"
+        } else {
+            ""
+        };
         format!(
             "{{\"id\":\"{id}\",\"sessionID\":\"ses1\",\"role\":\"assistant\",\"modelID\":\"oc-test\",\"time\":{{\"created\":1793581200000{completed}}},\"path\":{{\"cwd\":\"/home/x/work/ocp\"}},\"summary\":\"SECRET\",\"tokens\":{{\"input\":{i},\"output\":4,\"reasoning\":1,\"cache\":{{\"read\":7,\"write\":3}}}}}}"
         )
     };
-    write(&root.join("storage/message/ses1/m1.json"), &msg("m1", true, 10));
-    write(&root.join("storage/message/ses1/m2.json"), &msg("m2", false, 99)); // still streaming
+    write(
+        &root.join("storage/message/ses1/m1.json"),
+        &msg("m1", true, 10),
+    );
+    write(
+        &root.join("storage/message/ses1/m2.json"),
+        &msg("m2", false, 99),
+    ); // still streaming
     write(
         &root.join("storage/message/ses1/u.json"),
         r#"{"id":"u1","role":"user","content":"SECRET"}"#,
@@ -712,7 +869,10 @@ fn opencode_reads_finished_message_files_and_the_database() {
     assert_eq!(totals(&e), t(10, 5, 7, 3, 1));
     assert_clean(&e);
     // The streaming message finishes: counted now, once.
-    write(&root.join("storage/message/ses1/m2.json"), &msg("m2", true, 20));
+    write(
+        &root.join("storage/message/ses1/m2.json"),
+        &msg("m2", true, 20),
+    );
     scan(&mut e);
     assert_eq!(totals(&e), t(30, 10, 14, 6, 2));
 
@@ -720,8 +880,13 @@ fn opencode_reads_finished_message_files_and_the_database() {
     let db = root.join("opencode.db");
     {
         let conn = Connection::open(&db).unwrap();
-        conn.execute_batch("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT);").unwrap();
-        conn.execute("INSERT INTO message VALUES ('d1', 'ses2', ?1)", [msg("d1", true, 5)]).unwrap();
+        conn.execute_batch("CREATE TABLE message (id TEXT, session_id TEXT, data TEXT);")
+            .unwrap();
+        conn.execute(
+            "INSERT INTO message VALUES ('d1', 'ses2', ?1)",
+            [msg("d1", true, 5)],
+        )
+        .unwrap();
     }
     scan(&mut e);
     assert_eq!(totals(&e).requests, 3);
@@ -734,7 +899,11 @@ fn tool_registry_matches_the_adapters() {
         assert!(ai::adapter(t.id).is_some(), "{}", t.id);
         assert!(!t.title.is_empty() && !t.note.is_empty());
     }
-    let tested: Vec<&str> = ai::TOOLS.iter().filter(|t| t.tested).map(|t| t.id).collect();
+    let tested: Vec<&str> = ai::TOOLS
+        .iter()
+        .filter(|t| t.tested)
+        .map(|t| t.id)
+        .collect();
     assert_eq!(tested, ["claude", "antigravity"]);
     assert!(!ai::tool("cursor").unwrap().tokens);
     let _ = AiSource {

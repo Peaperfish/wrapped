@@ -113,10 +113,12 @@ pub fn adapter(tool_id: &str) -> Option<&'static dyn Adapter> {
     adapters().into_iter().find(|a| a.info().id == tool_id)
 }
 
+type VarLookup = std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
 /// Environment variables and the home folder, injectable for tests.
 #[derive(Clone)]
 pub struct Env {
-    vars: std::sync::Arc<dyn Fn(&str) -> Option<String> + Send + Sync>,
+    vars: VarLookup,
     pub home: PathBuf,
 }
 
@@ -375,7 +377,7 @@ impl<'a> ScanCx<'a> {
         let mut n: u64 = 0;
         loop {
             n += 1;
-            if n % CANCEL_EVERY == 0 && out.cancelled() {
+            if n.is_multiple_of(CANCEL_EVERY) && out.cancelled() {
                 return; // progress is not saved for this file: it is read again
             }
             match lines.next_line() {
@@ -518,7 +520,7 @@ pub fn hex_encode(b: &[u8]) -> String {
 }
 
 pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     (0..s.len() / 2)

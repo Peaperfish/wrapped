@@ -427,10 +427,13 @@ pub struct ScanHooks {
     pub command_setup: Option<fn(&mut std::process::Command)>,
     /// A bookmark for a folder that survives it being moved or renamed on the
     /// same volume (macOS). Opaque bytes, stored with the AI source.
-    pub bookmark_create: Option<fn(&std::path::Path) -> Option<Vec<u8>>>,
+    pub bookmark_create: Option<BookmarkCreate>,
     /// Where a bookmark points now, and a refreshed bookmark if it went stale.
-    pub bookmark_resolve: Option<fn(&[u8]) -> Option<ResolvedBookmark>>,
+    pub bookmark_resolve: Option<BookmarkResolve>,
 }
+
+pub type BookmarkCreate = fn(&std::path::Path) -> Option<Vec<u8>>;
+pub type BookmarkResolve = fn(&[u8]) -> Option<ResolvedBookmark>;
 
 /// The result of resolving a folder bookmark.
 #[derive(Debug, Clone, PartialEq)]

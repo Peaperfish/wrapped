@@ -69,7 +69,7 @@ impl Adapter for Antigravity {
             // .../brain/<conversation>/.system_generated/logs/transcript_full.jsonl
             let session = f
                 .ancestors()
-                .nth(4)
+                .nth(3)
                 .and_then(|p| p.file_name())
                 .and_then(|n| n.to_str())
                 .unwrap_or("")

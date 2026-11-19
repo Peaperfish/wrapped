@@ -64,7 +64,7 @@ impl Adapter for Gemini {
             let project = f
                 .parent()
                 .and_then(Path::parent)
-                .map(|d| project_name(d))
+                .map(project_name)
                 .unwrap_or_default();
             let stem = f
                 .file_stem()
