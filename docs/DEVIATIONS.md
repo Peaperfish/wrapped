@@ -213,7 +213,8 @@ design doc itself is left as written.
   checklist is confirmed; existing databases get `onboarding.done = true` and
   nothing else.
 - **Headline = input + output tokens**; cache is shown separately.
-- **Antigravity model is `unknown`** (the transcript has none).
+- **Antigravity model** comes from the conversation database, per step;
+  `unknown` only when it has none (see AI_SOURCES.md).
 - **Delete all data** keeps settings and `onboarding.done` and resets AI file
   positions; AI usage whose logs are gone cannot be re-imported (the
   confirmation says so).
