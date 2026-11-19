@@ -1,7 +1,6 @@
-// Recap slides as self-contained SVG (1080 × 1920). The same string is shown
-// in the story player (with entrance animations) and drawn onto a canvas for
-// the PNG export (without them), so the export matches the screen by
-// construction. Colours are baked in from the current theme and accent (see
+// Recap slides as self-contained SVG. The player has landscape and portrait
+// layouts and the PNG export uses the portrait layout without animations.
+// Colours are baked in from the current theme and accent (see
 // palette.js); text is measured with a canvas in the same font and shrunk or
 // truncated with an ellipsis so it never leaves its box.
 import { GLOW_ALPHA, slidePalette, type SlidePalette } from "./palette.js";
@@ -10,6 +9,8 @@ import type { RecapJson, SlideJson } from "../types";
 
 export const W = 1080;
 export const H = 1920;
+const LANDSCAPE_W = 1600;
+const LANDSCAPE_H = 900;
 const M = 96; // side margin
 const CW = W - 2 * M; // content width
 export const FONT = `-apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif`;
@@ -125,9 +126,10 @@ function measure(text: string, size: number, weight: number): number {
 }
 
 /** The largest size ≤ `max` (≥ `min`) at which `text` fits `width`; below
- *  `min` the text is cut with an ellipsis. A 3 % margin covers rounding. */
+ *  `min` the text is cut with an ellipsis. Allow for differences between
+ *  canvas text measurement and SVG glyph bounds. */
 export function fit(text: string, weight: number, max: number, width: number, min = max * 0.45) {
-  const w = width * 0.97;
+  const w = width * 0.92;
   const at = measure(text, max, weight);
   if (at <= w) return { text, size: max };
   const size = Math.max(min, Math.floor((max * w) / at));
@@ -229,9 +231,9 @@ function kicker(s: string, p: SlidePalette, y = 330): string {
   return text(M, y, s.toUpperCase(), { size: 40, weight: 700, fill: p.dim, spacing: 6, a: "a-fade", d: 0 });
 }
 
-function chip(x: number, y: number, s: string, p: SlidePalette, delay: number): string {
-  const f = fit(s, 600, 40, CW - 60, 28);
-  const w = Math.min(CW, measure(f.text, f.size, 600) + 64);
+function chip(x: number, y: number, s: string, p: SlidePalette, delay: number, width = CW): string {
+  const f = fit(s, 600, 40, width - 60, 28);
+  const w = Math.min(width, measure(f.text, f.size, 600) + 64);
   return anim(
     "a-fade",
     delay,
@@ -240,11 +242,11 @@ function chip(x: number, y: number, s: string, p: SlidePalette, delay: number): 
   );
 }
 
-function bar(x: number, y: number, w: number, h: number, frac: number, p: SlidePalette, delay: number): string {
-  const fw = Math.max(h, w * Math.max(0, Math.min(1, frac)));
+function bar(x: number, y: number, w: number, h: number, frac: number, p: SlidePalette, delay: number, minWidth = h): string {
+  const fw = Math.max(minWidth, w * Math.max(0, Math.min(1, frac)));
   return (
     `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${h / 2}" fill="${p.track}"/>` +
-    anim("a-growx", delay, `<rect x="${x}" y="${y}" width="${fw.toFixed(1)}" height="${h}" rx="${h / 2}" fill="${p.hi}"/>`)
+    anim("a-growx", delay, `<rect x="${x}" y="${y}" width="${fw}" height="${h}" rx="${h / 2}" fill="${p.hi}"/>`)
   );
 }
 
@@ -272,12 +274,12 @@ function hourBars(x: number, y: number, w: number, h: number, hours: number[], p
 }
 
 /** A "label / value" pair, value fitted to the width. */
-function fact(y: number, label: string, value: string, p: SlidePalette, delay: number, valueMax = 64): string {
+function fact(y: number, label: string, value: string, p: SlidePalette, delay: number, valueMax = 64, x = M, width = CW): string {
   return anim(
     "a-up",
     delay,
-    text(M, y, label.toUpperCase(), { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
-      line(M, y + valueMax + 18, value, CW, valueMax, { weight: 700, fill: p.ink }, 36),
+    text(x, y, label.toUpperCase(), { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
+      line(x, y + valueMax + 18, value, width, valueMax, { weight: 700, fill: p.ink }, 36),
   );
 }
 
@@ -300,21 +302,26 @@ const ANIM_CSS = `
 @media (prefers-reduced-motion: reduce){.a-fade,.a-up,.a-growx,.a-growy{animation:none!important;opacity:1;transform:none}}
 `;
 
-function frame(kind: string, p: SlidePalette, ctx: SlideCtx, body: string, animate: boolean): string {
-  const size = animate ? `width="100%" height="100%"` : `width="${W}" height="${H}"`;
+function frame(kind: string, p: SlidePalette, ctx: SlideCtx, body: string, animate: boolean, landscape: boolean): string {
+  const w = landscape ? LANDSCAPE_W : W;
+  const h = landscape ? LANDSCAPE_H : H;
+  const headerY = landscape ? 112 : 200;
+  const size = animate ? `width="100%" height="100%"` : `width="${w}" height="${h}"`;
   const id = `g-${kind}`;
   const label = ctx.recap.label + (ctx.recap.in_progress ? " so far" : "");
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" ${size} font-family='${FONT}'>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" ${size} font-family='${FONT}'>` +
     (animate ? `<style>${ANIM_CSS}</style>` : "") +
     `<defs>` +
     `<linearGradient id="${id}-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${p.bg1}"/><stop offset="1" stop-color="${p.bg2}"/></linearGradient>` +
     `<radialGradient id="${id}-glow"><stop offset="0" stop-color="${p.glow}" stop-opacity="${GLOW_ALPHA}"/><stop offset="1" stop-color="${p.glow}" stop-opacity="0"/></radialGradient>` +
     `</defs>` +
-    `<rect width="${W}" height="${H}" fill="url(#${id}-bg)"/>` +
-    decoration(kind, `url(#${id}-glow)`, p) +
-    text(M, 200, "WRAPPED", { size: 34, weight: 800, fill: p.hi, spacing: 8 }) +
-    line(W - M, 200, label, 560, 34, { weight: 600, fill: p.dim, anchor: "end" }, 24) +
+    `<rect width="${w}" height="${h}" fill="url(#${id}-bg)"/>` +
+    (landscape
+      ? `<circle cx="${w - M}" cy="${h}" r="680" fill="url(#${id}-glow)"/>`
+      : decoration(kind, `url(#${id}-glow)`, p)) +
+    text(M, headerY, "WRAPPED", { size: 34, weight: 800, fill: p.hi, spacing: 8 }) +
+    line(w - M, headerY, label, 560, 34, { weight: 600, fill: p.dim, anchor: "end" }, 24) +
     body +
     `</svg>`
   );
@@ -355,6 +362,95 @@ function decoration(kind: string, glow: string, p: SlidePalette): string {
 const KIND_WORD: Record<string, string> = { week: "week", month: "month", year: "year" };
 
 const appName = (ctx: SlideCtx, id: string) => ctx.names[id] ?? id;
+
+function appTime(secs: number, share: number): string {
+  const pct = share * 100;
+  return `${hm(secs)} · ${pct > 0 && pct < 1 ? "<1" : Math.round(pct)}%`;
+}
+
+function timeOfDay(s: Extract<SlideJson, { kind: "time_of_day" }>) {
+  // Match the local hour buckets in core's recap::day_label.
+  const [title, share, range] =
+    s.label === "night_owl" ? ["Night owl", s.night_share, "22:00–05:00"]
+    : s.label === "early_bird" ? ["Early bird", s.morning_share, "05:00–12:00"]
+    : ["Daytime", 1 - s.night_share - s.morning_share, "12:00–22:00"];
+  return {
+    title,
+    detail: `${Math.round(share * 100)}% of screen time · ${range}`,
+    peak: `${hourLabel(s.peak_hour)}–${hourLabel((s.peak_hour + 1) % 24)}`,
+  };
+}
+
+interface RecordValue {
+  label: string;
+  value: string;
+  detail: string;
+  count?: { n: number; f: Fmt };
+}
+
+function recordValues(s: Extract<SlideJson, { kind: "records" }>, ctx: SlideCtx): RecordValue[] {
+  const entries: RecordValue[] = [];
+  if (s.longest_session) {
+    const { secs, app } = s.longest_session;
+    entries.push({
+      label: "Longest session",
+      value: hm(secs),
+      detail: `in ${appName(ctx, app)}`,
+      count: { n: secs, f: "hm" },
+    });
+  }
+  if (s.latest_night) {
+    const { night, clock_min } = s.latest_night;
+    const { y, m, d } = parseDay(night);
+    const weekday = WEEKDAYS[(new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7]?.slice(0, 3);
+    entries.push({ label: "Latest night", value: clock(clock_min), detail: `the night of ${weekday} ${shortDate(night)}` });
+  }
+  if (s.streak) {
+    const { days, from, to } = s.streak;
+    entries.push({
+      label: "Longest streak",
+      value: fmt("days", days),
+      detail: days === 1 ? shortDate(from) : `${shortDate(from)} – ${shortDate(to)}`,
+      count: { n: days, f: "days" },
+    });
+  }
+  return entries;
+}
+
+function recordBlock(record: RecordValue, x: number, y: number, width: number, max: number, delay: number, p: SlidePalette): string {
+  const fitted = fit(record.value, 800, max, width, 60);
+  return anim(
+    "a-up",
+    delay,
+    text(x, y, record.label.toUpperCase(), { size: 34, weight: 700, fill: p.dim, spacing: 4 }) +
+      text(x, y + max + 10, fitted.text, {
+        size: fitted.size,
+        weight: 800,
+        fill: p.hi,
+        ...(fitted.text === record.value ? record.count : {}),
+      }) +
+      line(x, y + max + 90, record.detail, width, 48, { weight: 600, fill: p.ink }, 28),
+  );
+}
+
+const SUMMARY_LABELS: Record<string, string> = {
+  screen_time: "Screen time",
+  top_app: "Top app",
+  commits: "Commits",
+  photos: "Photos",
+  ai_tokens: "AI tokens",
+  streak: "Longest streak",
+  disk_written: "Disk written",
+  active_days: "Active days",
+};
+
+function summaryValue(it: Extract<SlideJson, { kind: "summary" }>["items"][number], ctx: SlideCtx) {
+  const label = SUMMARY_LABELS[it.id] ?? it.id;
+  if (it.id === "top_app") return { label, value: appName(ctx, it.text ?? "") };
+  const formats: Record<string, Fmt> = { screen_time: "hm", ai_tokens: "tokens", disk_written: "gb", streak: "days" };
+  const f = formats[it.id] ?? "int";
+  return { label, value: fmt(f, it.value), f };
+}
 
 function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
   const r = ctx.recap;
@@ -397,39 +493,31 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
       s.apps.slice(0, 5).forEach((a, i) => {
         const y = 520 + i * rowH;
         const name = appName(ctx, a.key);
-        const pct = a.share * 100;
-        const right = `${hm(a.secs)} · ${pct > 0 && pct < 1 ? "<1" : Math.round(pct)}%`;
-        const rw = measure(right, 40, 600) + 24;
+        const rowX = M + 110;
+        const rowWidth = CW - 110;
         const nameMax = i === 0 ? 76 : 60;
         out += anim(
           "a-up",
           120 + i * 110,
           text(M, y, String(i + 1), { size: i === 0 ? 96 : 72, weight: 800, fill: p.hi }) +
-            line(M + 110, y, name, CW - 110, nameMax, { weight: 700, fill: p.ink }, Math.round(nameMax * 0.75)) +
-            text(M + 110, y + 66, right, { size: 40, weight: 600, fill: p.dim }),
+            line(rowX, y, name, rowWidth, nameMax, { weight: 700, fill: p.ink }, Math.round(nameMax * 0.75)) +
+            text(rowX, y + 60, appTime(a.secs, a.share), { size: 40, weight: 600, fill: p.dim }),
         );
-        out += bar(M + 110 + rw, y + 40, Math.max(60, CW - 110 - rw), 22, a.secs / (s.apps[0]?.secs || 1), p, 250 + i * 110);
+        out += bar(rowX, y + 84, rowWidth, 22, a.share, p, 250 + i * 110, 0);
       });
       return out;
     }
     case "time_of_day": {
-      const word = s.label === "night_owl" ? "Night owl" : s.label === "early_bird" ? "Early bird" : "Daytime";
-      const sub =
-        s.label === "night_owl"
-          ? `${Math.round(s.night_share * 100)}% of your time was after 22:00`
-          : s.label === "early_bird"
-            ? `${Math.round(s.morning_share * 100)}% of your time was before noon`
-            : `Most of your time was between 12:00 and 22:00`;
+      const { title, detail, peak } = timeOfDay(s);
       let out = kicker("Time of day", p);
-      out += text(M, 500, "You're a", { size: 64, weight: 600, fill: p.ink, a: "a-fade", d: 100 });
-      out += line(M, 690, word, CW, 190, { weight: 800, fill: p.hi, a: "a-up", d: 200 });
-      out += line(M, 790, sub, CW, 46, { weight: 600, fill: p.dim, a: "a-fade", d: 400 }, 30);
+      out += line(M, 630, title, CW, 190, { weight: 800, fill: p.hi, a: "a-up", d: 200 });
+      out += line(M, 750, detail, CW, 46, { weight: 600, fill: p.dim, a: "a-fade", d: 400 }, 36);
       out += hourBars(M, 960, CW, 520, s.hours, s.peak_hour, p, 500);
       out += anim(
         "a-up",
         900,
-        text(M, 1680, "PEAK HOUR", { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
-          text(M, 1780, hourLabel(s.peak_hour), { size: 96, weight: 800, fill: p.ink }),
+        text(M, 1680, "PEAK HOUR · LOCAL TIME", { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
+          text(M, 1780, peak, { size: 96, weight: 800, fill: p.ink }),
       );
       return out;
     }
@@ -443,43 +531,12 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
     }
     case "records": {
       let out = kicker("Records", p);
-      let y = 520;
-      let d = 100;
-      const block = (label: string, big: string, n: number | undefined, f: Fmt | undefined, sub: string) => {
-        const fitted = fit(big, 800, 150, CW, 60);
-        const counts = n !== undefined && f !== undefined && fitted.text === big;
-        out += anim(
-          "a-up",
-          d,
-          text(M, y, label.toUpperCase(), { size: 34, weight: 700, fill: p.dim, spacing: 4 }) +
-            text(M, y + 160, fitted.text, {
-              size: fitted.size,
-              weight: 800,
-              fill: p.hi,
-              ...(counts ? { n, f } : {}),
-            }) +
-            line(M, y + 240, sub, CW, 48, { weight: 600, fill: p.ink }, 28),
-        );
-        y += 400;
-        d += 200;
-      };
-      if (s.longest_session) {
-        block("Longest session", hm(s.longest_session.secs), s.longest_session.secs, "hm", `in ${appName(ctx, s.longest_session.app)}`);
-      }
-      if (s.latest_night) {
-        const p2 = parseDay(s.latest_night.night);
-        const wd = WEEKDAYS[(new Date(Date.UTC(p2.y, p2.m - 1, p2.d)).getUTCDay() + 6) % 7]?.slice(0, 3);
-        block("Latest night", clock(s.latest_night.clock_min), undefined, undefined, `the night of ${wd} ${shortDate(s.latest_night.night)}`);
-      }
-      if (s.streak) {
-        block(
-          "Longest streak",
-          fmt("days", s.streak.days),
-          s.streak.days,
-          "days",
-          s.streak.days === 1 ? shortDate(s.streak.from) : `${shortDate(s.streak.from)} – ${shortDate(s.streak.to)}`,
-        );
-      }
+      const records = recordValues(s, ctx);
+      const start = records.length === 1 ? 920 : records.length === 2 ? 690 : 520;
+      const gap = records.length === 2 ? 460 : 400;
+      records.forEach((record, i) => {
+        out += recordBlock(record, M, start + i * gap, CW, 150, 100 + i * 200, p);
+      });
       return out;
     }
     case "git": {
@@ -555,51 +612,16 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
         d: 0,
       });
       out += line(M, 590, "in numbers", CW, 110, { weight: 800, fill: p.hi, a: "a-up", d: 100 });
-      const label: Record<string, string> = {
-        screen_time: "Screen time",
-        top_app: "Top app",
-        commits: "Commits",
-        photos: "Photos",
-        ai_tokens: "AI tokens",
-        streak: "Longest streak",
-        disk_written: "Disk written",
-        active_days: "Active days",
-      };
       const cellH = 220;
       s.items.forEach((it, i) => {
         const y = 700 + i * cellH;
-        let value: string;
-        let f: Fmt | undefined;
-        switch (it.id) {
-          case "screen_time":
-            value = hm(it.value);
-            f = "hm";
-            break;
-          case "top_app":
-            value = appName(ctx, it.text ?? "");
-            break;
-          case "ai_tokens":
-            value = tokens(it.value);
-            f = "tokens";
-            break;
-          case "disk_written":
-            value = gb(it.value);
-            f = "gb";
-            break;
-          case "streak":
-            value = fmt("days", it.value);
-            f = "days";
-            break;
-          default:
-            value = fmt("int", it.value);
-            f = "int";
-        }
+        const { label, value, f } = summaryValue(it, ctx);
         const fitted = fit(value, 800, 110, CW, f ? 44 : 64);
         out += `<rect x="${M}" y="${y + 12}" width="${CW}" height="3" fill="${p.dim}" fill-opacity="0.35"/>`;
         out += anim(
           "a-up",
           200 + i * 120,
-          text(M, y + 72, (label[it.id] ?? it.id).toUpperCase(), { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
+          text(M, y + 72, label.toUpperCase(), { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
             text(M, y + 72 + 12 + fitted.size * 0.9, fitted.text, {
               size: fitted.size,
               weight: 800,
@@ -613,12 +635,171 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
   }
 }
 
+function landscapeBody(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
+  const r = ctx.recap;
+  const width = LANDSCAPE_W - 2 * M;
+  const right = 850;
+  const leftWidth = right - M - 64;
+  const rightWidth = LANDSCAPE_W - M - right;
+  const period = r.kind === "year" ? r.range.from.slice(0, 4) : KIND_WORD[r.kind];
+  const heading = (label: string) => kicker(label, p, 230);
+  const hero = (value: number, f: Fmt, max = 146) =>
+    bigNumber(M, 490, value, f, leftWidth, max, { fill: p.hi, a: "a-up", d: 100 }).svg;
+  const caption = (label: string, y = 568) =>
+    line(M, y, label, leftWidth, 46, { weight: 600, fill: p.ink, a: "a-fade", d: 350 }, 32);
+  const change = (pct: number | null, y = 628) => chip(M, y, changeText(pct, ctx), p, 500, leftWidth);
+
+  switch (s.kind) {
+    case "intro": {
+      const active = `${s.active_days} active ${s.active_days === 1 ? "day" : "days"} of ${s.days}`;
+      let out =
+        line(M, 440, `Your ${period ?? r.kind}`, leftWidth, 128, { weight: 800, fill: p.ink, a: "a-up", d: 0 }) +
+        line(M, 580, "wrapped.", leftWidth, 128, { weight: 800, fill: p.hi, a: "a-up", d: 120 });
+      if (s.screen_secs) {
+        out += bigNumber(right, 476, s.screen_secs, "hm", rightWidth, 126, { fill: p.hi, a: "a-up", d: 350 }).svg;
+        out += text(right, 550, "on screen", { size: 44, weight: 600, fill: p.ink, a: "a-fade", d: 500 });
+      }
+      return out + chip(right, s.screen_secs ? 598 : 430, active, p, 650, rightWidth);
+    }
+    case "screen_time": {
+      let out = heading("Screen time") + hero(s.total_secs, "hm") + caption(`That's ${hm(s.daily_avg_secs)} a day`);
+      out += text(M, 626, `on ${s.screen_days} ${s.screen_days === 1 ? "day" : "days"} with screen time`, {
+        size: 34, weight: 500, fill: p.dim, a: "a-fade", d: 450,
+      });
+      out += change(s.change_pct, 672);
+      if (s.busiest_weekday && r.kind !== "week") {
+        out += fact(393, "Busiest weekday", `${WEEKDAYS[s.busiest_weekday.weekday]}s`, p, 650, 86, right, rightWidth);
+        out += text(right, 563, `${hm(s.busiest_weekday.avg_secs)} on average`, {
+          size: 40, weight: 600, fill: p.dim, a: "a-fade", d: 800,
+        });
+      }
+      return out;
+    }
+    case "top_apps": {
+      const apps = s.apps.slice(0, 5);
+      const barX = 815;
+      const barWidth = 375;
+      const firstY = 348 + (5 - apps.length) * 50;
+      let out = heading("Top apps");
+      apps.forEach((a, i) => {
+        const y = firstY + i * 100;
+        const delay = 120 + i * 110;
+        out += anim(
+          "a-up",
+          delay,
+          text(M, y, String(i + 1), { size: 52, weight: 800, fill: p.hi }) +
+            line(M + 74, y, appName(ctx, a.key), barX - M - 114, 54, { weight: 700, fill: p.ink }, 40) +
+            line(LANDSCAPE_W - M, y, appTime(a.secs, a.share), 290, 38, {
+              weight: 600, fill: p.dim, anchor: "end",
+            }, 32),
+        );
+        out += bar(barX, y - 30, barWidth, 24, a.share, p, delay + 130, 0);
+      });
+      return out;
+    }
+    case "time_of_day": {
+      const { title, detail, peak } = timeOfDay(s);
+      return heading("Time of day") +
+        line(M, 435, title, leftWidth, 122, { weight: 800, fill: p.hi, a: "a-up", d: 150 }) +
+        line(M, 507, detail, leftWidth, 40, { weight: 600, fill: p.dim, a: "a-fade", d: 350 }, 32) +
+        fact(640, "Peak hour · local time", peak, p, 700, 62, M, leftWidth) +
+        hourBars(right, 330, rightWidth, 350, s.hours, s.peak_hour, p, 400);
+    }
+    case "busiest_day":
+      return heading("Busiest day") +
+        line(M, 475, WEEKDAYS[s.weekday] ?? "", leftWidth, 140, { weight: 800, fill: p.hi, a: "a-up", d: 100 }) +
+        line(M, 565, longDate(s.date), leftWidth, 52, { weight: 700, fill: p.ink, a: "a-fade", d: 300 }) +
+        bigNumber(right, 475, s.secs, "hm", rightWidth, 126, { fill: p.ink, a: "a-up", d: 500 }).svg +
+        text(right, 565, "on screen that day", { size: 44, weight: 600, fill: p.dim, a: "a-fade", d: 650 });
+    case "records": {
+      const records = recordValues(s, ctx);
+      const gap = 48;
+      const start = records.length === 1 ? M + 220 : M;
+      const columnWidth = (LANDSCAPE_W - 2 * start - gap * (records.length - 1)) / Math.max(1, records.length);
+      return heading("Records") + records.map((record, i) =>
+        recordBlock(record, start + i * (columnWidth + gap), 425, columnWidth, records.length === 3 ? 116 : 140, 100 + i * 180, p),
+      ).join("");
+    }
+    case "git": {
+      let out = heading("Git") + hero(s.commits, "int") + caption(s.commits === 1 ? "commit" : "commits") + change(s.change_pct);
+      if (s.top_repo) out += fact(330, "Top repository", s.top_repo.key, p, 550, 62, right, rightWidth);
+      if (s.busiest_hour !== null) {
+        out += text(right, 515, `BUSIEST HOUR · ${hourLabel(s.busiest_hour)}`, {
+          size: 32, weight: 700, fill: p.dim, spacing: 3, a: "a-fade", d: 650,
+        });
+        out += hourBars(right, 545, rightWidth, 190, s.hours, s.busiest_hour, p, 750);
+      }
+      return out;
+    }
+    case "photos": {
+      let out = heading("Photos") + hero(s.count, "int") + caption(s.count === 1 ? "photo taken" : "photos taken") + change(s.change_pct);
+      let y = 340;
+      for (const [label, entry, suffix] of [
+        ["Favourite camera", s.top_camera, ""],
+        ["Favourite lens", s.top_lens, ""],
+        ["Favourite focal length", s.top_focal, " mm"],
+      ] as const) {
+        if (!entry) continue;
+        out += fact(y, label, entry.key + suffix, p, 550 + y - 340, 54, right, rightWidth);
+        y += 158;
+      }
+      return out;
+    }
+    case "ai": {
+      const inputShare = s.input / (s.input + s.output || 1);
+      let out = heading("AI usage") + hero(s.tokens, "tokens", 138) + caption("tokens in + out");
+      out += bar(M, 603, leftWidth, 22, inputShare, p, 450);
+      out += caption(`${tokens(s.input)} in · ${tokens(s.output)} out`, 682);
+      out += change(s.change_pct, 729);
+      let y = 340;
+      for (const [label, entry, name] of [
+        ["Top tool", s.top_tool, aiToolName],
+        ["Top model", s.top_model, modelLabel],
+        ["Top project", s.top_project, (x: string) => x],
+      ] as const) {
+        if (!entry) continue;
+        out += fact(y, label, name(entry.key), p, 550 + y - 340, 54, right, rightWidth);
+        y += 158;
+      }
+      return out;
+    }
+    case "disk":
+      return heading("Disk") +
+        bigNumber(M, 525, s.bytes_written, "gb", width, 192, { fill: p.hi, a: "a-up", d: 100 }).svg +
+        caption("written to your internal disk", 618) + change(s.change_pct, 680);
+    case "summary": {
+      let out = line(M, 285, `Your ${period} in numbers`, width, 100, { weight: 800, fill: p.ink, a: "a-up", d: 0 });
+      const columns = Math.min(3, Math.max(1, s.items.length));
+      const gap = 48;
+      const cellWidth = (width - gap * (columns - 1)) / columns;
+      s.items.forEach((item, i) => {
+        const x = M + (i % columns) * (cellWidth + gap);
+        const y = 390 + Math.floor(i / columns) * 155;
+        const { label, value, f } = summaryValue(item, ctx);
+        const fitted = fit(value, 800, 76, cellWidth, 42);
+        out += anim(
+          "a-up",
+          200 + i * 110,
+          `<rect x="${x}" y="${y}" width="${cellWidth}" height="3" fill="${p.dim}" fill-opacity="0.35"/>` +
+            text(x, y + 53, label.toUpperCase(), { size: 32, weight: 700, fill: p.dim, spacing: 4 }) +
+            text(x, y + 135, fitted.text, {
+              size: fitted.size, weight: 800, fill: i === 0 ? p.hi : p.ink,
+              ...(f && fitted.text === value ? { n: item.value, f } : {}),
+            }),
+        );
+      });
+      return out;
+    }
+  }
+}
+
 /** One slide as a complete SVG document. `animate`: with the entrance
  *  animations and sized to its container (screen); otherwise static at
  *  1080 × 1920 (export). */
-export function slideSvg(s: SlideJson, ctx: SlideCtx, animate: boolean): string {
+export function slideSvg(s: SlideJson, ctx: SlideCtx, animate: boolean, orientation: "landscape" | "portrait" = "portrait"): string {
   const p = slidePalette(ctx.accent, ctx.theme, s.kind);
-  return frame(s.kind, p, ctx, body(s, ctx, p), animate);
+  const landscape = animate && orientation === "landscape";
+  return frame(s.kind, p, ctx, landscape ? landscapeBody(s, ctx, p) : body(s, ctx, p), animate, landscape);
 }
 
 /** File name of a slide in an export: "03-top_apps.png". */

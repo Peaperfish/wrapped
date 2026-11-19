@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The story player: a full-window overlay with a 9:16 stage. Slides
+  // The story player: a full-window overlay with a landscape stage and a portrait option. Slides
   // auto-advance every 6 s; tap the right / left half (or ← →) for next /
   // previous, Space to pause, press and hold to pause, Esc or × to close,
   // ⌘S saves the slide, ⇧⌘S every slide.
@@ -28,6 +28,7 @@
   let look = $state.raw(currentLook());
   let index = $state(0);
   let paused = $state(false);
+  let orientation = $state<"landscape" | "portrait">("landscape");
   let holding = $state(false);
   let busy = $state(false);
   let hidden = $state(document.visibilityState !== "visible");
@@ -42,7 +43,7 @@
   const slide = $derived<SlideJson | undefined>(slides[index]);
   const ctx = $derived<SlideCtx | null>(recap ? { recap, names, theme: look.theme, accent: look.accent } : null);
   // Every slide's SVG string (cheap); only a few are in the DOM at a time.
-  const svgs = $derived(ctx ? slides.map((s) => slideSvg(s, ctx, true)) : []);
+  const svgs = $derived(ctx ? slides.map((s) => slideSvg(s, ctx, true, orientation)) : []);
   const svg = $derived(svgs[index] ?? "");
 
   // Layers in the DOM: the current slide plus its neighbours, parsed and
@@ -277,6 +278,9 @@
       <button onclick={() => (paused = !paused)} aria-pressed={paused} title="Pause (Space)">
         {paused ? "Play" : "Pause"}
       </button>
+      <button onclick={() => (orientation = orientation === "landscape" ? "portrait" : "landscape")}>
+        {orientation === "landscape" ? "Portrait" : "Landscape"}
+      </button>
       <button onclick={() => save("one")} disabled={busy} title="Save slide (⌘S)">Save slide</button>
       <button onclick={() => save("all")} disabled={busy} title="Save all (⇧⌘S)">{busy ? "Saving…" : "Save all"}</button>
     {/if}
@@ -287,36 +291,38 @@
     </button>
   </div>
 
-  <div class="stage" bind:this={stage} class:paused={stopped}>
-    {#if error}
-      <div class="message"><p class="error">{error}</p></div>
-    {:else if !recap}
-      <div class="message"><p class="muted">Loading…</p></div>
-    {:else}
-      {#each layers as i (i)}
-        <div class="slide" class:active={i === index} class:play={i === index} aria-hidden={i !== index}>
-          <!-- Our own SVG string built from numbers and escaped names (slides.ts). -->
-          <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html svgs[i]}
-        </div>
-      {/each}
-      <div class="progress" aria-hidden="true">
-        {#each slides as s, i (i)}
-          <span class="seg" title={s.kind}>
-            {#if i < index}
-              <span class="fill full"></span>
-            {:else if i === index}
-              {#key index}
-                <span class="fill run" style:animation-duration="{DURATION}ms"></span>
-              {/key}
-            {/if}
-          </span>
+  <div class="stage-slot">
+    <div class="stage" bind:this={stage} class:paused={stopped} class:portrait={orientation === "portrait"}>
+      {#if error}
+        <div class="message"><p class="error">{error}</p></div>
+      {:else if !recap}
+        <div class="message"><p class="muted">Loading…</p></div>
+      {:else}
+        {#each layers as i (i)}
+          <div class="slide" class:active={i === index} class:play={i === index} aria-hidden={i !== index}>
+            <!-- Our own SVG string built from numbers and escaped names (slides.ts). -->
+            <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+            {@html svgs[i]}
+          </div>
         {/each}
-      </div>
-      {#if paused}
-        <span class="paused-badge">Paused</span>
+        <div class="progress" aria-hidden="true">
+          {#each slides as s, i (i)}
+            <span class="seg" title={s.kind}>
+              {#if i < index}
+                <span class="fill full"></span>
+              {:else if i === index}
+                {#key index}
+                  <span class="fill run" style:animation-duration="{DURATION}ms"></span>
+                {/key}
+              {/if}
+            </span>
+          {/each}
+        </div>
+        {#if paused}
+          <span class="paused-badge">Paused</span>
+        {/if}
       {/if}
-    {/if}
+    </div>
   </div>
 
   {#if toast}
@@ -339,7 +345,6 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     gap: 12px;
     padding: 12px 16px 16px;
     background: var(--player-bg);
@@ -348,6 +353,7 @@
   }
   .toolbar {
     align-self: stretch;
+    flex: none;
     display: flex;
     justify-content: flex-end;
     gap: 8px;
@@ -363,16 +369,28 @@
     align-items: center;
     padding: 6px 9px;
   }
+  .stage-slot {
+    flex: 1;
+    align-self: stretch;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    container-type: size;
+  }
   .stage {
+    --ratio: 16 / 9;
     position: relative;
-    height: min(calc(100vh - 76px), calc((100vw - 32px) * 16 / 9));
-    aspect-ratio: 9 / 16;
+    width: min(100cqw, calc(100cqh * var(--ratio)));
+    aspect-ratio: var(--ratio);
     border-radius: 22px;
     overflow: hidden;
     background: var(--card-bg-strong);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
     contain: layout paint;
     cursor: pointer;
+  }
+  .stage.portrait {
+    --ratio: 9 / 16;
   }
   .slide,
   .slide :global(svg) {
