@@ -89,7 +89,7 @@
       text: fmtTokens(i.value),
     })),
   );
-  // Antigravity's logs name no model; the stored key stays "unknown".
+  // "unknown" is stored when an Antigravity conversation has no model id in its database.
   const modelLabel = (k: string): string => (k === "unknown" ? "Antigravity (model unknown)" : k);
   const aiModels = $derived(
     items(top("ai_usage", "tokens_by_model"), 6, modelLabel).map((i) => ({ ...i, text: fmtTokens(i.value) })),
