@@ -343,6 +343,7 @@ fn recompute(db: &std::path::Path, from: &str, to: &str, only: Option<&str>) -> 
         days += 1;
         day = day.succ_opt().ok_or("date out of range")?;
     }
+    store.checkpoint()?;
     println!(
         "recomputed {days} days ({} metric rows changed) in {:.2}s",
         rows,
@@ -759,6 +760,7 @@ fn scan(db: &std::path::Path, what: &str) -> CliResult {
     }
     let reports = engine.wait_scans()?;
     engine.shutdown()?;
+    engine.store().checkpoint()?;
     let wall = t0.elapsed().as_secs_f64();
     for r in &reports {
         println!(
