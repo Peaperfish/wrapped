@@ -13,8 +13,10 @@
     /** The period is still in progress and compared with a whole one: show
      *  the change in a neutral colour with "so far". */
     soFar?: boolean;
+    /** The previous period is too thin to compare with. */
+    thin?: boolean;
   }
-  let { value, label, cmp, small = false, soFar = false }: Props = $props();
+  let { value, label, cmp, small = false, soFar = false, thin = false }: Props = $props();
 
   const dir = $derived(
     soFar ? "neutral" : !cmp ? "flat" : cmp.pct === null ? (cmp.current > 0 ? "up" : "flat") : cmp.pct > 0 ? "up" : cmp.pct < 0 ? "down" : "flat",
@@ -30,7 +32,11 @@
   <div class="row">
     <span class="value num">{value}</span>
     {#if cmp}
+      {#if thin && !soFar}
+        <span class="change num flat" title="not enough data before">—</span>
+      {:else}
       <span class="change num {dir}" title={tip}>{soFar ? "" : `${arrow} `}{cmp.pct === null && cmp.current === 0 ? "0%" : fmtPct(cmp.pct)}{soFar ? " so far" : ""}</span>
+      {/if}
     {/if}
   </div>
 </div>

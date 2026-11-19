@@ -180,6 +180,9 @@ pub struct Records {
 pub struct Summary {
     pub range: DateRange,
     pub previous: DateRange,
+    /// Days of `range` / `previous` that have any stored metric.
+    pub data_days: u32,
+    pub previous_data_days: u32,
     pub totals: Vec<Total>,
     pub comparisons: Vec<Comparison>,
     /// Top keys per keyed metric (not `*_by_hour`), best first.
@@ -530,7 +533,15 @@ impl<'a> Stats<'a> {
         let vs = vs.unwrap_or_else(|| r.previous());
         let rows = self.rows(r, None)?;
         let cur = self.combine(&rows);
-        let prev = self.combine(&self.rows(vs, None)?);
+        let prev_rows = self.rows(vs, None)?;
+        let prev = self.combine(&prev_rows);
+        let distinct_days = |rows: &[Row]| {
+            rows.iter()
+                .map(|r| r.date)
+                .collect::<std::collections::BTreeSet<_>>()
+                .len() as u32
+        };
+        let (data_days, previous_data_days) = (distinct_days(&rows), distinct_days(&prev_rows));
         let mut top = Vec::new();
         let mut series = Vec::new();
         let mut per_day: BTreeMap<(usize, NaiveDate), f64> = BTreeMap::new();
@@ -564,6 +575,8 @@ impl<'a> Stats<'a> {
         Ok(Summary {
             range: r,
             previous: vs,
+            data_days,
+            previous_data_days,
             totals: self.totals_of(&cur),
             comparisons: self.comparisons_of(&cur, &prev),
             top,
@@ -688,6 +701,8 @@ impl Summary {
         json!({
             "range": range(&self.range),
             "previous": range(&self.previous),
+            "data_days": self.data_days,
+            "previous_data_days": self.previous_data_days,
             "totals": self.totals.iter().map(|t| json!({
                 "collector": t.collector, "metric": t.metric, "key": t.key,
                 "value": num(t.value), "unit": t.unit.name(), "agg": t.agg.name(),

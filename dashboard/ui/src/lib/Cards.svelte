@@ -24,6 +24,8 @@
   const appName = (id: string): string => names[id] ?? id;
   // Today is part of a day compared with all of yesterday.
   const soFar = $derived(preset === "today");
+  // The comparison period has data on fewer than half as many days: no % change.
+  const thin = $derived(!!summary && summary.previous_data_days * 2 < summary.data_days);
 
   const on = $derived(new Set(meta.collectors.filter((c) => c.enabled).map((c) => c.name)));
 
@@ -142,7 +144,7 @@
   <div class="grid" class:loading>
     {#if on.has("app_usage")}
       <Card title="Screen time" subtitle={vsLabel} size="S" empty={screen === undefined}>
-        <BigNumber {soFar} value={fmtSecs(screen ?? 0)} cmp={cmp("app_usage", "screen_time_secs")} />
+        <BigNumber {thin} {soFar} value={fmtSecs(screen ?? 0)} cmp={cmp("app_usage", "screen_time_secs")} />
         <p class="line muted">
           <span class="num">{activeDays > 0 ? fmtSecs((screen ?? 0) / activeDays) : "–"}</span> per active day
           <span class="faint">({plural(activeDays, "day")})</span>
@@ -220,7 +222,7 @@
 
     {#if on.has("git")}
       <Card title="Git" size="M" empty={commits === undefined}>
-        <BigNumber value={fmtValue(commits ?? 0, "count")} label="Commits" {soFar} cmp={cmp("git", "commits")} />
+        <BigNumber {thin} value={fmtValue(commits ?? 0, "count")} label="Commits" {soFar} cmp={cmp("git", "commits")} />
         <BarList items={repos} />
         {#if rec?.commit_streak}
           <p class="line muted">
@@ -233,7 +235,7 @@
 
     {#if on.has("photos")}
       <Card title="Photos" size="M" empty={shots === undefined}>
-        <BigNumber value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
+        <BigNumber {thin} value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
         <div class="two">
           <div>
             <h3 class="muted">Cameras</h3>
@@ -256,7 +258,7 @@
       >
         <div class="ai">
           <div class="aitop">
-            <BigNumber
+            <BigNumber {thin}
               value={fmtTokens(tokens ?? 0)}
               label="Tokens"
               {soFar}
@@ -308,7 +310,7 @@
       >
         <div class="quad">
           {#each diskMetrics as [m, label] (m)}
-            <BigNumber small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
+            <BigNumber {thin} small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
           {/each}
         </div>
       </Card>
