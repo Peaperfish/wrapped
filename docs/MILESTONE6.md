@@ -4,7 +4,7 @@ DESIGN.md §12 (first-launch checklist, Settings) plus a new scanned collector,
 **AI usage**, which imports token counts from the local logs of AI coding
 tools. The research behind the collector is in [AI_SOURCES.md](AI_SOURCES.md).
 
-Status: **mostly done**; Settings → AI sources and the setup screen's tool list are not built (see Progress).
+Status: **done** (hand checks on the installed app still open).
 
 ## Baseline (main @ 23cfa9c, 2026-11-18)
 
@@ -252,7 +252,7 @@ untouched until the installed app does its own first scan.
 
 ## Progress (final)
 
-Status: **not finished**. Not built: Settings → AI sources section (still a stub), the setup screen's detected-tools list (`ai_detect`) and `meta.ai`. Hand checks that need the installed app are also open.
+Status: **done**, except the hand checks that need the installed app.
 
 **Done**
 - ctl channel, setup mode, Settings modal, Tauri dialog plugin.
@@ -271,5 +271,7 @@ Status: **not finished**. Not built: Settings → AI sources section (still a st
 | Second scan: wall / max RSS / peak footprint | n/a | 0.03 s / 11.9 MB / 3.2 MB |
 
 The second scan read 1 changed file (the live session log) and saw 3 new requests. Idle memory needs the installed app and is not measured yet.
+
+- `meta.ai` (tools, detected folders, source status), Settings → AI sources (status, per-folder switch, Scan now, custom folders) and the setup screen's detected-tools list.
 
 **Not tested**: Codex, Gemini CLI, Copilot CLI, Cursor CLI and opencode adapters (no logs on this Mac).
