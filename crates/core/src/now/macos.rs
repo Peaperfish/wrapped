@@ -960,6 +960,17 @@ mod tests {
     #[test]
     #[ignore]
     fn sample_cost() {
+        let rss_kb = || -> u64 {
+            let out = std::process::Command::new("ps")
+                .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout)
+                .trim()
+                .parse()
+                .unwrap_or(0)
+        };
+        let before = rss_kb();
         let mut sampler = crate::now::NowSampler::new();
         let t = Instant::now();
         sampler.sample();
@@ -1014,6 +1025,7 @@ mod tests {
             let _ = smc.read_fans();
         });
         ms.sort_by(f64::total_cmp);
+        println!("RSS {before} KB -> {} KB (this test process)", rss_kb());
         println!("60 calls: median {:.2} ms, worst {:.2} ms", ms[30], ms[59]);
     }
 }
