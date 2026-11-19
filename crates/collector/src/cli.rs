@@ -698,15 +698,19 @@ fn rebuild_ai(db: &std::path::Path) -> CliResult {
     if !db.exists() {
         return Err(format!("no database at {}", db.display()).into());
     }
-    let lock = platform::hold_db_lock(db).map_err(|e| {
-        format!("{e}. Quit Wrapped (tray menu > Quit) first, run this again, then open Wrapped.")
-    })?;
-    println!(
-        "warning: this clears all AI usage and rescans the logs that still exist; usage whose \
-         logs are already gone is lost"
-    );
-    Store::open(db)?.delete_collector_data("ai_usage")?;
-    drop(lock);
+    // The lock is released at the end of the block (the scan takes it again).
+    {
+        let _lock = platform::hold_db_lock(db).map_err(|e| {
+            format!(
+                "{e}. Quit Wrapped (tray menu > Quit) first, run this again, then open Wrapped."
+            )
+        })?;
+        println!(
+            "warning: this clears all AI usage and rescans the logs that still exist; usage \
+             whose logs are already gone is lost"
+        );
+        Store::open(db)?.delete_collector_data("ai_usage")?;
+    }
     scan(db, "ai")
 }
 
