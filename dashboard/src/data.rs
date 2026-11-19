@@ -16,7 +16,8 @@ use wrapped_core::stats::{DateRange, SUMMARY_TOP_N, Stats};
 use wrapped_core::{Clock, Pause, Settings, Store, collectors};
 
 use crate::types::{
-    CollectorMeta, ExportResult, GitEmail, HeatmapMetric, Meta, RangeJson, SettingsMeta, YearSeries,
+    AiMeta, AiSourceMeta, AiToolMeta, CollectorMeta, ExportResult, GitEmail, HeatmapMetric, Meta,
+    RangeJson, SettingsMeta, YearSeries,
 };
 
 pub type Result<T> = std::result::Result<T, String>;
@@ -136,6 +137,7 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         pause: pause.to_string(),
         pause_until_ms,
     };
+    let ai = ai_meta(opened.as_ref().map(|(s, _)| s), &settings);
     Ok(Meta {
         build: env!("WRAPPED_BUILD_ID").to_string(),
         db_path: db.map(|p| p.display().to_string()).unwrap_or_default(),
@@ -147,7 +149,67 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         metrics,
         setup,
         settings: settings_meta,
+        ai,
     })
+}
+
+/// Supported AI tools (with what is detected on this machine) and the
+/// configured sources with the status the last scan stored.
+fn ai_meta(store: Option<&Store>, settings: &Settings) -> AiMeta {
+    use wrapped_core::ai;
+    let detected = ai::detect(&ai::Env::system());
+    let tools = ai::TOOLS
+        .iter()
+        .map(|t| {
+            let d = detected.iter().find(|d| d.tool.id == t.id);
+            AiToolMeta {
+                id: t.id.to_string(),
+                title: t.title.to_string(),
+                tokens: t.tokens,
+                tested: t.tested,
+                note: t.note.to_string(),
+                detected: d.is_some(),
+                detected_path: d.map(|d| d.root.display().to_string()),
+                detected_files: d.map_or(0, |d| d.files as u32),
+            }
+        })
+        .collect();
+    let status = store
+        .and_then(|s| {
+            s.conn()
+                .query_row(
+                    "SELECT state FROM scan_state WHERE collector = 'ai_usage'",
+                    [],
+                    |r| r.get::<_, Option<String>>(0),
+                )
+                .ok()
+                .flatten()
+        })
+        .map(|j| ai::parse_status(&j))
+        .unwrap_or_default();
+    let sources = settings
+        .ai_sources
+        .iter()
+        .map(|s| {
+            let st = status.get(&s.id);
+            AiSourceMeta {
+                id: s.id.clone(),
+                tool: s.tool.clone(),
+                path: s.path.clone(),
+                builtin: s.builtin,
+                enabled: s.enabled,
+                state: st
+                    .map(|x| x.state.clone())
+                    .filter(|x| !x.is_empty())
+                    .unwrap_or_else(|| "new".to_string()),
+                last_seen_ms: st.and_then(|x| x.last_seen_ms),
+                last_scan_ms: st.and_then(|x| x.last_scan_ms),
+                files: st.map_or(0, |x| x.files as u32),
+                requests: st.map_or(0, |x| x.requests as u32),
+            }
+        })
+        .collect();
+    AiMeta { tools, sources }
 }
 
 /// Bundle ids the app usage collector has recorded, most time first (for the

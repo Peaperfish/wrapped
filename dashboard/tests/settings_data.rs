@@ -53,6 +53,27 @@ fn meta_carries_collector_info_and_settings() {
 }
 
 #[test]
+fn meta_lists_every_ai_tool_and_the_configured_sources() {
+    let dir = temp_dir("meta-ai");
+    let db = build(&dir);
+    let store = Store::open(&db).unwrap();
+    store
+        .set_setting(
+            "ai.sources",
+            r#"[{"id":"abc","tool":"codex","path":"/nonexistent/x","builtin":false,"enabled":false}]"#,
+        )
+        .unwrap();
+    drop(store);
+    let m = data::meta(Some(&db), d("2026-03-11")).unwrap();
+    assert_eq!(m.ai.tools.len(), 7);
+    assert!(m.ai.tools.iter().all(|t| !t.title.is_empty()));
+    let s = &m.ai.sources[0];
+    assert_eq!((s.id.as_str(), s.tool.as_str()), ("abc", "codex"));
+    assert!(!s.enabled && !s.builtin);
+    assert_eq!(s.state, "new");
+}
+
+#[test]
 fn export_writes_json_and_never_touches_the_database() {
     let dir = temp_dir("export");
     let db = build(&dir);

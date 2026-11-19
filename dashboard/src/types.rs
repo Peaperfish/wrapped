@@ -109,6 +109,48 @@ pub struct HeatmapMetric {
     pub agg: AggName,
 }
 
+/// One AI tool and whether its default folder exists on this machine.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiToolMeta {
+    pub id: String,
+    pub title: String,
+    /// The tool writes token counts to disk (false: sessions only).
+    pub tokens: bool,
+    /// Checked against real logs (false: written from documentation).
+    pub tested: bool,
+    pub note: String,
+    /// The tool's default folder exists.
+    pub detected: bool,
+    /// That folder (the first one found), for setup.
+    pub detected_path: Option<String>,
+    /// Log files found there.
+    pub detected_files: u32,
+}
+
+/// One configured AI source (a folder) and what the last scan saw of it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiSourceMeta {
+    pub id: String,
+    pub tool: String,
+    pub path: String,
+    /// Found by the collector (the tool's default folder) rather than added by the user.
+    pub builtin: bool,
+    pub enabled: bool,
+    /// `"ok"`, `"missing"`, `"error"` or `"new"` (not scanned yet).
+    pub state: String,
+    pub last_seen_ms: Option<i64>,
+    pub last_scan_ms: Option<i64>,
+    pub files: u32,
+    pub requests: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct AiMeta {
+    /// Every supported tool, in display order.
+    pub tools: Vec<AiToolMeta>,
+    pub sources: Vec<AiSourceMeta>,
+}
+
 /// Everything the window needs before it asks for numbers.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct Meta {
@@ -132,6 +174,7 @@ pub struct Meta {
     /// has been recorded yet (also true without a database file).
     pub setup: bool,
     pub settings: SettingsMeta,
+    pub ai: AiMeta,
 }
 
 // ---------- series(year, metric) ----------
@@ -302,6 +345,9 @@ pub fn typescript_files() -> Vec<(String, String)> {
         AggName,
         CollectorMeta,
         SettingsMeta,
+        AiToolMeta,
+        AiSourceMeta,
+        AiMeta,
         GitEmail,
         ExportResult,
         HeatmapMetric,
