@@ -283,15 +283,21 @@ function fact(y: number, label: string, value: string, p: SlidePalette, delay: n
 
 // ---------- the frame every slide shares ----------
 
+// Entrance animations. Elements wait in their start state until the slide's
+// layer in the player gets the `play` class (the player keeps the next slide
+// parsed and painted ahead of time, so the swap is only an opacity change).
 const ANIM_CSS = `
-.a-fade{opacity:0;animation:rf .7s ease-out forwards}
-.a-up{opacity:0;transform:translateY(48px);animation:ru .8s cubic-bezier(.2,.8,.2,1) forwards}
-.a-growx{transform:scaleX(0);transform-box:fill-box;transform-origin:0 50%;animation:rg 1s cubic-bezier(.2,.8,.2,1) forwards}
-.a-growy{transform:scaleY(0);transform-box:fill-box;transform-origin:50% 100%;animation:rg 1s cubic-bezier(.2,.8,.2,1) forwards}
+.a-fade,.a-up{opacity:0}
+.a-up{transform:translateY(48px)}
+.a-growx{transform:scaleX(0);transform-box:fill-box;transform-origin:0 50%}
+.a-growy{transform:scaleY(0);transform-box:fill-box;transform-origin:50% 100%}
+.play .a-fade{animation:rf .7s ease-out forwards}
+.play .a-up{animation:ru .8s cubic-bezier(.2,.8,.2,1) forwards}
+.play .a-growx,.play .a-growy{animation:rg 1s cubic-bezier(.2,.8,.2,1) forwards}
 @keyframes rf{to{opacity:1}}
 @keyframes ru{to{opacity:1;transform:none}}
 @keyframes rg{to{transform:none}}
-@media (prefers-reduced-motion: reduce){.a-fade,.a-up,.a-growx,.a-growy{animation:none;opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.a-fade,.a-up,.a-growx,.a-growy{animation:none!important;opacity:1;transform:none}}
 `;
 
 function frame(kind: string, p: SlidePalette, ctx: SlideCtx, body: string, animate: boolean): string {

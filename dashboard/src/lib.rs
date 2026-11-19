@@ -387,6 +387,12 @@ async fn recap_get(app: tauri::AppHandle, id: String) -> Result<Value, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// A line from the page for the `--debug` log (the frame meter's marks).
+#[tauri::command]
+fn debug_log(state: State<'_, AppState>, msg: String) {
+    state.log(&msg.chars().take(300).collect::<String>());
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -486,6 +492,7 @@ pub fn main() -> i32 {
             take_open_recap,
             save_recap_png,
             reveal_export,
+            debug_log,
             set_window_theme
         ])
         .setup(|app| {

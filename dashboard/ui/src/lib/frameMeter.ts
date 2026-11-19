@@ -2,11 +2,22 @@
 // ⌥⌘F toggles it and the choice is remembered. While off, no requestAnimationFrame
 // loop runs and no element exists. Shows the average fps and the slowest frame
 // over the last 2 seconds.
+import { invoke } from "@tauri-apps/api/core";
+
 const KEY = "wrapped.frameMeter";
 const WINDOW_MS = 2000;
 
 let el: HTMLDivElement | null = null;
 let raf = 0;
+/** A marked moment (e.g. a recap slide swap) whose worst frame is being watched. */
+let mark: { label: string; at: number; worst: number } | null = null;
+const MARK_MS = 1000;
+
+/** While the meter is on: report the slowest frame in the second after now
+ *  (to the dashboard's stderr with --debug). For checking transitions. */
+export function markFrame(label: string) {
+  if (el) mark = { label, at: performance.now(), worst: 0 };
+}
 
 function stored(): boolean {
   try {
@@ -39,6 +50,16 @@ function start() {
   let shown = 0;
   const tick = (t: number) => {
     if (last) frames.push([t, t - last]);
+    if (mark && last && t > mark.at) {
+      mark.worst = Math.max(mark.worst, t - Math.max(last, mark.at));
+      if (t - mark.at > MARK_MS) {
+        const m = mark;
+        mark = null;
+        invoke("debug_log", { msg: `frame meter: ${m.label}: worst frame ${m.worst.toFixed(1)} ms in the ${MARK_MS} ms after` }).catch(
+          () => undefined,
+        );
+      }
+    }
     last = t;
     const cutoff = t - WINDOW_MS;
     let drop = 0;

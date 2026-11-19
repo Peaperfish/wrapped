@@ -5,7 +5,8 @@
   // ⌘S saves the slide, ⇧⌘S every slide.
   // Each slide is one SVG (slides.ts); the same SVG, without animations, is
   // what "Save slide" / "Save all" turn into 1080 × 1920 PNGs.
-  import { onDestroy, onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick, untrack } from "svelte";
+  import { markFrame } from "../frameMeter";
   import { errorText, getAppNames, getRecap, revealExport, saveRecapPng } from "../api";
   import { lockScroll } from "../scrollLock";
   import type { RecapJson, SlideJson } from "../types";
@@ -40,7 +41,31 @@
   const slides = $derived(recap?.slides ?? []);
   const slide = $derived<SlideJson | undefined>(slides[index]);
   const ctx = $derived<SlideCtx | null>(recap ? { recap, names, theme: look.theme, accent: look.accent } : null);
-  const svg = $derived(slide && ctx ? slideSvg(slide, ctx, true) : "");
+  // Every slide's SVG string (cheap); only a few are in the DOM at a time.
+  const svgs = $derived(ctx ? slides.map((s) => slideSvg(s, ctx, true)) : []);
+  const svg = $derived(svgs[index] ?? "");
+
+  // Layers in the DOM: the current slide plus its neighbours, parsed and
+  // painted ahead (transparent), so going to the next or previous slide only
+  // flips opacity and starts the entrance animations. Neighbours are added
+  // once the current slide's own entrance has finished, never at the swap.
+  const PREPARE_AFTER_MS = 1400;
+  let layers = $state<number[]>([]);
+  let prepTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const i = index;
+    const n = slides.length;
+    if (n === 0) return;
+    markFrame(`recap slide ${i + 1}`);
+    untrack(() => {
+      if (!layers.includes(i)) layers = [...layers, i].sort((a, b) => a - b);
+    });
+    clearTimeout(prepTimer);
+    prepTimer = setTimeout(() => {
+      layers = [i - 1, i, i + 1].filter((x) => x >= 0 && x < n);
+    }, PREPARE_AFTER_MS);
+    return () => clearTimeout(prepTimer);
+  });
   const stopped = $derived(paused || holding || busy || hidden || index >= slides.length - 1);
   const periodDir = $derived(id.replace(":", "-"));
 
@@ -108,11 +133,12 @@
     cancelAnimationFrame(raf);
     if (!stage || !svg) return;
     if (reduced.matches) return;
-    const els = [...stage.querySelectorAll<SVGTextElement>("[data-n]")].map((el) => ({
+    const els = [...stage.querySelectorAll<SVGTextElement>(".slide.active [data-n]")].map((el) => ({
       el,
       n: Number(el.dataset.n),
       f: el.dataset.f as Fmt,
-      done: el.textContent ?? "",
+      // The final text (a slide left mid count-up keeps an in-between value).
+      done: fmt(el.dataset.f as Fmt, Number(el.dataset.n)),
     }));
     if (els.length === 0) return;
     const t0 = performance.now();
@@ -227,6 +253,7 @@
   onDestroy(() => {
     clearTimeout(timer);
     clearTimeout(toastTimer);
+    clearTimeout(prepTimer);
     cancelAnimationFrame(raf);
     unlock();
   });
@@ -266,13 +293,13 @@
     {:else if !recap}
       <div class="message"><p class="muted">Loading…</p></div>
     {:else}
-      {#key index}
-        <div class="slide" aria-live="polite">
+      {#each layers as i (i)}
+        <div class="slide" class:active={i === index} class:play={i === index} aria-hidden={i !== index}>
           <!-- Our own SVG string built from numbers and escaped names (slides.ts). -->
           <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-          {@html svg}
+          {@html svgs[i]}
         </div>
-      {/key}
+      {/each}
       <div class="progress" aria-hidden="true">
         {#each slides as s, i (i)}
           <span class="seg" title={s.kind}>
@@ -353,6 +380,16 @@
     inset: 0;
     display: block;
   }
+  /* Prepared neighbours: in the DOM, composited and transparent. */
+  .slide {
+    opacity: 0;
+    will-change: opacity;
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1;
+    z-index: 1;
+  }
   .message {
     position: absolute;
     inset: 0;
@@ -362,6 +399,7 @@
     text-align: center;
   }
   .progress {
+    z-index: 2;
     position: absolute;
     top: 10px;
     left: 12px;
@@ -401,6 +439,7 @@
     }
   }
   .paused-badge {
+    z-index: 2;
     position: absolute;
     top: 22px;
     left: 50%;
