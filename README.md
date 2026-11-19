@@ -65,8 +65,8 @@ The collector is a plain Rust process with a native tray icon (no web view) and 
 - [x] **4.** Stats engine (any date range)
 - [x] **5.** Dashboard: heatmap and cards
 - [x] **6.** Onboarding and Settings
-- [ ] **7.** Now tab
-- [ ] **8.** Recap slides and notifications
+- [x] **7.** Now tab
+- [x] **8.** Recap slides and notifications
 - [ ] **9.** Windows port
 - [ ] **10.** Collector: Drive Health
 
