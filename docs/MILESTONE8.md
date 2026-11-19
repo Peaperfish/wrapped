@@ -161,7 +161,7 @@ when ≥ 40 % falls between 05:00 and 12:00; otherwise daytime.
 - `msg_send!` on the UserNotifications classes; the framework is linked in
   `platform/macos/notify.rs`. The center only exists inside an app bundle: a
   bare binary logs "not inside an app bundle" and posts nothing.
-- Windows: compiles; no notifications until M9.
+- Windows toast delivery and protocol activation are described in [Milestone 9](MILESTONE9.md).
 - Test: `wrapped-collector recap notify-test [week|month|year]` asks the
   running Wrapped.app to post the newest recap's notification now (marks
   nothing as announced).

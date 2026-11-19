@@ -26,6 +26,7 @@ impl Fake {
     fn new() -> Self {
         Self {
             r: Arc::new(Mutex::new(DiskMemoryReading {
+                disk_only: false,
                 boot_time_ms: BOOT,
                 disk_bytes_read: 10_000 * MB,
                 disk_bytes_written: 5_000 * MB,
@@ -617,4 +618,26 @@ fn delete_during_a_dark_wake_does_not_count_the_sleep_as_awake() {
     h.tick();
     // Awake since the wake only: 300 s, not the 50 minutes of sleep.
     assert_eq!(h.sample_values("secs"), vec![300.0]);
+}
+
+#[test]
+fn disk_only_readings_leave_unavailable_memory_metrics_absent() {
+    let ticks = [wrapped_core::collectors::disk_memory::Tick {
+        disk_only: true,
+        time: wrapped_core::Timestamp::new(300_000, 0),
+        secs: 300.,
+        bytes_read: 120.,
+        bytes_written: 60.,
+        swap_in: 0.,
+        swap_out: 0.,
+        pressure: PressureLevel::Normal,
+        compressed: 0.,
+    }];
+    let metrics = wrapped_core::collectors::disk_memory::rollup_ticks(&ticks, 0);
+    assert_eq!(metrics.len(), 3);
+    assert!(
+        metrics
+            .iter()
+            .any(|m| m.metric == "bytes_written" && m.value == 60.)
+    );
 }

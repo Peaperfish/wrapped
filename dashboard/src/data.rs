@@ -24,12 +24,16 @@ pub type Result<T> = std::result::Result<T, String>;
 
 /// The database the collector uses: `WRAPPED_DB` if set, else the platform
 /// data folder (macOS: `~/Library/Application Support/Wrapped/wrapped.db`).
-/// `None` where the collector has no default yet (Windows until M9).
+/// `None` where the collector has no default yet.
 pub fn default_db_path() -> Option<PathBuf> {
     match std::env::var_os("WRAPPED_DB") {
         Some(p) if !p.is_empty() => Some(PathBuf::from(p)),
+        #[cfg(windows)]
+        _ => wrapped_core::windows_data_dir().map(|p| p.join("wrapped.db")),
+        #[cfg(not(windows))]
         _ if cfg!(target_os = "macos") => std::env::var_os("HOME")
             .map(|h| PathBuf::from(h).join("Library/Application Support/Wrapped/wrapped.db")),
+        #[cfg(not(windows))]
         _ => None,
     }
 }

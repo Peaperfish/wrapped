@@ -99,7 +99,7 @@
 
 <h3>AI sources</h3>
 <p class="muted lead">
-  Wrapped counts tokens from the logs AI coding tools keep on this Mac: time, tool, model, token counts
+  Wrapped counts tokens from the logs AI coding tools keep on this computer: time, tool, model, token counts
   and the project folder name. Never the text of a prompt or response.
 </p>
 

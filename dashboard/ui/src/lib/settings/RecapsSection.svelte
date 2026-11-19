@@ -53,19 +53,22 @@
 <h3>Recaps</h3>
 <p class="muted lead">
   Get a notification when a new recap is ready. It shows one number and opens the recap when clicked;
-  nothing leaves this Mac.
+  nothing leaves this computer.
 </p>
 
 <CtlNote {error} />
 
 {#if anyOn && permission === "denied"}
   <p class="note warn" role="status">
-    Notifications for Wrapped are turned off in macOS. Allow them in System Settings → Notifications →
-    Wrapped.
+    {navigator.userAgent.includes("Windows")
+      ? "Allow Wrapped notifications in Settings → System → Notifications."
+      : "Allow Wrapped notifications in System Settings → Notifications → Wrapped."}
   </p>
 {:else if anyOn && permission === "unavailable"}
   <p class="note" role="status">
-    This copy of Wrapped is not running as Wrapped.app, so it cannot show notifications.
+    {navigator.userAgent.includes("Windows")
+      ? "Windows notifications are unavailable for this copy of Wrapped."
+      : "This copy of Wrapped is not running as Wrapped.app, so it cannot show notifications."}
   </p>
 {/if}
 

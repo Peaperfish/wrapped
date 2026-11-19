@@ -17,7 +17,7 @@ fn ctl_without_a_collector_says_not_running() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["ok"], false);
     assert_eq!(v["code"], "not_running");
-    let left = std::fs::read_dir(dir.join("wrapped.ctl"))
+    let left = std::fs::read_dir(wrapped_core::ctl::dir_for(&db))
         .map(|d| d.count())
         .unwrap_or(0);
     assert_eq!(left, 0, "no request file left behind");

@@ -1,4 +1,4 @@
-//! Placeholder for platforms without a collector yet (Windows: Milestone 9).
+//! Placeholder for platforms without a collector yet.
 //! It exists so the workspace builds and the core tests run everywhere; the
 //! CLI's database commands still work with `WRAPPED_DB` set, and
 //! `wrapped-collector dashboard` starts the dashboard next to it.
@@ -22,16 +22,14 @@ pub fn request_flush(_db: &Path) -> Option<i32> {
     None
 }
 
-/// No collector can run here yet, so there is nothing to wake. Windows needs
-/// its own wake-up (a named event) in Milestone 9; the request files in
-/// `wrapped_core::ctl` are already platform-neutral.
+/// No collector runs on this platform.
 pub fn wake_for_ctl(_db: &Path) -> bool {
     false
 }
 
 /// Start the dashboard (`wrapped-dashboard[.exe]` next to this executable)
 /// on `db`. No single-instance handling yet: a second call opens a second
-/// window (Windows port, Milestone 9).
+/// window.
 pub fn open_dashboard(db: &Path) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot find own executable: {e}"))?;
     let bin = exe.with_file_name(format!("wrapped-dashboard{}", std::env::consts::EXE_SUFFIX));

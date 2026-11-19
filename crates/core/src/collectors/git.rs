@@ -86,7 +86,7 @@ impl State {
 
 /// A `git` command with settings that keep it read-only, quiet and short-lived.
 fn git(dir: &Path) -> Command {
-    let mut c = Command::new("git");
+    let mut c = crate::background_command("git");
     c.arg("-C")
         .arg(dir)
         .args([
@@ -109,7 +109,7 @@ fn git(dir: &Path) -> Command {
 
 /// `git config --global user.email`, lowercased (empty if unset or no git).
 pub fn global_author_email() -> Vec<String> {
-    Command::new("git")
+    crate::background_command("git")
         .args(["config", "--global", "user.email"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())

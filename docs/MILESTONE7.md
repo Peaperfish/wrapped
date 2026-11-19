@@ -22,7 +22,7 @@ Status: **done**.
 - Cards: CPU (ring, P / E split, per-core bars by cluster, sparkline), Memory,
   GPU, Disk, Network, Temperatures, Fans. A card with only `None` values is
   hidden; a single `None` shows "—". When every value is `None` after two
-  samples (Windows for now) the tab says "Live hardware stats aren't available
+  samples the tab says "Live hardware stats aren't available
   on this platform yet".
 
 ## Sources per metric (macOS, public APIs only, no extra crates)
@@ -67,6 +67,6 @@ another chip, never wrong.
 
 ## Not available
 
-- Windows: every value is `None` until the Windows sources arrive (milestone 9).
+- Windows sources and hardware coverage are described in [Milestone 9](MILESTONE9.md).
 - Fanless Macs: no Fans card. Chips whose SMC keys differ: missing temperature
   groups.

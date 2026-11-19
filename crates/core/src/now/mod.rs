@@ -7,8 +7,8 @@
 //! `Option`: a metric this machine does not expose is `None` ("—").
 //!
 //! The raw numbers come from a [`NowSource`]: `macos.rs` on macOS (public APIs
-//! only: Mach host calls, sysctl, IOKit, the AppleSMC user client), an empty
-//! source elsewhere until the Windows sources arrive. Tests use a fake source.
+//! only: Mach host calls, sysctl, IOKit, the AppleSMC user client), Windows performance counters and IP Helper on Windows, and an empty
+//! source on unsupported platforms. Tests use a fake source.
 
 use std::collections::HashMap;
 
@@ -16,6 +16,8 @@ use serde_json::{Value, json};
 
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(windows)]
+pub mod windows;
 
 /// Two samples closer than this are not turned into rates (the previous
 /// baseline is kept), so a tight loop never divides by a near-zero interval.
@@ -53,9 +55,9 @@ pub struct RawCore {
 pub struct RawMem {
     pub used: u64,
     pub total: u64,
-    pub compressed: u64,
+    pub compressed: Option<u64>,
     /// 1 normal, 2 warning, 4 critical (the kernel's numbers).
-    pub pressure: u8,
+    pub pressure: Option<u8>,
 }
 
 /// Cumulative bytes of one network interface.
@@ -259,7 +261,9 @@ impl NowSampler {
     pub fn new() -> Self {
         #[cfg(target_os = "macos")]
         let source: Box<dyn NowSource> = Box::new(macos::MacSource::new());
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(windows)]
+        let source: Box<dyn NowSource> = Box::new(windows::WindowsSource::new());
+        #[cfg(not(any(windows, target_os = "macos")))]
         let source: Box<dyn NowSource> = Box::new(EmptySource::default());
         Self::with_source(source)
     }
@@ -362,15 +366,15 @@ fn snapshot(
     if let Some(m) = cur.mem {
         s.mem_used_bytes = Some(m.used);
         s.mem_total_bytes = Some(m.total);
-        s.mem_compressed_bytes = Some(m.compressed);
-        s.mem_pressure = Some(
-            match m.pressure {
+        s.mem_compressed_bytes = m.compressed;
+        s.mem_pressure = m.pressure.map(|pressure| {
+            match pressure {
                 4 => "critical",
                 2 => "warning",
                 _ => "normal",
             }
-            .to_string(),
-        );
+            .to_string()
+        });
     }
     if let Some((used, total)) = cur.swap {
         s.swap_used_bytes = Some(used);
