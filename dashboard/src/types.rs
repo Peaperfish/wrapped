@@ -75,6 +75,10 @@ pub struct SettingsMeta {
     /// `"off"`, `"indefinite"` or `"until"` (a timed pause still running).
     pub pause: String,
     pub pause_until_ms: Option<i64>,
+    /// `"system"`, `"light"` or `"dark"`.
+    pub theme: String,
+    /// `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"`.
+    pub accent: String,
 }
 
 /// One author email found by `git_emails` (setup and Settings).

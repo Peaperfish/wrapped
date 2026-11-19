@@ -136,6 +136,8 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         photos_folders: settings.photos_folders.clone(),
         pause: pause.to_string(),
         pause_until_ms,
+        theme: settings.theme.clone(),
+        accent: settings.accent.clone(),
     };
     let ai = ai_meta(opened.as_ref().map(|(s, _)| s), &settings);
     Ok(Meta {
