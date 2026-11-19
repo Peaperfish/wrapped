@@ -51,6 +51,8 @@
   --player-btn: rgba(255, 255, 255, 0.08);
   --player-btn-border: rgba(255, 255, 255, 0.14);
   --player-ink: #e8ebf2;
+  --player-seg: rgba(255, 255, 255, 0.28);
+  --player-seg-fill: #ffffff;
 
   /* Heatmap: empty, four levels of the accent, future days. */
   --cell-empty: rgba(255, 255, 255, 0.055);
@@ -118,6 +120,8 @@
   --player-btn: rgba(255, 255, 255, 0.8);
   --player-btn-border: rgba(15, 23, 42, 0.14);
   --player-ink: #141925;
+  --player-seg: rgba(15, 23, 42, 0.16);
+  --player-seg-fill: #141925;
 
   --cell-empty: rgba(15, 23, 42, 0.075);
   --heat-empty-selected: rgba(15, 23, 42, 0.15);

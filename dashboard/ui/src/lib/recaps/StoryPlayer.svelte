@@ -1,7 +1,8 @@
 <script lang="ts">
   // The story player: a full-window overlay with a 9:16 stage. Slides
   // auto-advance every 6 s; tap the right / left half (or ← →) for next /
-  // previous, Space to pause, press and hold to pause, Esc or × to close.
+  // previous, Space to pause, press and hold to pause, Esc or × to close,
+  // ⌘S saves the slide, ⇧⌘S every slide.
   // Each slide is one SVG (slides.ts); the same SVG, without animations, is
   // what "Save slide" / "Save all" turn into 1080 × 1920 PNGs.
   import { onDestroy, onMount, tick } from "svelte";
@@ -159,7 +160,10 @@
     else next();
   }
   function keydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+      e.preventDefault();
+      void save(e.shiftKey ? "all" : "one");
+    } else if (e.key === "Escape") {
       e.preventDefault();
       void close();
     } else if (e.key === "ArrowRight") {
@@ -246,8 +250,8 @@
       <button onclick={() => (paused = !paused)} aria-pressed={paused} title="Pause (Space)">
         {paused ? "Play" : "Pause"}
       </button>
-      <button onclick={() => save("one")} disabled={busy}>Save slide</button>
-      <button onclick={() => save("all")} disabled={busy}>{busy ? "Saving…" : "Save all"}</button>
+      <button onclick={() => save("one")} disabled={busy} title="Save slide (⌘S)">Save slide</button>
+      <button onclick={() => save("all")} disabled={busy} title="Save all (⇧⌘S)">{busy ? "Saving…" : "Save all"}</button>
     {/if}
     <button class="close" aria-label="Close (Esc)" title="Close (Esc)" onclick={close}>
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -370,13 +374,13 @@
     flex: 1;
     height: 3px;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--player-seg);
     overflow: hidden;
   }
   .fill {
     display: block;
     height: 100%;
-    background: #fff;
+    background: var(--player-seg-fill);
     transform-origin: 0 50%;
   }
   .fill.full {

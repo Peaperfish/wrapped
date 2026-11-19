@@ -332,7 +332,7 @@ function decoration(kind: string, glow: string, p: SlidePalette): string {
     case "records":
       return `<circle cx="0" cy="600" r="600" fill="${glow}"/>`;
     case "git":
-      return `<circle cx="980" cy="1700" r="660" fill="${glow}"/>` + ring(860, 1560, 26, 10, 0.3) + `<path d="M860 1586 V1760 M860 1440 V1534" stroke="${p.hi}" stroke-opacity="0.3" stroke-width="10"/>`;
+      return `<circle cx="980" cy="1700" r="660" fill="${glow}"/>` + ring(900, 1840, 26, 10, 0.3) + `<path d="M900 1866 V1920 M900 1770 V1814" stroke="${p.hi}" stroke-opacity="0.3" stroke-width="10"/>`;
     case "photos":
       return `<circle cx="160" cy="1650" r="640" fill="${glow}"/>` + ring(860, 1560, 150, 12, 0.18) + ring(860, 1560, 90, 6, 0.18);
     case "ai":
@@ -358,8 +358,8 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
         r.kind === "year" ? `Your ${r.range.from.slice(0, 4)}` : `Your ${KIND_WORD[r.kind] ?? r.kind}`;
       let out =
         line(M, 640, title, CW, 150, { weight: 800, fill: p.ink, a: "a-up", d: 0 }) +
-        line(M, 730, "wrapped.", CW, 150, { weight: 800, fill: p.hi, a: "a-up", d: 120 }) +
-        line(M, 860, r.label + (r.in_progress ? " · so far" : ""), CW, 52, { weight: 600, fill: p.dim, a: "a-fade", d: 300 });
+        line(M, 790, "wrapped.", CW, 150, { weight: 800, fill: p.hi, a: "a-up", d: 120 }) +
+        line(M, 900, r.label + (r.in_progress ? " · so far" : ""), CW, 52, { weight: 600, fill: p.dim, a: "a-fade", d: 300 });
       if (s.screen_secs) {
         const n = bigNumber(M, 1250, s.screen_secs, "hm", CW, 220, { fill: p.hi, a: "a-up", d: 450 });
         out += n.svg + text(M, 1340, "on screen", { size: 56, weight: 600, fill: p.ink, a: "a-fade", d: 600 });
@@ -391,14 +391,15 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
       s.apps.slice(0, 5).forEach((a, i) => {
         const y = 520 + i * rowH;
         const name = appName(ctx, a.key);
-        const right = `${hm(a.secs)} · ${Math.round(a.share * 100)}%`;
+        const pct = a.share * 100;
+        const right = `${hm(a.secs)} · ${pct > 0 && pct < 1 ? "<1" : Math.round(pct)}%`;
         const rw = measure(right, 40, 600) + 24;
         const nameMax = i === 0 ? 76 : 60;
         out += anim(
           "a-up",
           120 + i * 110,
           text(M, y, String(i + 1), { size: i === 0 ? 96 : 72, weight: 800, fill: p.hi }) +
-            line(M + 110, y, name, CW - 110, nameMax, { weight: 700, fill: p.ink }, 30) +
+            line(M + 110, y, name, CW - 110, nameMax, { weight: 700, fill: p.ink }, Math.round(nameMax * 0.75)) +
             text(M + 110, y + 66, right, { size: 40, weight: 600, fill: p.dim }),
         );
         out += bar(M + 110 + rw, y + 40, Math.max(60, CW - 110 - rw), 22, a.secs / (s.apps[0]?.secs || 1), p, 250 + i * 110);
@@ -558,9 +559,9 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
         disk_written: "Disk written",
         active_days: "Active days",
       };
-      const cellH = 240;
+      const cellH = 220;
       s.items.forEach((it, i) => {
-        const y = 760 + i * cellH;
+        const y = 700 + i * cellH;
         let value: string;
         let f: Fmt | undefined;
         switch (it.id) {
@@ -587,7 +588,7 @@ function body(s: SlideJson, ctx: SlideCtx, p: SlidePalette): string {
             value = fmt("int", it.value);
             f = "int";
         }
-        const fitted = fit(value, 800, 110, CW, 44);
+        const fitted = fit(value, 800, 110, CW, f ? 44 : 64);
         out += `<rect x="${M}" y="${y + 12}" width="${CW}" height="3" fill="${p.dim}" fill-opacity="0.35"/>`;
         out += anim(
           "a-up",
