@@ -229,6 +229,18 @@ design doc itself is left as written.
 - AI `project` is the enclosing git folder's name (was the last folder of the
   working directory); older rows keep theirs until `scan ai --rebuild --yes`.
 
+## Recaps (§11; Milestone 8)
+
+- "Weekly (Mondays), monthly (1st), yearly (December)" is when a recap is
+  *announced* (from 09:00); a recap exists as soon as its period is over
+  (the current year: from 1 December, covering 1 January → today).
+- A recap needs enough **active days**: days with any stored metric of a
+  collector that is on (week 2, month 7, year 30). Thinner periods get none.
+- Slides are SVG drawn by the dashboard, not HTML, so the PNG export is the
+  same picture as the screen (no capture library).
+- Notification bookkeeping lives in `settings` as `internal.recap_notified.<kind>`
+  and `internal.notify_permission`.
+
 ## Metric definitions
 
 - `app_usage/app_switches`: number of sessions that start exactly where the
