@@ -33,6 +33,10 @@ USAGE
   wrapped-collector scan ai --rebuild --yes  clear AI usage and rescan every log (not while Wrapped runs;
                                             usage whose logs are already gone is lost)
   wrapped-collector git emails             list author emails in git.folders (read-only)
+  wrapped-collector now [--json] [--count N]
+                                            live hardware numbers (the Now tab's data): N samples
+                                            1 s apart (default 3); --json prints one JSON per line.
+                                            The first sample has no rates (shown as -)
   wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
   wrapped-collector recompute <from> <to> [--collector <name>]
                                             rebuild the daily metrics of each local day in the range
@@ -98,6 +102,7 @@ pub fn main() -> i32 {
         ["sessions", day] => sessions(&db, day),
         ["git", "emails"] => git_emails(&db),
         ["probe", "disk-memory"] => probe_disk_memory(),
+        ["now", rest @ ..] => now(rest),
         ["scan"] => scan(&db, "all"),
         ["scan", "ai", "--rebuild"] => {
             Err("--rebuild needs --yes (it deletes AI usage first)".into())
@@ -815,6 +820,113 @@ fn scan(db: &std::path::Path, what: &str) -> CliResult {
 
 /// Two readings of the disk & memory counters 60 s apart: raw values and
 /// deltas. Read-only: opens no database and stores nothing.
+fn now(args: &[&str]) -> CliResult {
+    use wrapped_core::now::NowSampler;
+    let (mut json, mut count) = (false, 3u32);
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        match *a {
+            "--json" => json = true,
+            "--count" => {
+                count = it
+                    .next()
+                    .and_then(|n| n.parse().ok())
+                    .filter(|n| (1..=100_000).contains(n))
+                    .ok_or("--count needs a number from 1 to 100000")?;
+            }
+            other => return Err(format!("unknown argument '{other}' (see help)").into()),
+        }
+    }
+    let mut sampler = NowSampler::new();
+    for i in 0..count {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+        let snap = sampler.sample();
+        if json {
+            println!("{}", snap.to_json());
+        } else {
+            print_now(i + 1, &snap);
+        }
+    }
+    Ok(())
+}
+
+fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
+    let pct = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.1}%"));
+    let mbs = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{:.2} MB/s", v / 1e6));
+    let gb = |v: Option<u64>| v.map_or("-".to_string(), |v| format!("{:.2} GB", v as f64 / 1e9));
+    let deg = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.1} C"));
+    println!("--- sample {n}  {}", s.chip.as_deref().unwrap_or("unknown chip"));
+    println!(
+        "CPU {}  (P {}  E {})   GPU {}",
+        pct(s.cpu_percent),
+        pct(s.cpu_p_percent),
+        pct(s.cpu_e_percent),
+        pct(s.gpu_percent)
+    );
+    match &s.cpu_cores {
+        Some(cores) => {
+            let list: Vec<String> = cores
+                .iter()
+                .map(|c| {
+                    let k = match c.kind {
+                        Some(wrapped_core::now::CoreKind::Performance) => "P",
+                        Some(wrapped_core::now::CoreKind::Efficiency) => "E",
+                        None => "?",
+                    };
+                    format!("{k}:{}", c.percent.map_or("-".to_string(), |p| format!("{p:.0}")))
+                })
+                .collect();
+            println!("cores {}", list.join(" "));
+        }
+        None => println!("cores -"),
+    }
+    println!(
+        "RAM {} / {}  pressure {}  compressed {}",
+        gb(s.mem_used_bytes),
+        gb(s.mem_total_bytes),
+        s.mem_pressure.as_deref().unwrap_or("-"),
+        gb(s.mem_compressed_bytes)
+    );
+    println!(
+        "swap {} / {}  in {}  out {}",
+        gb(s.swap_used_bytes),
+        gb(s.swap_total_bytes),
+        mbs(s.swap_in_per_sec),
+        mbs(s.swap_out_per_sec)
+    );
+    println!(
+        "disk read {}  write {}   net down {}  up {}",
+        mbs(s.disk_read_per_sec),
+        mbs(s.disk_write_per_sec),
+        mbs(s.net_down_per_sec),
+        mbs(s.net_up_per_sec)
+    );
+    println!("temps CPU {}  GPU {}", deg(s.cpu_temp_c), deg(s.gpu_temp_c));
+    match &s.temps {
+        Some(ts) if !ts.is_empty() => {
+            let list: Vec<String> =
+                ts.iter().map(|t| format!("{} {:.1}", t.label, t.celsius)).collect();
+            println!("  sensors: {}", list.join(", "));
+        }
+        _ => println!("  sensors: -"),
+    }
+    match &s.fans {
+        Some(fs) if !fs.is_empty() => {
+            let list: Vec<String> = fs
+                .iter()
+                .map(|f| {
+                    let max = f.max_rpm.map_or(String::new(), |m| format!(" (max {m:.0})"));
+                    format!("{} {:.0} rpm{max}", f.name, f.rpm)
+                })
+                .collect();
+            println!("fans {}", list.join(", "));
+        }
+        _ => println!("fans -"),
+    }
+}
+
 fn probe_disk_memory() -> CliResult {
     use wrapped_core::collectors::disk_memory::deltas;
     let interval = std::time::Duration::from_secs(60);
