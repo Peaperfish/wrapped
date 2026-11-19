@@ -248,6 +248,15 @@
     display: flex;
     gap: 22px;
   }
+  /* A narrow window shows one month (the later one) so the popover stays inside. */
+  @media (max-width: 650px) {
+    .month:first-child {
+      display: none;
+    }
+    .pop {
+      max-width: calc(100vw - 32px);
+    }
+  }
   .title {
     text-align: center;
     font-weight: 600;
