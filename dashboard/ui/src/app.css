@@ -288,3 +288,17 @@ input[type="date"] {
   border-radius: var(--radius-sm);
   padding: 4px 8px;
 }
+
+/* Frame meter overlay (lib/frameMeter.ts), toggled with ⌥⌘F. */
+.frame-meter {
+  position: fixed;
+  right: 8px;
+  bottom: 8px;
+  z-index: 1000;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+  font: 11px/1.4 var(--mono);
+  pointer-events: none;
+}
