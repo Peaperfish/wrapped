@@ -26,23 +26,11 @@ function paint(accent: Accent) {
   el.dataset.accent = accent;
 }
 
-let titleBar: string | null = null;
-const listeners = new Set<(t: string | null) => void>();
-/** The window's effective theme as the backend reports it (for the Appearance section). */
-export function onTitleBar(cb: (t: string | null) => void): () => void {
-  listeners.add(cb);
-  cb(titleBar);
-  return () => void listeners.delete(cb);
-}
-
 /** Tell the window (title bar, background colour); null = follow macOS live. */
 function syncWindow() {
-  invoke<string>("set_window_theme", { theme: theme === "system" ? null : theme })
-    .then((t) => {
-      titleBar = t;
-      listeners.forEach((cb) => cb(t));
-    })
-    .catch((e) => console.warn("set_window_theme failed:", e));
+  invoke("set_window_theme", { theme: theme === "system" ? null : theme }).catch((e) =>
+    console.warn("set_window_theme failed:", e),
+  );
 }
 
 /** Apply a choice now (also tells the window, so the title bar matches). */

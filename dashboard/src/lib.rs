@@ -256,10 +256,9 @@ fn open_wrapped(state: State<'_, AppState>) -> bool {
 /// Title bar / window theme: "light" / "dark" force it, anything else follows
 /// macOS live. Sets the app appearance and the window's own theme, and paints the
 /// window background in the theme's page colour (a dark background colour under
-/// the title bar would otherwise keep it dark). Returns the window's effective
-/// theme afterwards, so the Appearance section can show it.
+/// the title bar would otherwise keep it dark).
 #[tauri::command]
-fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<String>) -> String {
+fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<String>) {
     let forced = match theme.as_deref() {
         Some("light") => Some(tauri::Theme::Light),
         Some("dark") => Some(tauri::Theme::Dark),
@@ -273,11 +272,6 @@ fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<
         _ => tauri::window::Color(0x0b, 0x0d, 0x12, 0xff),
     };
     let _ = window.set_background_color(Some(bg));
-    match effective {
-        tauri::Theme::Light => "light",
-        _ => "dark",
-    }
-    .to_string()
 }
 
 /// The page has rendered its first frame with data: show the window.
