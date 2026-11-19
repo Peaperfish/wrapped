@@ -59,7 +59,15 @@ impl Adapter for Cursor {
 /// Open read-only and immutable, so a running tool's database is never touched.
 pub fn open_read_only(path: &Path) -> rusqlite::Result<Connection> {
     let mut uri = String::from("file:");
-    for c in path.to_string_lossy().chars() {
+    let mut raw = path.to_string_lossy().into_owned();
+    if cfg!(windows) {
+        // A URI wants forward slashes and `/C:/...` for a drive path.
+        raw = raw.replace('\\', "/");
+        if raw.as_bytes().get(1) == Some(&b':') {
+            raw.insert(0, '/');
+        }
+    }
+    for c in raw.chars() {
         match c {
             '%' => uri.push_str("%25"),
             '?' => uri.push_str("%3f"),
