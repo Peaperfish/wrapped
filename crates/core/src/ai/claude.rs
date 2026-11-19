@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::{
-    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, folder_name, list_files, parse_ts_ms, uint,
+    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, list_files, parse_ts_ms, project_name, uint,
 };
 
 pub const INFO: ToolInfo = ToolInfo {
@@ -93,7 +93,7 @@ pub fn parse_line(line: &str, em: &mut Emitter<'_>) {
         time_ms,
         session: v["sessionId"].as_str().unwrap_or(""),
         model,
-        project: &folder_name(v["cwd"].as_str().unwrap_or("")),
+        project: &project_name(v["cwd"].as_str().unwrap_or("")),
         input: uint(&u["input_tokens"]),
         output: uint(&u["output_tokens"]),
         cache_read: uint(&u["cache_read_input_tokens"]),

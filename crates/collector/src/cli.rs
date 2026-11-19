@@ -30,6 +30,8 @@ USAGE
   wrapped-collector export --csv <dir>      everything, one CSV per table
   wrapped-collector --version               print crate version and build (git hash)
   wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
+  wrapped-collector scan ai --rebuild --yes  clear AI usage and rescan every log (not while Wrapped runs;
+                                            usage whose logs are already gone is lost)
   wrapped-collector git emails             list author emails in git.folders (read-only)
   wrapped-collector probe disk-memory      read disk / memory counters twice, 60 s apart (stores nothing)
   wrapped-collector recompute <from> <to> [--collector <name>]
@@ -97,6 +99,10 @@ pub fn main() -> i32 {
         ["git", "emails"] => git_emails(&db),
         ["probe", "disk-memory"] => probe_disk_memory(),
         ["scan"] => scan(&db, "all"),
+        ["scan", "ai", "--rebuild"] => {
+            Err("--rebuild needs --yes (it deletes AI usage first)".into())
+        }
+        ["scan", "ai", "--rebuild", "--yes"] => rebuild_ai(&db),
         ["scan", what] => scan(&db, what),
         ["recompute", from, to] => recompute(&db, from, to, None),
         ["recompute", from, to, "--collector", name] => recompute(&db, from, to, Some(name)),
@@ -684,6 +690,23 @@ fn git_emails(db: &std::path::Path) -> CliResult {
         println!("* {m:<width$} {:>8}  (not found)", 0);
     }
     Ok(())
+}
+
+/// One-time rebuild of the AI usage (e.g. after project naming changed).
+fn rebuild_ai(db: &std::path::Path) -> CliResult {
+    if !db.exists() {
+        return Err(format!("no database at {}", db.display()).into());
+    }
+    let lock = platform::hold_db_lock(db).map_err(|e| {
+        format!("{e}. Quit Wrapped (tray menu > Quit) first, run this again, then open Wrapped.")
+    })?;
+    println!(
+        "warning: this clears all AI usage and rescans the logs that still exist; usage whose \
+         logs are already gone is lost"
+    );
+    Store::open(db)?.delete_collector_data("ai_usage")?;
+    drop(lock);
+    scan(db, "ai")
 }
 
 fn scan(db: &std::path::Path, what: &str) -> CliResult {

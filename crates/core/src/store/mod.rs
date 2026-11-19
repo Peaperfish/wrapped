@@ -296,6 +296,13 @@ impl Store {
         Ok(())
     }
 
+    /// Fold the WAL into the database file and truncate it.
+    pub fn checkpoint(&self) -> Result<()> {
+        self.conn
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?;
+        Ok(())
+    }
+
     // ---------- the batched writer ----------
 
     // ---------- scanned collectors ----------

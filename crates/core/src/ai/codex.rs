@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 use super::{
-    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, folder_name, list_files, parse_ts_ms,
+    Adapter, Emitter, Env, Request, ScanCx, ToolInfo, list_files, parse_ts_ms, project_name,
     split_roots, uint,
 };
 
@@ -131,7 +131,7 @@ impl FileState {
                     self.session = id.to_string();
                 }
                 if let Some(cwd) = p["cwd"].as_str() {
-                    self.project = folder_name(cwd);
+                    self.project = project_name(cwd);
                 }
             }
             Some("turn_context") => {
@@ -141,7 +141,7 @@ impl FileState {
                 if self.project.is_empty()
                     && let Some(cwd) = p["cwd"].as_str()
                 {
-                    self.project = folder_name(cwd);
+                    self.project = project_name(cwd);
                 }
             }
             Some("event_msg") if p["type"].as_str() == Some("token_count") => {
