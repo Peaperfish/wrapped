@@ -11,6 +11,13 @@
 - Run cargo with `-q` and show only failures.
 - Leave `spikes/` unchanged.
 
+## Screenshots and other apps
+
+- Ask before taking any screenshot, every time.
+- Never capture the full screen or any window other than Wrapped's own: only
+  `screencapture -l <id>` with the Wrapped window's id.
+- Never read other apps' content (windows, documents, UI scripting queries).
+
 ## Windows-safe checklist (before every commit)
 
 - Paths never go into JSON or strings by hand: use serde_json (`json!` /
