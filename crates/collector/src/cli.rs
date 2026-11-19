@@ -857,7 +857,10 @@ fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
     let mbs = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{:.2} MB/s", v / 1e6));
     let gb = |v: Option<u64>| v.map_or("-".to_string(), |v| format!("{:.2} GB", v as f64 / 1e9));
     let deg = |v: Option<f64>| v.map_or("-".to_string(), |v| format!("{v:.1} C"));
-    println!("--- sample {n}  {}", s.chip.as_deref().unwrap_or("unknown chip"));
+    println!(
+        "--- sample {n}  {}",
+        s.chip.as_deref().unwrap_or("unknown chip")
+    );
     println!(
         "CPU {}  (P {}  E {})   GPU {}",
         pct(s.cpu_percent),
@@ -875,7 +878,10 @@ fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
                         Some(wrapped_core::now::CoreKind::Efficiency) => "E",
                         None => "?",
                     };
-                    format!("{k}:{}", c.percent.map_or("-".to_string(), |p| format!("{p:.0}")))
+                    format!(
+                        "{k}:{}",
+                        c.percent.map_or("-".to_string(), |p| format!("{p:.0}"))
+                    )
                 })
                 .collect();
             println!("cores {}", list.join(" "));
@@ -906,8 +912,10 @@ fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
     println!("temps CPU {}  GPU {}", deg(s.cpu_temp_c), deg(s.gpu_temp_c));
     match &s.temps {
         Some(ts) if !ts.is_empty() => {
-            let list: Vec<String> =
-                ts.iter().map(|t| format!("{} {:.1}", t.label, t.celsius)).collect();
+            let list: Vec<String> = ts
+                .iter()
+                .map(|t| format!("{} {:.1}", t.label, t.celsius))
+                .collect();
             println!("  sensors: {}", list.join(", "));
         }
         _ => println!("  sensors: -"),
@@ -917,7 +925,9 @@ fn print_now(n: u32, s: &wrapped_core::now::NowSnapshot) {
             let list: Vec<String> = fs
                 .iter()
                 .map(|f| {
-                    let max = f.max_rpm.map_or(String::new(), |m| format!(" (max {m:.0})"));
+                    let max = f
+                        .max_rpm
+                        .map_or(String::new(), |m| format!(" (max {m:.0})"));
                     format!("{} {:.0} rpm{max}", f.name, f.rpm)
                 })
                 .collect();

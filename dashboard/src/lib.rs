@@ -41,6 +41,9 @@ struct AppState {
     debug: bool,
     started: Instant,
     shown: AtomicBool,
+    /// The Now tab's sampler, created on the first `now_snapshot` call; it
+    /// does work only inside that call.
+    now: std::sync::Mutex<Option<wrapped_core::now::NowSampler>>,
 }
 
 impl AppState {
@@ -274,6 +277,13 @@ fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<
     let _ = window.set_background_color(Some(bg));
 }
 
+/// One sample of the live hardware numbers (the Now tab polls this while it
+/// is visible). Rates are null on the first call.
+#[tauri::command(async)]
+fn now_snapshot(state: State<'_, AppState>) -> Value {
+    data::now_snapshot(&state.now)
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -329,6 +339,7 @@ pub fn main() -> i32 {
         debug,
         started,
         shown: AtomicBool::new(false),
+        now: std::sync::Mutex::new(None),
     };
     state.log(&format!(
         "start, database {}",
@@ -353,6 +364,7 @@ pub fn main() -> i32 {
             ctl,
             open_wrapped,
             ready,
+            now_snapshot,
             set_window_theme
         ])
         .setup(|app| {

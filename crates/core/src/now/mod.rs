@@ -266,7 +266,11 @@ impl NowSampler {
 
     pub fn with_source(mut source: Box<dyn NowSource>) -> Self {
         let chip = source.chip();
-        Self { source, chip, prev: None }
+        Self {
+            source,
+            chip,
+            prev: None,
+        }
     }
 
     /// Reads everything once and returns the snapshot.
@@ -276,7 +280,10 @@ impl NowSampler {
             .duration_since(std::time::UNIX_EPOCH)
             .ok()
             .map(|d| d.as_millis() as i64);
-        let dt_ms = self.prev.as_ref().map(|p| cur.mono_ms.saturating_sub(p.mono_ms));
+        let dt_ms = self
+            .prev
+            .as_ref()
+            .map(|p| cur.mono_ms.saturating_sub(p.mono_ms));
         // Too soon after the baseline: no rates, and the baseline stays.
         let ready = dt_ms.is_some_and(|d| d >= MIN_INTERVAL_MS);
         let basis = match (&self.prev, dt_ms) {
@@ -303,7 +310,11 @@ fn snapshot(
     cur: &RawNow,
     prev: Option<(&RawNow, f64)>,
 ) -> NowSnapshot {
-    let mut s = NowSnapshot { ts_ms: wall, chip, ..NowSnapshot::default() };
+    let mut s = NowSnapshot {
+        ts_ms: wall,
+        chip,
+        ..NowSnapshot::default()
+    };
 
     // CPU: per core between the two readings (same core count required).
     if let (Some(cur_cores), Some((p, _))) = (&cur.cores, prev)
@@ -312,7 +323,10 @@ fn snapshot(
         let loads: Vec<CoreLoad> = prev_cores
             .iter()
             .zip(cur_cores)
-            .map(|(a, b)| CoreLoad { percent: core_percent(a, b), kind: b.kind })
+            .map(|(a, b)| CoreLoad {
+                percent: core_percent(a, b),
+                kind: b.kind,
+            })
             .collect();
         let mut sums: HashMap<Option<CoreKind>, (f64, u32)> = HashMap::new();
         let mut all = (0.0, 0u32);
@@ -336,7 +350,10 @@ fn snapshot(
         s.cpu_cores = Some(
             cores
                 .iter()
-                .map(|c| CoreLoad { percent: None, kind: c.kind })
+                .map(|c| CoreLoad {
+                    percent: None,
+                    kind: c.kind,
+                })
                 .collect(),
         );
     }
@@ -391,7 +408,12 @@ fn snapshot(
             .filter(|t| t.label.starts_with("CPU"))
             .map(|t| t.celsius)
             .reduce(f64::max);
-        s.gpu_temp_c = mean(temps.iter().filter(|t| t.label.starts_with("GPU")).map(|t| t.celsius));
+        s.gpu_temp_c = mean(
+            temps
+                .iter()
+                .filter(|t| t.label.starts_with("GPU"))
+                .map(|t| t.celsius),
+        );
         s.temps = Some(temps.clone());
     }
     s.fans = cur.fans.clone();

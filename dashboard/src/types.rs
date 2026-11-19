@@ -335,6 +335,68 @@ pub struct SummaryJson {
     pub records: RecordsJson,
 }
 
+// ---------- now_snapshot() ----------
+
+/// One core's load (`now_snapshot` → `cpu_cores`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct CoreLoadJson {
+    /// 0-100; null until two samples exist.
+    pub percent: Option<f64>,
+    /// "P" (performance) or "E" (efficiency); null when unknown.
+    pub kind: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct TempJson {
+    pub label: String,
+    pub celsius: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct FanJson {
+    pub name: String,
+    pub rpm: f64,
+    pub min_rpm: Option<f64>,
+    pub max_rpm: Option<f64>,
+}
+
+/// Live hardware numbers (`wrapped_core::now::NowSnapshot::to_json`, the same
+/// JSON as `wrapped-collector now --json`). Every field can be null (show
+/// "—"); rates are per second, sizes in bytes; rates are null on the first
+/// call.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct NowSnapshotJson {
+    /// UTC ms.
+    pub ts_ms: Option<i64>,
+    pub chip: Option<String>,
+    pub cpu_percent: Option<f64>,
+    pub cpu_cores: Option<Vec<CoreLoadJson>>,
+    pub cpu_p_percent: Option<f64>,
+    pub cpu_e_percent: Option<f64>,
+    pub gpu_percent: Option<f64>,
+    pub mem_used_bytes: Option<u64>,
+    pub mem_total_bytes: Option<u64>,
+    /// "normal" | "warning" | "critical".
+    pub mem_pressure: Option<String>,
+    pub mem_compressed_bytes: Option<u64>,
+    pub swap_used_bytes: Option<u64>,
+    pub swap_total_bytes: Option<u64>,
+    pub swap_in_per_sec: Option<f64>,
+    pub swap_out_per_sec: Option<f64>,
+    pub disk_read_per_sec: Option<f64>,
+    pub disk_write_per_sec: Option<f64>,
+    pub net_down_per_sec: Option<f64>,
+    pub net_up_per_sec: Option<f64>,
+    pub cpu_temp_c: Option<f64>,
+    pub gpu_temp_c: Option<f64>,
+    pub temps: Option<Vec<TempJson>>,
+    pub fans: Option<Vec<FanJson>>,
+}
+
 /// Every exported type: (file name, TypeScript source). Integers are plain
 /// `number`s (dates, counts and UTC ms all fit in 2^53).
 pub fn typescript_files() -> Vec<(String, String)> {
@@ -373,5 +435,9 @@ pub fn typescript_files() -> Vec<(String, String)> {
         StreakJson,
         RecordsJson,
         SummaryJson,
+        CoreLoadJson,
+        TempJson,
+        FanJson,
+        NowSnapshotJson,
     )
 }

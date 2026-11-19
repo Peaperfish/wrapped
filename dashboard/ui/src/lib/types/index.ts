@@ -24,3 +24,7 @@ export type { LatestNightJson } from "./LatestNightJson";
 export type { StreakJson } from "./StreakJson";
 export type { RecordsJson } from "./RecordsJson";
 export type { SummaryJson } from "./SummaryJson";
+export type { CoreLoadJson } from "./CoreLoadJson";
+export type { TempJson } from "./TempJson";
+export type { FanJson } from "./FanJson";
+export type { NowSnapshotJson } from "./NowSnapshotJson";

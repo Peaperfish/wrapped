@@ -42,8 +42,11 @@ unsafe extern "C" {
         alloc: *const c_void,
         options: u32,
     ) -> *mut c_void;
-    fn IORegistryEntryGetParentEntry(entry: IoObject, plane: *const c_char, p: *mut IoObject)
-    -> Kern;
+    fn IORegistryEntryGetParentEntry(
+        entry: IoObject,
+        plane: *const c_char,
+        p: *mut IoObject,
+    ) -> Kern;
     fn IORegistryEntryFromPath(main: u32, path: *const c_char) -> IoObject;
     fn IOServiceOpen(service: IoObject, owner: MachPort, kind: u32, conn: *mut IoObject) -> Kern;
     fn IOServiceClose(conn: IoObject) -> Kern;
@@ -201,7 +204,11 @@ impl Borrowed {
         }
         let mut buf = [0 as c_char; 128];
         let ok = unsafe { CFStringGetCString(self.0, buf.as_mut_ptr(), 128, CF_UTF8) };
-        (ok != 0).then(|| unsafe { CStr::from_ptr(buf.as_ptr()) }.to_string_lossy().into_owned())
+        (ok != 0).then(|| {
+            unsafe { CStr::from_ptr(buf.as_ptr()) }
+                .to_string_lossy()
+                .into_owned()
+        })
     }
     fn data(self) -> Option<Vec<u8>> {
         if unsafe { CFGetTypeID(self.0) != CFDataGetTypeID() } {
@@ -259,22 +266,42 @@ fn sysctl_by_name<T: Default>(name: &CStr) -> Option<T> {
     let mut v = T::default();
     let mut len = std::mem::size_of::<T>();
     let rc = unsafe {
-        sysctlbyname(name.as_ptr(), (&mut v as *mut T).cast(), &mut len, std::ptr::null_mut(), 0)
+        sysctlbyname(
+            name.as_ptr(),
+            (&mut v as *mut T).cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
     };
     (rc == 0 && len == std::mem::size_of::<T>()).then_some(v)
 }
 
 fn sysctl_string(name: &CStr) -> Option<String> {
     let mut len = 0usize;
-    if unsafe { sysctlbyname(name.as_ptr(), std::ptr::null_mut(), &mut len, std::ptr::null_mut(), 0) }
-        != 0
+    if unsafe {
+        sysctlbyname(
+            name.as_ptr(),
+            std::ptr::null_mut(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
         || len == 0
     {
         return None;
     }
     let mut buf = vec![0u8; len];
-    if unsafe { sysctlbyname(name.as_ptr(), buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) }
-        != 0
+    if unsafe {
+        sysctlbyname(
+            name.as_ptr(),
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
     {
         return None;
     }
@@ -326,7 +353,13 @@ fn read_cores(kinds: &[Option<CoreKind>]) -> Option<Vec<RawCore>> {
     let mut info: *mut i32 = std::ptr::null_mut();
     let mut info_count = 0u32;
     let rc = unsafe {
-        host_processor_info(host.0, PROCESSOR_CPU_LOAD_INFO, &mut count, &mut info, &mut info_count)
+        host_processor_info(
+            host.0,
+            PROCESSOR_CPU_LOAD_INFO,
+            &mut count,
+            &mut info,
+            &mut info_count,
+        )
     };
     if rc != 0 || info.is_null() {
         return None;
@@ -412,7 +445,13 @@ fn read_swap() -> Option<(u64, u64)> {
     let mut v = SwapUsage::default();
     let mut len = std::mem::size_of::<SwapUsage>();
     let rc = unsafe {
-        sysctlbyname(c"vm.swapusage".as_ptr(), (&mut v as *mut SwapUsage).cast(), &mut len, std::ptr::null_mut(), 0)
+        sysctlbyname(
+            c"vm.swapusage".as_ptr(),
+            (&mut v as *mut SwapUsage).cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
     };
     (rc == 0).then_some((v.used, v.total))
 }
@@ -437,7 +476,9 @@ fn read_disk() -> Option<(u64, u64)> {
         if !is_internal(&d) {
             continue;
         }
-        let Some(stats) = d.property("Statistics") else { continue };
+        let Some(stats) = d.property("Statistics") else {
+            continue;
+        };
         let g = |k: &str| stats.get(k).and_then(Borrowed::u64).unwrap_or(0);
         r = r.saturating_add(g("Bytes (Read)"));
         w = w.saturating_add(g("Bytes (Write)"));
@@ -456,8 +497,44 @@ fn rd_u64(b: &[u8], o: usize) -> Option<u64> {
     Some(u64::from_ne_bytes(b.get(o..o + 8)?.try_into().ok()?))
 }
 
-/// Byte counters of every non-loopback interface that is up, from the
-/// routing socket's interface list (`if_msghdr2` + `if_data64`).
+/// 64-bit (bytes in, bytes out) of interface `index` from the interface MIB
+/// (`struct ifmibdata`, packed to 4: ibytes at 116, obytes at 124). The
+/// routing-socket list carries these counters too, but truncated to 32 bits
+/// and rounded to 4 KB, so it is used only to find the interfaces.
+fn iface_bytes(index: u32) -> Option<(u64, u64)> {
+    const CTL_NET: c_int = 4;
+    const PF_LINK: c_int = 18;
+    const NETLINK_GENERIC: c_int = 0;
+    const IFMIB_IFDATA: c_int = 2;
+    const IFDATA_GENERAL: c_int = 1;
+    let mut mib = [
+        CTL_NET,
+        PF_LINK,
+        NETLINK_GENERIC,
+        IFMIB_IFDATA,
+        index as c_int,
+        IFDATA_GENERAL,
+    ];
+    let mut buf = [0u8; 512];
+    let mut len = buf.len();
+    let rc = unsafe {
+        sysctl(
+            mib.as_mut_ptr(),
+            6,
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if rc != 0 || len < 132 {
+        return None;
+    }
+    Some((rd_u64(&buf, 116)?, rd_u64(&buf, 124)?))
+}
+
+/// Byte counters of every non-loopback interface that is up. The interface
+/// list comes from the routing socket (`if_msghdr2`).
 fn read_net() -> Option<Vec<RawIface>> {
     const CTL_NET: c_int = 4;
     const PF_ROUTE: c_int = 17;
@@ -465,19 +542,39 @@ fn read_net() -> Option<Vec<RawIface>> {
     const RTM_IFINFO2: u8 = 0x12;
     const IFF_UP: i32 = 0x1;
     const IFF_LOOPBACK: i32 = 0x8;
-    // Offsets in `struct if_msghdr2` (ifm_data starts at 32) and in
-    // `struct if_data64` (ibytes at 64, obytes at 72).
+    // `struct if_msghdr2`: flags at 8, index at 12, `ifm_data` at 32 (its
+    // first byte is the interface type).
     const DATA: usize = 32;
 
     let mut mib = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0];
     let mut len = 0usize;
-    if unsafe { sysctl(mib.as_mut_ptr(), 6, std::ptr::null_mut(), &mut len, std::ptr::null_mut(), 0) } != 0 {
+    if unsafe {
+        sysctl(
+            mib.as_mut_ptr(),
+            6,
+            std::ptr::null_mut(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
         return None;
     }
     // The list can grow between the two calls.
     let mut buf = vec![0u8; len + len / 8 + 512];
     let mut len = buf.len();
-    if unsafe { sysctl(mib.as_mut_ptr(), 6, buf.as_mut_ptr().cast(), &mut len, std::ptr::null_mut(), 0) } != 0 {
+    if unsafe {
+        sysctl(
+            mib.as_mut_ptr(),
+            6,
+            buf.as_mut_ptr().cast(),
+            &mut len,
+            std::ptr::null_mut(),
+            0,
+        )
+    } != 0
+    {
         return None;
     }
     let buf = &buf[..len];
@@ -489,16 +586,16 @@ fn read_net() -> Option<Vec<RawIface>> {
             break;
         }
         let msg = &buf[off..off + msglen];
-        if msg[3] == RTM_IFINFO2 && msglen >= DATA + 80 {
+        if msg[3] == RTM_IFINFO2 && msglen > DATA {
             let flags = rd_u32(msg, 8)? as i32;
             let index = u32::from(rd_u16(msg, 12)?);
             let itype = msg[DATA];
-            if flags & IFF_UP != 0 && flags & IFF_LOOPBACK == 0 && itype != 24 {
-                out.push(RawIface {
-                    id: index,
-                    rx: rd_u64(msg, DATA + 64)?,
-                    tx: rd_u64(msg, DATA + 72)?,
-                });
+            if flags & IFF_UP != 0
+                && flags & IFF_LOOPBACK == 0
+                && itype != 24
+                && let Some((rx, tx)) = iface_bytes(index)
+            {
+                out.push(RawIface { id: index, rx, tx });
             }
         }
         off += msglen;
@@ -548,6 +645,9 @@ struct SmcData {
 }
 const _: () = assert!(std::mem::size_of::<SmcData>() == 80);
 
+/// Sensors read per group (CPU performance cores alone have dozens of keys).
+const MAX_SENSORS_PER_GROUP: usize = 4;
+
 const SMC_READ_BYTES: u8 = 5;
 const SMC_READ_INDEX: u8 = 8;
 const SMC_READ_INFO: u8 = 9;
@@ -570,8 +670,9 @@ struct Smc {
 struct FanKeys {
     name: String,
     actual: u32,
-    min: Option<u32>,
-    max: Option<u32>,
+    /// Fixed by the hardware: read once.
+    min: Option<f64>,
+    max: Option<f64>,
 }
 
 impl Drop for Smc {
@@ -613,7 +714,11 @@ impl Smc {
         if unsafe { IOServiceOpen(svc.0, mach_task_self_, 0, &mut conn) } != 0 {
             return None;
         }
-        let mut smc = Smc { conn, temps: Vec::new(), fans: Vec::new() };
+        let mut smc = Smc {
+            conn,
+            temps: Vec::new(),
+            fans: Vec::new(),
+        };
         smc.discover();
         Some(smc)
     }
@@ -635,13 +740,21 @@ impl Smc {
     }
 
     fn info(&self, key: u32) -> Option<SmcKeyInfo> {
-        let input = SmcData { key, cmd: SMC_READ_INFO, ..SmcData::default() };
+        let input = SmcData {
+            key,
+            cmd: SMC_READ_INFO,
+            ..SmcData::default()
+        };
         let out = self.call(&input)?;
         (out.info.size > 0 && out.info.size <= 32).then_some(out.info)
     }
 
     fn bytes(&self, key: u32, size: u32) -> Option<[u8; 32]> {
-        let mut input = SmcData { key, cmd: SMC_READ_BYTES, ..SmcData::default() };
+        let mut input = SmcData {
+            key,
+            cmd: SMC_READ_BYTES,
+            ..SmcData::default()
+        };
         input.info.size = size;
         Some(self.call(&input)?.bytes)
     }
@@ -654,15 +767,23 @@ impl Smc {
     }
 
     fn key_at(&self, index: u32) -> Option<u32> {
-        let input = SmcData { cmd: SMC_READ_INDEX, data32: index, ..SmcData::default() };
+        let input = SmcData {
+            cmd: SMC_READ_INDEX,
+            data32: index,
+            ..SmcData::default()
+        };
         Some(self.call(&input)?.key)
     }
 
     /// Lists the keys once; later reads touch only the useful ones.
     fn discover(&mut self) {
         let count_key = fourcc("#KEY");
-        let Some(info) = self.info(count_key) else { return };
-        let Some(b) = self.bytes(count_key, info.size) else { return };
+        let Some(info) = self.info(count_key) else {
+            return;
+        };
+        let Some(b) = self.bytes(count_key, info.size) else {
+            return;
+        };
         let count = u32::from_be_bytes([b[0], b[1], b[2], b[3]]).min(4000);
         let flt = fourcc("flt ");
         let mut fan_count = 0usize;
@@ -686,18 +807,37 @@ impl Smc {
                 self.temps.push((key, 4, group.to_string()));
             }
         }
+        self.thin_temps();
         for n in 0..fan_count.min(8) {
             let k = |s: &str| {
                 let key = fourcc(&format!("F{n}{s}"));
-                self.info(key).filter(|i| i.kind == flt && i.size == 4).map(|_| key)
+                self.info(key)
+                    .filter(|i| i.kind == flt && i.size == 4)
+                    .map(|_| key)
             };
             if let Some(actual) = k("Ac") {
                 self.fans.push(FanKeys {
                     name: format!("Fan {}", n + 1),
                     actual,
-                    min: k("Mn"),
-                    max: k("Mx"),
+                    min: k("Mn").and_then(|k| self.float(k, 4)),
+                    max: k("Mx").and_then(|k| self.float(k, 4)),
                 });
+            }
+        }
+    }
+
+    /// An SMC read costs about 0.2 ms, so each group keeps a few evenly
+    /// spaced sensors (the group is reported as their mean).
+    fn thin_temps(&mut self) {
+        let mut by_group: BTreeMap<String, Vec<(u32, u32, String)>> = BTreeMap::new();
+        for t in self.temps.drain(..) {
+            by_group.entry(t.2.clone()).or_default().push(t);
+        }
+        for (_, keys) in by_group {
+            let n = keys.len();
+            let take = n.min(MAX_SENSORS_PER_GROUP);
+            for i in 0..take {
+                self.temps.push(keys[i * n / take].clone());
             }
         }
     }
@@ -712,12 +852,23 @@ impl Smc {
             }
         }
         // Fixed order: CPU, GPU, then the rest.
-        let order = ["CPU performance cores", "CPU efficiency cores", "GPU", "SSD", "Battery", "Airflow", "Wi-Fi"];
+        let order = [
+            "CPU performance cores",
+            "CPU efficiency cores",
+            "GPU",
+            "SSD",
+            "Battery",
+            "Airflow",
+            "Wi-Fi",
+        ];
         order
             .iter()
             .filter_map(|l| {
                 let (sum, n) = groups.get(l)?;
-                Some(Temp { label: (*l).to_string(), celsius: sum / f64::from(*n) })
+                Some(Temp {
+                    label: (*l).to_string(),
+                    celsius: sum / f64::from(*n),
+                })
             })
             .collect()
     }
@@ -730,8 +881,8 @@ impl Smc {
                 Some(Fan {
                     name: f.name.clone(),
                     rpm: rpm.max(0.0),
-                    min_rpm: f.min.and_then(|k| self.float(k, 4)),
-                    max_rpm: f.max.and_then(|k| self.float(k, 4)),
+                    min_rpm: f.min,
+                    max_rpm: f.max,
                 })
             })
             .collect()
@@ -789,3 +940,80 @@ impl NowSource for MacSource {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// This machine's real sources give sane numbers (the always-present ones).
+    #[test]
+    fn live_readings_are_sane() {
+        let mut src = MacSource::new();
+        let a = src.read();
+        let mem = a.mem.expect("memory");
+        assert!(mem.total > 1 << 30 && mem.used > 0 && mem.used <= mem.total);
+        assert!(a.cores.is_some_and(|c| !c.is_empty()));
+        assert!(a.net.is_some());
+        assert!(a.swap.is_some());
+    }
+
+    /// `cargo test --release -p wrapped-core --lib sample_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn sample_cost() {
+        let mut sampler = crate::now::NowSampler::new();
+        let t = Instant::now();
+        sampler.sample();
+        println!(
+            "first call (SMC key discovery included): {:.2} ms",
+            t.elapsed().as_secs_f64() * 1e3
+        );
+        let mut ms: Vec<f64> = (0..60)
+            .map(|_| {
+                let t = Instant::now();
+                std::hint::black_box(sampler.sample());
+                let d = t.elapsed().as_secs_f64() * 1e3;
+                std::thread::sleep(std::time::Duration::from_millis(120));
+                d
+            })
+            .collect();
+        let time = |name: &str, f: &dyn Fn()| {
+            let t = Instant::now();
+            for _ in 0..20 {
+                f();
+            }
+            println!("  {name}: {:.2} ms", t.elapsed().as_secs_f64() * 1e3 / 20.0);
+        };
+        let smc = Smc::open().unwrap();
+        println!(
+            "  smc keys: {} temps, {} fans",
+            smc.temps.len(),
+            smc.fans.len()
+        );
+        time("cores", &|| {
+            let _ = read_cores(&[]);
+        });
+        time("gpu", &|| {
+            let _ = read_gpu();
+        });
+        time("vm", &|| {
+            let _ = read_vm(1 << 34);
+        });
+        time("swap", &|| {
+            let _ = read_swap();
+        });
+        time("disk", &|| {
+            let _ = read_disk();
+        });
+        time("net", &|| {
+            let _ = read_net();
+        });
+        time("temps", &|| {
+            let _ = smc.read_temps();
+        });
+        time("fans", &|| {
+            let _ = smc.read_fans();
+        });
+        ms.sort_by(f64::total_cmp);
+        println!("60 calls: median {:.2} ms, worst {:.2} ms", ms[30], ms[59]);
+    }
+}
