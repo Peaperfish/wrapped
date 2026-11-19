@@ -97,8 +97,21 @@ when ≥ 40 % falls between 05:00 and 12:00; otherwise daytime.
   filters. With `prefers-reduced-motion` there is no count-up and no
   animation (the progress bar shows the current slide as full); slides still
   advance.
-- Frame meter (⌥⌘F) while slides animate: 59–60 fps; the slowest single
-  frame 18–45 ms, at the moment a new slide's SVG replaces the old one.
+- The player keeps the previous and next slides in the DOM, parsed and
+  painted but transparent; entrance animations wait for the `play` class.
+  A swap only flips opacity and adds `play`. Neighbours are prepared 1.4 s
+  after a swap (after the entrance), never at the swap itself.
+- Frame meter (⌥⌘F) while slides animate: 59–60 fps. Slide change, measured
+  as the worst frame in the 1 s after each swap (`markFrame`, logged to
+  stderr with `--debug`), 22 swaps per run, same scratch database:
+  - before the pre-render: 18 ms at every swap (22 ms once, at the first
+    slide's mount);
+  - after: 18 ms at every swap in the clean run; one of three runs had a
+    single unexplained 1,980 ms stall (slide 7), not reproduced.
+  18 ms is one frame plus timer jitter, the meter's floor here, so the
+  pre-render shows no measurable gain. The earlier "18–45 ms" came from the
+  meter's rolling 2 s window, which included window activation and
+  screenshots, not from the swap.
 
 ## PNG export
 
@@ -159,9 +172,16 @@ when ≥ 40 % falls between 05:00 and 12:00; otherwise daytime.
   longest period, year 2026 so far (323 days), **1.54 ms**; months 0.2–0.3 ms;
   `recap list` 0.62 ms. On a synthetic full year (80 k sessions, 29 k metric
   rows): year recap 18.1 ms, recap list 3.8 ms. No fix needed.
-- Bundle (`ui/dist/assets`): JS 132.97 → 162.54 kB (gzip 45.93 → 56.86), CSS 29.91 → 34.59 kB (gzip 6.39 → 7.24).
-- Binaries: collector 4,446,912 → 4,608,448 B; dashboard 14,273,264 →
-  14,499,120 B (both built together with `custom-protocol`, as before).
+- Bundle (`ui/dist/assets`): JS 132.97 → 163.26 kB (gzip 45.93 → 57.12),
+  CSS 29.91 → 34.74 kB (gzip 6.39 → 7.27).
+- Binaries, before → after (both crates built in one cargo call with
+  `wrapped-dashboard/custom-protocol`): collector 4,446,912 → 4,608,448 B;
+  dashboard 14,273,264 → 14,499,120 B.
+- Final, built separately (`cargo build --release -p wrapped-collector`, then
+  the dashboard with `--features tauri/custom-protocol`): collector
+  4,581,264 B, dashboard 14,492,496 B. The collector is smaller this way
+  because the combined call unifies features with the dashboard's
+  dependencies; no code difference.
 - Collector idle physical footprint: 12 MB → 12 MB (peak 12 → 12), bare
   binaries side by side for 4 min on copies of the database, the new one with
   weekly and monthly notifications on. The installed (pre-M8) Wrapped.app
