@@ -76,6 +76,11 @@ for (const [theme, build] of Object.entries(themes)) {
       ["accent", accent, card, 4.5],
       // Text on a primary button (accent at 90% over the card).
       ["on-accent", parse(vars["--accent-ink"], vars), over({ ...accent, a: 0.9 }, card), 4.5],
+      // Status colours as text on the card (memory pressure, errors) and on
+      // the stronger button background (.danger buttons).
+      ["warn", parse(vars["--warn"], vars), card, 4.5],
+      ["danger", parse(vars["--danger"], vars), card, 4.5],
+      ["danger-btn", parse(vars["--danger"], vars), over(parse(vars["--card-bg-strong"], vars), card), 4.5],
     ];
     for (const [name, fg, bg, min] of checks) {
       const r = ratio(fg, bg);

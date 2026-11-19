@@ -65,13 +65,28 @@
     });
   });
 
+  // Nothing at all after two samples (rates need two): not supported here.
+  const allNone = $derived(
+    !!snap &&
+      !showCpu &&
+      !showGpu &&
+      !showMem &&
+      !showDisk &&
+      !showNet &&
+      temps.length === 0 &&
+      (snap.fans ?? []).length === 0,
+  );
+  const unavailable = $derived(allNone && hist.cpu.length >= 2);
+
   const fans = $derived(snap?.fans ?? []);
   const showFans = $derived(fans.length > 0);
 </script>
 
 {#if s.error && !snap}
   <section class="card"><p class="error">{s.error}</p></section>
-{:else if !snap}
+{:else if unavailable}
+  <section class="card"><p class="muted">Live hardware stats aren't available on this platform yet</p></section>
+{:else if !snap || allNone}
   <section class="card"><p class="muted">Reading…</p></section>
 {:else}
   <div class="grid">

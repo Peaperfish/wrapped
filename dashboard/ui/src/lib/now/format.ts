@@ -10,14 +10,15 @@ export function pct(v: number | null | undefined): string {
   return v == null ? DASH : String(Math.round(v));
 }
 
-/** [value, unit] of a rate in bytes per second, auto-scaled: KB/s, MB/s, GB/s. */
+/** [value, unit] of a rate in bytes per second, auto-scaled and decimal
+ *  (1000-based, as the CLI and Activity Monitor): kB/s, MB/s, GB/s. */
 export function rate(v: number | null | undefined): [string, string] {
-  if (v == null) return [DASH, "KB/s"];
-  const units = ["KB/s", "MB/s", "GB/s"];
-  let x = v / 1024;
+  if (v == null) return [DASH, "kB/s"];
+  const units = ["kB/s", "MB/s", "GB/s"];
+  let x = v / 1000;
   let i = 0;
   while (x >= 1000 && i < units.length - 1) {
-    x /= 1024;
+    x /= 1000;
     i++;
   }
   return [x < 10 ? x.toFixed(2) : x < 100 ? x.toFixed(1) : x.toFixed(0), units[i]!];
