@@ -339,3 +339,13 @@ pub fn series(db: &Path, year: i32, metric: &str) -> Result<YearSeries> {
         days: days.into_iter().map(|(_, v)| v).collect(),
     })
 }
+
+/// A sample from the shared Now sampler (created on first use). A poisoned
+/// lock only means an earlier sample panicked: the sampler is still usable.
+pub fn now_snapshot(sampler: &std::sync::Mutex<Option<wrapped_core::now::NowSampler>>) -> Value {
+    let mut guard = sampler.lock().unwrap_or_else(|e| e.into_inner());
+    guard
+        .get_or_insert_with(wrapped_core::now::NowSampler::new)
+        .sample()
+        .to_json()
+}

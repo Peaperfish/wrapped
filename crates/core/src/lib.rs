@@ -4,6 +4,7 @@
 //! * [`event`]: the system event vocabulary the platform layer produces.
 //! * [`collector`]: the plugin trait, the [`collector::Sink`] and buffer.
 //! * [`presence`]: the shared idle / sleep / lock state machine.
+//! * [`now`]: live hardware numbers for the Now tab (a sampler that runs only when called).
 //! * [`probe`]: system counters (disk, memory) read through the platform layer.
 //! * [`collectors`]: the built-in collectors and their registration list.
 //! * [`ctl`]: the request-file channel from the dashboard / CLI to the collector.
@@ -19,6 +20,7 @@ pub mod collectors;
 pub mod ctl;
 pub mod engine;
 pub mod event;
+pub mod now;
 pub mod presence;
 pub mod probe;
 pub mod scan;

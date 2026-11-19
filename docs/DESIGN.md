@@ -1,6 +1,6 @@
 # Wrapped — Design Doc
 
-| Status | *idea / pre-build* |
+| Status | *milestones 0–7 built (collector, stats engine, dashboard, setup, Now tab); 8–10 open* |
 | :---- | :---- |
 | **Platforms** | *macOS first, Windows later* |
 
