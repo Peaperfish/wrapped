@@ -41,6 +41,9 @@
 
   /* Heatmap: empty, four levels of the accent, future days. */
   --cell-empty: rgba(255, 255, 255, 0.055);
+  /* Empty days inside a selected range, and the outline around the range. */
+  --heat-empty-selected: rgba(255, 255, 255, 0.12);
+  --heat-outline: rgba(var(--accent-rgb), 0.5);
   --cell-1: rgba(var(--accent-rgb), 0.22);
   --cell-2: rgba(var(--accent-rgb), 0.42);
   --cell-3: rgba(var(--accent-rgb), 0.68);
