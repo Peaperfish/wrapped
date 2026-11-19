@@ -18,6 +18,7 @@
 //!   what the dashboard already shows: app ids, repository and AI project
 //!   folder names, camera and lens models. No window titles, files or paths.
 
+pub mod notify;
 mod period;
 
 use std::collections::BTreeMap;

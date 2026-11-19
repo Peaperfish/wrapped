@@ -29,6 +29,10 @@ USAGE
   wrapped-collector recap show week|month|year <date> [--json]
                                             the recap slides of the period containing <date>
                                             (YYYY-MM-DD or today; read-only)
+  wrapped-collector recap notify-test [week|month|year]
+                                            ask the running Wrapped.app to post the notification of
+                                            the newest recap of that kind now (asks for permission
+                                            first if needed; marks nothing as announced)
   wrapped-collector sessions [today|YYYY-MM-DD]  session rows for a local day
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
@@ -64,6 +68,7 @@ SETTINGS (values are JSON; a bare word is taken as a string)
   git.author_emails                   '[\"me@example.com\"]'  (set from git config when git is turned on)
   photos.folders                      '[\"~/Pictures\"]'
   photos.extensions                   '[\"jpg\",\"jpeg\",\"heic\",\"heif\",\"arw\",\"dng\"]'
+  recaps.notify.week|month|year       true | false   (recap notifications; default false)
 
 ENVIRONMENT
   WRAPPED_DEBUG=1   same as --debug: log every system event, tick gap and flush to stderr
@@ -109,6 +114,16 @@ pub fn main() -> i32 {
         ["now", rest @ ..] => now(rest),
         ["recap", "list"] => recap_list(&db, false),
         ["recap", "list", "--json"] => recap_list(&db, true),
+        ["recap", "notify-test"] => {
+            return ctl_command(&db, "recap_notify_test", r#"{"kind":"week"}"#);
+        }
+        ["recap", "notify-test", kind] => {
+            return ctl_command(
+                &db,
+                "recap_notify_test",
+                &serde_json::json!({ "kind": kind }).to_string(),
+            );
+        }
         ["recap", "show", kind, date] => recap_show(&db, kind, date, false),
         ["recap", "show", kind, date, "--json"] => recap_show(&db, kind, date, true),
         ["scan"] => scan(&db, "all"),

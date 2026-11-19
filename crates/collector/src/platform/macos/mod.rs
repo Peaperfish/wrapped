@@ -17,6 +17,7 @@ mod bookmarks;
 mod counters;
 mod lock;
 mod login;
+mod notify;
 mod scan;
 mod signals;
 mod sources;
@@ -145,6 +146,7 @@ struct State {
     /// From `WillSleep` until `DidWake`: a tick now is a dark-wake tick.
     asleep_since: Option<Timestamp>,
     last_disk_bytes: u64,
+    notify: notify::NotifyState,
 }
 
 /// Local wall-clock "HH:MM:SS".
@@ -221,6 +223,8 @@ pub(crate) fn deliver(ev: SystemEvent) {
             SystemEvent::DidWake => {
                 st.slept_since_tick = true;
                 st.asleep_since = None;
+                // Recap notifications: check on the next tick.
+                st.notify.last_check_ms = None;
             }
             _ => {}
         }
@@ -266,6 +270,9 @@ pub(crate) fn deliver(ev: SystemEvent) {
     });
     if is_tick {
         process_ctl();
+        if with_state(|st| st.asleep_since.is_none()).unwrap_or(false) {
+            notify::tick(SystemClock.now());
+        }
     }
 }
 
@@ -273,8 +280,18 @@ pub(crate) fn deliver(ev: SystemEvent) {
 /// minute tick as a safety net). Each is handled to completion on the main
 /// thread before the next.
 pub(crate) fn process_ctl() {
-    with_state(|st| {
-        for (id, req) in wrapped_core::ctl::take_pending(&st.db) {
+    let pending = with_state(|st| wrapped_core::ctl::take_pending(&st.db)).unwrap_or_default();
+    for (id, req) in pending {
+        // Handled here (it posts a notification), not by the engine.
+        if req.cmd == "recap_notify_test" {
+            let reply = match notify::test(&req.args) {
+                Ok(v) => wrapped_core::ctl::Reply::Ok(v),
+                Err(e) => wrapped_core::ctl::Reply::err("failed", e),
+            };
+            with_state(|st| wrapped_core::ctl::reply(&st.db, &id, &reply));
+            continue;
+        }
+        with_state(|st| {
             let reply = st.engine.handle_request(&req);
             if st.debug || matches!(reply, wrapped_core::ctl::Reply::Err { .. }) {
                 log(&format!(
@@ -292,8 +309,10 @@ pub(crate) fn process_ctl() {
             if !matches!(req.cmd.as_str(), "ping" | "status") {
                 st.measured("request", |e| e.flush().map(Some));
             }
-        }
-    });
+        });
+    }
+    // A recap toggle turned on asks for notification permission.
+    notify::settings_changed();
     tray::refresh();
 }
 
@@ -393,8 +412,11 @@ pub fn run_collector(db: &Path, debug: bool) -> i32 {
             slept_since_tick: false,
             asleep_since: None,
             last_disk_bytes: process_disk_bytes_written().unwrap_or(0),
+            notify: notify::NotifyState::default(),
         })
     });
+    notify::install();
+    notify::settings_changed();
 
     let app = NSApplication::sharedApplication(mtm);
     // Menu-bar only: no Dock icon, no app menu.

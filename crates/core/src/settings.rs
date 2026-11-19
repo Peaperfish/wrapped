@@ -15,6 +15,7 @@
 //! | `ai.sources`                         | array of `{id, tool, path, builtin, enabled, bookmark?}`: folders the AI usage collector reads | `[]` (tools found on this machine are added at the first scan) |
 //! | `appearance.theme`                   | `"system"`, `"light"` or `"dark"`        | `"system"` |
 //! | `appearance.accent`                  | `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"` | `"green"` |
+//! | `recaps.notify.week` / `.month` / `.year` | `true` / `false`: notify when that recap is ready | `false` |
 //! | `onboarding.done`                    | `true` / `false`, or `null` = not decided yet (see `Engine::begin_onboarding`) | `null` |
 //!
 //! Keys starting with `internal.` are bookkeeping owned by the store and are
@@ -40,6 +41,9 @@ pub const KEY_ONBOARDING_DONE: &str = "onboarding.done";
 pub const KEY_AI_SOURCES: &str = "ai.sources";
 pub const KEY_THEME: &str = "appearance.theme";
 pub const KEY_ACCENT: &str = "appearance.accent";
+pub const KEY_NOTIFY_WEEK: &str = "recaps.notify.week";
+pub const KEY_NOTIFY_MONTH: &str = "recaps.notify.month";
+pub const KEY_NOTIFY_YEAR: &str = "recaps.notify.year";
 pub const THEMES: &[&str] = &["system", "light", "dark"];
 pub const ACCENTS: &[&str] = &["green", "blue", "purple", "orange", "pink"];
 pub const DEFAULT_PHOTO_EXTENSIONS: &[&str] = &["jpg", "jpeg", "heic", "heif", "arw", "dng"];
@@ -156,6 +160,10 @@ pub struct Settings {
     pub theme: String,
     /// One of `ACCENTS`.
     pub accent: String,
+    /// Recap notifications per period kind (week, month, year).
+    pub notify_week: bool,
+    pub notify_month: bool,
+    pub notify_year: bool,
 }
 
 impl Default for Settings {
@@ -178,6 +186,9 @@ impl Default for Settings {
             ai_sources: Vec::new(),
             theme: THEMES[0].to_string(),
             accent: ACCENTS[0].to_string(),
+            notify_week: false,
+            notify_month: false,
+            notify_year: false,
         }
     }
 }
@@ -249,6 +260,16 @@ impl Settings {
             KEY_AI_SOURCES => self.ai_sources = ai_sources(key, v)?,
             KEY_THEME => self.theme = one_of(key, v, THEMES)?,
             KEY_ACCENT => self.accent = one_of(key, v, ACCENTS)?,
+            KEY_NOTIFY_WEEK | KEY_NOTIFY_MONTH | KEY_NOTIFY_YEAR => {
+                let on = v
+                    .as_bool()
+                    .ok_or_else(|| SettingsError::invalid(key, "expected true or false"))?;
+                match key {
+                    KEY_NOTIFY_WEEK => self.notify_week = on,
+                    KEY_NOTIFY_MONTH => self.notify_month = on,
+                    _ => self.notify_year = on,
+                }
+            }
             KEY_ONBOARDING_DONE => {
                 self.onboarding_done = if v.is_null() {
                     None
@@ -308,6 +329,9 @@ impl Settings {
             KEY_PHOTOS_EXTENSIONS => json!(self.photos_extensions),
             KEY_THEME => json!(self.theme),
             KEY_ACCENT => json!(self.accent),
+            KEY_NOTIFY_WEEK => json!(self.notify_week),
+            KEY_NOTIFY_MONTH => json!(self.notify_month),
+            KEY_NOTIFY_YEAR => json!(self.notify_year),
             KEY_ONBOARDING_DONE => json!(self.onboarding_done),
             KEY_AI_SOURCES => Value::Array(self.ai_sources.iter().map(AiSource::to_json).collect()),
             _ => {
@@ -341,6 +365,9 @@ impl Settings {
             KEY_AI_SOURCES,
             KEY_THEME,
             KEY_ACCENT,
+            KEY_NOTIFY_WEEK,
+            KEY_NOTIFY_MONTH,
+            KEY_NOTIFY_YEAR,
         ]
         .iter()
         .map(|k| (k.to_string(), self.get_json(k).expect("known key")))

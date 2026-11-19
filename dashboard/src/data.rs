@@ -138,6 +138,17 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         pause_until_ms,
         theme: settings.theme.clone(),
         accent: settings.accent.clone(),
+        notify_week: settings.notify_week,
+        notify_month: settings.notify_month,
+        notify_year: settings.notify_year,
+        notify_permission: opened
+            .as_ref()
+            .and_then(|(s, _)| {
+                s.internal_value(wrapped_core::recap::notify::PERMISSION_KEY)
+                    .ok()
+                    .flatten()
+            })
+            .unwrap_or_else(|| "unknown".to_string()),
     };
     let ai = ai_meta(opened.as_ref().map(|(s, _)| s), &settings);
     Ok(Meta {

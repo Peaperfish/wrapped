@@ -19,4 +19,14 @@ theme: string,
 /**
  * `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"`.
  */
-accent: string, };
+accent: string, 
+/**
+ * Recap notifications on (`recaps.notify.week|month|year`).
+ */
+notify_week: boolean, notify_month: boolean, notify_year: boolean, 
+/**
+ * What the collector last saw: `"granted"`, `"denied"`,
+ * `"not_determined"`, `"unavailable"` (not inside Wrapped.app), or
+ * `"unknown"` (never asked).
+ */
+notify_permission: string, };

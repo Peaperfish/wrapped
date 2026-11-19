@@ -606,3 +606,59 @@ fn recap_json_has_a_kind_per_slide() {
     assert!(kinds.iter().all(|k| recap::SLIDE_KINDS.contains(k)));
     let _: NaiveDate = v["range"]["from"].as_str().unwrap().parse().unwrap();
 }
+
+#[test]
+fn notify_check_baseline_once_and_no_burst() {
+    use wrapped_core::recap::notify;
+    let s = store_with(ALL);
+    let all = collectors_all();
+    for day in [
+        "2026-11-03",
+        "2026-11-04",
+        "2026-11-10",
+        "2026-11-11",
+        "2026-11-17",
+        "2026-11-18",
+    ] {
+        screen(&s, day, 3600.0);
+    }
+    let local = |date: &str, h: i64| at(d(date), h, 0, 60);
+    let run = |now| notify::check(&s, &settings(&s), &all, now, |id: &str| id.to_string()).unwrap();
+    // Everything off: nothing, and nothing stored.
+    assert!(run(local("2026-11-18", 12)).is_empty());
+    assert_eq!(
+        s.internal_value(&notify::last_key(PeriodKind::Week))
+            .unwrap(),
+        None
+    );
+
+    // Turned on on Wednesday 18 Nov: the newest ready week (9 Nov) once, never the older ones.
+    s.set_setting("recaps.notify.week", "true").unwrap();
+    let n = run(local("2026-11-18", 12));
+    assert_eq!(n.len(), 1);
+    assert_eq!(n[0].period, wk("2026-11-09"));
+    assert!(
+        n[0].body.starts_with("Your week is ready: 2 h screen time"),
+        "{}",
+        n[0].body
+    );
+    assert!(run(local("2026-11-18", 13)).is_empty());
+    // Monday 23 Nov before 09:00: nothing; from 09:00: the week of 16 Nov.
+    assert!(run(local("2026-11-23", 8)).is_empty());
+    assert_eq!(run(local("2026-11-23", 9))[0].period, wk("2026-11-16"));
+    // Asleep for two weeks with data: only the newest week.
+    for day in ["2026-11-24", "2026-11-25", "2026-12-01", "2026-12-02"] {
+        screen(&s, day, 600.0);
+    }
+    let n = run(local("2026-12-08", 10));
+    assert_eq!(
+        n.iter().map(|x| x.period).collect::<Vec<_>>(),
+        vec![wk("2026-11-30")]
+    );
+    // Months and years stay quiet while off.
+    assert_eq!(
+        s.internal_value(&notify::last_key(PeriodKind::Month))
+            .unwrap(),
+        None
+    );
+}

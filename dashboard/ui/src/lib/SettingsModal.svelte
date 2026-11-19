@@ -14,6 +14,7 @@
   import ExcludeSection from "./settings/ExcludeSection.svelte";
   import FoldersSection from "./settings/FoldersSection.svelte";
   import TrackingSection from "./settings/TrackingSection.svelte";
+  import RecapsSection from "./settings/RecapsSection.svelte";
   import type { Meta } from "./types";
 
   interface Props {
@@ -25,7 +26,7 @@
   }
   let { meta, onchanged, onclose }: Props = $props();
 
-  type SectionId = "tracking" | "exclude" | "folders" | "ai" | "appearance" | "data";
+  type SectionId = "tracking" | "exclude" | "folders" | "ai" | "recaps" | "appearance" | "data";
   const sections = $derived<{ id: SectionId; title: string }[]>([
     { id: "tracking", title: "Tracking" },
     { id: "exclude", title: "Exclude list" },
@@ -33,6 +34,7 @@
     ...(meta.collectors.some((c) => c.name === "ai_usage")
       ? [{ id: "ai" as const, title: "AI sources" }]
       : []),
+    { id: "recaps", title: "Recaps" },
     { id: "appearance", title: "Appearance" },
     { id: "data", title: "Data" },
   ]);
@@ -133,6 +135,8 @@
           <FoldersSection {meta} {onchanged} />
         {:else if current === "ai"}
           <AiSourcesSection {meta} {onchanged} />
+        {:else if current === "recaps"}
+          <RecapsSection {meta} {onchanged} />
         {:else if current === "appearance"}
           <AppearanceSection {meta} {onchanged} />
         {:else if current === "data"}

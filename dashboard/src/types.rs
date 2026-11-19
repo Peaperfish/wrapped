@@ -79,6 +79,14 @@ pub struct SettingsMeta {
     pub theme: String,
     /// `"green"`, `"blue"`, `"purple"`, `"orange"` or `"pink"`.
     pub accent: String,
+    /// Recap notifications on (`recaps.notify.week|month|year`).
+    pub notify_week: bool,
+    pub notify_month: bool,
+    pub notify_year: bool,
+    /// What the collector last saw: `"granted"`, `"denied"`,
+    /// `"not_determined"`, `"unavailable"` (not inside Wrapped.app), or
+    /// `"unknown"` (never asked).
+    pub notify_permission: String,
 }
 
 /// One author email found by `git_emails` (setup and Settings).
