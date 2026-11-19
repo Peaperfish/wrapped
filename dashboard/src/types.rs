@@ -397,6 +397,174 @@ pub struct NowSnapshotJson {
     pub fans: Option<Vec<FanJson>>,
 }
 
+// ---------- recaps ----------
+
+/// One recap in the list (`wrapped_core::recap::RecapEntry::to_json`, the
+/// same JSON as `wrapped-collector recap list --json`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RecapEntryJson {
+    /// `week:2026-11-09`, `month:2026-11-01`, `year:2026-01-01`.
+    pub id: String,
+    /// "week" | "month" | "year".
+    pub kind: String,
+    pub label: String,
+    /// The days covered (up to today while the period runs).
+    pub range: RangeJson,
+    pub in_progress: bool,
+    pub active_days: u32,
+    /// Null when app usage is off.
+    pub screen_secs: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct AppShareJson {
+    /// App id (bundle id); `app_names` gives the display name.
+    pub key: String,
+    pub secs: f64,
+    /// Of the period's screen time, 0..1.
+    pub share: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct WeekdayAvgJson {
+    /// Monday = 0.
+    pub weekday: u32,
+    pub avg_secs: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RecapSessionJson {
+    pub app: String,
+    pub secs: f64,
+    /// RFC 3339 in the session's own offset.
+    pub start: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RecapNightJson {
+    /// The evening's date.
+    pub night: String,
+    /// Minutes after that evening's midnight (26:30 = 1590).
+    pub clock_min: i64,
+}
+
+/// A headline number of the summary slide.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct HeadlineJson {
+    /// "screen_time" | "top_app" | "commits" | "photos" | "ai_tokens" |
+    /// "streak" | "disk_written" | "active_days".
+    pub id: String,
+    pub value: f64,
+    /// The app id for `top_app`.
+    pub text: Option<String>,
+}
+
+/// One story slide (`wrapped_core::recap::Slide::to_json`). A change is
+/// null when the previous period is too thin or had nothing ("—").
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+///
+/// No `deny_unknown_fields` (ts-rs cannot read it on an enum); the recap
+/// test's round trip catches a field this type would drop.
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SlideJson {
+    Intro {
+        label: String,
+        days: i64,
+        active_days: u32,
+        screen_secs: Option<f64>,
+    },
+    ScreenTime {
+        total_secs: f64,
+        daily_avg_secs: f64,
+        screen_days: u32,
+        change_pct: Option<f64>,
+        busiest_weekday: Option<WeekdayAvgJson>,
+    },
+    TopApps {
+        total_secs: f64,
+        apps: Vec<AppShareJson>,
+    },
+    TimeOfDay {
+        /// 24 values, local hours.
+        hours: Vec<f64>,
+        peak_hour: u32,
+        /// "early_bird" | "daytime" | "night_owl".
+        label: String,
+        morning_share: f64,
+        night_share: f64,
+    },
+    BusiestDay {
+        date: String,
+        /// Monday = 0.
+        weekday: u32,
+        secs: f64,
+    },
+    Records {
+        longest_session: Option<RecapSessionJson>,
+        latest_night: Option<RecapNightJson>,
+        streak: Option<StreakJson>,
+    },
+    Git {
+        commits: f64,
+        change_pct: Option<f64>,
+        top_repo: Option<KeyValueJson>,
+        busiest_hour: Option<u32>,
+        hours: Vec<f64>,
+    },
+    Photos {
+        count: f64,
+        change_pct: Option<f64>,
+        top_camera: Option<KeyValueJson>,
+        top_lens: Option<KeyValueJson>,
+        /// Key: whole millimetres.
+        top_focal: Option<KeyValueJson>,
+    },
+    Ai {
+        tokens: f64,
+        input: f64,
+        output: f64,
+        change_pct: Option<f64>,
+        top_tool: Option<KeyValueJson>,
+        top_model: Option<KeyValueJson>,
+        top_project: Option<KeyValueJson>,
+    },
+    Disk {
+        bytes_written: f64,
+        change_pct: Option<f64>,
+    },
+    Summary {
+        items: Vec<HeadlineJson>,
+    },
+}
+
+/// A recap with its slides (`wrapped_core::recap::Recap::to_json`, the same
+/// JSON as `wrapped-collector recap show … --json`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct RecapJson {
+    pub id: String,
+    pub kind: String,
+    pub label: String,
+    /// The days covered.
+    pub range: RangeJson,
+    /// The whole period.
+    pub period: RangeJson,
+    pub in_progress: bool,
+    /// What changes compare with.
+    pub previous: RangeJson,
+    /// False when the previous period is too thin (every change null).
+    pub comparable: bool,
+    pub active_days: u32,
+    pub available: bool,
+    pub slides: Vec<SlideJson>,
+}
+
 /// Every exported type: (file name, TypeScript source). Integers are plain
 /// `number`s (dates, counts and UTC ms all fit in 2^53).
 pub fn typescript_files() -> Vec<(String, String)> {
@@ -439,5 +607,13 @@ pub fn typescript_files() -> Vec<(String, String)> {
         TempJson,
         FanJson,
         NowSnapshotJson,
+        RecapEntryJson,
+        AppShareJson,
+        WeekdayAvgJson,
+        RecapSessionJson,
+        RecapNightJson,
+        HeadlineJson,
+        SlideJson,
+        RecapJson,
     )
 }

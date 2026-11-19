@@ -4,7 +4,7 @@
 //! * Reads the collector's database read-only and never writes
 //!   (see [`data`]); `--db <path>` picks another database.
 //! * Commands: `meta`, `summary(from, to, vsFrom?, vsTo?)`, `series(year, metric)`,
-//!   `app_names(ids)`, `flush_collector` (asks a running collector to save, by
+//!   `app_names(ids)`, `recap_list`, `recap_get(id)`, `flush_collector` (asks a running collector to save, by
 //!   running `wrapped-collector flush`; the dashboard itself never writes) and
 //!   `ready` (the page has rendered: show the window). Types are in
 //!   [`types`], mirrored to TypeScript in `ui/src/lib/types/`.
@@ -290,6 +290,30 @@ async fn now_snapshot(app: tauri::AppHandle) -> Result<Value, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Every available recap (`data::recap_list`), on a blocking worker.
+#[tauri::command]
+async fn recap_list(app: tauri::AppHandle) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        state.timed("recap_list", || data::recap_list(state.db()?, today()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// One recap with its slides (`data::recap_get`), on a blocking worker.
+#[tauri::command]
+async fn recap_get(app: tauri::AppHandle, id: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        state.timed(&format!("recap_get {id}"), || {
+            data::recap_get(state.db()?, &id, today())
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The page has rendered its first frame with data: show the window.
 #[tauri::command]
 fn ready(window: WebviewWindow, state: State<'_, AppState>) {
@@ -371,6 +395,8 @@ pub fn main() -> i32 {
             open_wrapped,
             ready,
             now_snapshot,
+            recap_list,
+            recap_get,
             set_window_theme
         ])
         .setup(|app| {

@@ -349,3 +349,27 @@ pub fn now_snapshot(sampler: &std::sync::Mutex<Option<wrapped_core::now::NowSamp
         .sample()
         .to_json()
 }
+
+/// Every recap available on `today` (years, months, weeks; newest first), as
+/// `wrapped-collector recap list --json` prints it.
+pub fn recap_list(db: &Path, today: NaiveDate) -> Result<Value> {
+    let (store, settings) = open(db)?;
+    let all = collectors::builtin();
+    let st = Stats::new(&store, &all, &settings);
+    let list = wrapped_core::recap::list(&st, today).map_err(|e| e.to_string())?;
+    Ok(wrapped_core::recap::list_json(&list))
+}
+
+/// One recap by id (`week:2026-11-09`; any date inside the period works), as
+/// `wrapped-collector recap show … --json` prints it.
+pub fn recap_get(db: &Path, id: &str, today: NaiveDate) -> Result<Value> {
+    let period = wrapped_core::recap::Period::parse_id(id)
+        .ok_or_else(|| format!("not a recap id (week|month|year:YYYY-MM-DD): {id:?}"))?;
+    let (store, settings) = open(db)?;
+    let all = collectors::builtin();
+    let st = Stats::new(&store, &all, &settings);
+    wrapped_core::recap::build(&st, period, today)
+        .map_err(|e| e.to_string())?
+        .map(|r| r.to_json())
+        .ok_or_else(|| format!("{} has not started yet", period.label()))
+}
