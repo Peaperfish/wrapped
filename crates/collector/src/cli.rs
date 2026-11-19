@@ -25,6 +25,10 @@ USAGE
                                             totals, top keys, change vs the previous period,
                                             time of day, per-day series and records for an
                                             inclusive range of local dates (read-only)
+  wrapped-collector recap list [--json]      recaps available today (years, months, weeks; newest first)
+  wrapped-collector recap show week|month|year <date> [--json]
+                                            the recap slides of the period containing <date>
+                                            (YYYY-MM-DD or today; read-only)
   wrapped-collector sessions [today|YYYY-MM-DD]  session rows for a local day
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
@@ -103,6 +107,10 @@ pub fn main() -> i32 {
         ["git", "emails"] => git_emails(&db),
         ["probe", "disk-memory"] => probe_disk_memory(),
         ["now", rest @ ..] => now(rest),
+        ["recap", "list"] => recap_list(&db, false),
+        ["recap", "list", "--json"] => recap_list(&db, true),
+        ["recap", "show", kind, date] => recap_show(&db, kind, date, false),
+        ["recap", "show", kind, date, "--json"] => recap_show(&db, kind, date, true),
         ["scan"] => scan(&db, "all"),
         ["scan", "ai", "--rebuild"] => {
             Err("--rebuild needs --yes (it deletes AI usage first)".into())
@@ -490,6 +498,107 @@ fn stats_range(db: &std::path::Path, from: &str, to: &str, json: bool) -> CliRes
     }
     let hidden = hidden_collectors(&all, &settings);
     print_summary(&sum, &st, &hidden);
+    Ok(())
+}
+
+/// Open the database read-only for the stats engine (asking a running
+/// collector to flush first, as `stats range` does).
+fn read_only_stats_store(db: &std::path::Path) -> Result<Store, Box<dyn std::error::Error>> {
+    if !db.exists() {
+        return Err(format!("no database at {}", db.display()).into());
+    }
+    if platform::request_flush(db).is_some() {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    Ok(Store::open_read_only(db)?)
+}
+
+fn recap_list(db: &std::path::Path, json: bool) -> CliResult {
+    use wrapped_core::recap;
+    use wrapped_core::stats::Stats;
+    let store = read_only_stats_store(db)?;
+    let (settings, _) = store.load_settings()?;
+    let all = collectors::builtin();
+    let st = Stats::new(&store, &all, &settings);
+    let entries = recap::list(&st, SystemClock.now().local_date())?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&recap::list_json(&entries))?
+        );
+        return Ok(());
+    }
+    if entries.is_empty() {
+        println!("No recaps yet (a week needs 2 days with data, a month 7, a year 30).");
+    }
+    for e in &entries {
+        println!(
+            "{:<22} {:<28} {:>3} active days{}{}",
+            e.period.id(),
+            e.period.label(),
+            e.active_days,
+            e.screen_secs.map_or(String::new(), |s| format!(
+                "  {} screen time",
+                recap::fmt_hours(s)
+            )),
+            if e.in_progress { "  (so far)" } else { "" },
+        );
+    }
+    Ok(())
+}
+
+fn recap_show(db: &std::path::Path, kind: &str, date: &str, json: bool) -> CliResult {
+    use wrapped_core::recap::{self, Period, PeriodKind};
+    use wrapped_core::stats::Stats;
+    let kind = PeriodKind::parse(kind)
+        .ok_or_else(|| format!("expected week, month or year, got `{kind}`"))?;
+    let date = if date == "today" {
+        SystemClock.now().local_date()
+    } else {
+        recap::parse_loose_date(date)
+            .ok_or_else(|| format!("expected YYYY-MM-DD or today, got `{date}`"))?
+    };
+    let period = Period::containing(kind, date);
+    let store = read_only_stats_store(db)?;
+    let (settings, _) = store.load_settings()?;
+    let all = collectors::builtin();
+    let st = Stats::new(&store, &all, &settings);
+    let today = SystemClock.now().local_date();
+    let t = Instant::now();
+    let Some(rc) = recap::build(&st, period, today)? else {
+        return Err(format!("{} has not started yet", period.label()).into());
+    };
+    let ms = t.elapsed().as_secs_f64() * 1e3;
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rc.to_json())?);
+        return Ok(());
+    }
+    println!(
+        "Recap {} ({} .. {}{}), {} active days, compared with {} .. {}{}",
+        period.label(),
+        rc.range.from,
+        rc.range.to,
+        if rc.in_progress { ", so far" } else { "" },
+        rc.active_days,
+        rc.previous.from,
+        rc.previous.to,
+        if rc.comparable {
+            ""
+        } else {
+            " (too thin: no changes)"
+        },
+    );
+    if !rc.available {
+        println!("(not in the recap list: period not over or too few days with data)");
+    }
+    for (i, s) in rc.slides.iter().enumerate() {
+        let mut v = s.to_json();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("kind");
+        }
+        println!("{:>2}. {:<12} {}", i + 1, s.kind(), v);
+    }
+    println!("built in {ms:.1} ms");
     Ok(())
 }
 

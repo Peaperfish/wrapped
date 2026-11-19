@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use common::*;
 use wrapped_core::Store;
+use wrapped_core::recap;
 use wrapped_core::stats::{DateRange, Stats};
 
 /// One timed stats call; returns a result count so the work is not optimized away.
@@ -140,6 +141,19 @@ fn stats_over_a_synthetic_year() {
             Box::new(|st| st.summary(year, 10).unwrap().totals.len()),
         ),
         (
+            "year recap (2026 so far, every slide)",
+            Box::new(|st| {
+                let y = recap::Period::containing(recap::PeriodKind::Year, d("2026-06-01"));
+                recap::build(st, y, d("2026-12-01"))
+                    .unwrap()
+                    .map_or(0, |r| r.slides.len())
+            }),
+        ),
+        (
+            "recap list (whole history)",
+            Box::new(|st| recap::list(st, d("2026-12-01")).unwrap().len()),
+        ),
+        (
             "month summary (everything)",
             Box::new(|st| st.summary(month, 10).unwrap().totals.len()),
         ),
@@ -154,4 +168,39 @@ fn stats_over_a_synthetic_year() {
     drop(st);
     drop(s);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `recap_get` on a real database, opened read-only: the longest available
+/// recap, median of 5. Run with
+///
+///     WRAPPED_PERF_DB=<path> cargo test -p wrapped-core --release --test stats_perf recap_on_db -- --ignored --nocapture
+#[test]
+#[ignore]
+fn recap_on_db() {
+    let Some(path) = std::env::var_os("WRAPPED_PERF_DB") else {
+        println!("WRAPPED_PERF_DB not set");
+        return;
+    };
+    let s = Store::open_read_only(std::path::Path::new(&path)).unwrap();
+    let settings = s.load_settings().unwrap().0;
+    let all = collectors_all();
+    let st = Stats::new(&s, &all, &settings);
+    let today = chrono::Local::now().date_naive();
+    let (m, w, list) = time(5, || recap::list(&st, today).unwrap());
+    println!(
+        "recap list: {} recaps, median {m:.2} ms, max {w:.2} ms",
+        list.len()
+    );
+    let mut candidates: Vec<recap::Period> = list.iter().map(|e| e.period).collect();
+    // The current year as well, even before December (the longest range there is).
+    candidates.push(recap::Period::containing(recap::PeriodKind::Year, today));
+    for p in candidates {
+        let (m, w, r) = time(5, || recap::build(&st, p, today).unwrap().unwrap());
+        println!(
+            "{:<20} {:>4} days {:>2} slides  median {m:>7.2} ms   max {w:>7.2} ms",
+            p.id(),
+            r.range.days(),
+            r.slides.len()
+        );
+    }
 }

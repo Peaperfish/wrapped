@@ -32,7 +32,7 @@ use crate::collector::{
     AiDayRow, AiRecord, DayInput, DayItem, DaySample, FileStamp, ItemRecord, MAX_SAMPLE_WINDOW_MS,
     MetricValue, OpenSession, SampleRecord, ScanUpdate, SessionRecord, Slice,
 };
-use crate::settings::{Settings, SettingsError, collector_enabled_key};
+use crate::settings::{INTERNAL_PREFIX, Settings, SettingsError, collector_enabled_key};
 use crate::time::{MS_PER_DAY, MS_PER_HOUR, Timestamp, date_from_local_ms, local_midnight_ms};
 
 /// Local offsets in use worldwide span UTC-12..UTC+14; pad to be safe.
@@ -341,6 +341,27 @@ impl Store {
             })?
             .collect::<std::result::Result<_, _>>()?;
         Ok(rows)
+    }
+
+    /// A bookkeeping value (`internal.<name>` in `settings`).
+    pub fn internal_value(&self, name: &str) -> Result<Option<String>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT value FROM settings WHERE key = ?1",
+                [format!("{INTERNAL_PREFIX}{name}")],
+                |r| r.get(0),
+            )
+            .optional()?)
+    }
+
+    pub fn set_internal_value(&self, name: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO settings(key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![format!("{INTERNAL_PREFIX}{name}"), value],
+        )?;
+        Ok(())
     }
 
     /// The stored settings fingerprint of a scanned collector (see
@@ -767,6 +788,28 @@ impl Store {
             let met = r.get_ref(2)?.as_str().map_err(rusqlite::Error::from)?;
             let key = r.get_ref(3)?.as_str().map_err(rusqlite::Error::from)?;
             f(date, col, met, key, r.get(4)?);
+        }
+        Ok(())
+    }
+
+    /// Calls `f(date, collector)` once for every local date in
+    /// `from..=to` and collector with any daily metric, in date order.
+    pub fn each_metric_date(
+        &self,
+        from: NaiveDate,
+        to: NaiveDate,
+        mut f: impl FnMut(NaiveDate, &str),
+    ) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT DISTINCT date, collector FROM daily_metrics WHERE date >= ?1 AND date <= ?2",
+        )?;
+        let mut rows = stmt.query(params![from.to_string(), to.to_string()])?;
+        while let Some(r) = rows.next()? {
+            let ds = r.get_ref(0)?.as_str().map_err(rusqlite::Error::from)?;
+            let Ok(d) = NaiveDate::parse_from_str(ds, "%Y-%m-%d") else {
+                continue;
+            };
+            f(d, r.get_ref(1)?.as_str().map_err(rusqlite::Error::from)?);
         }
         Ok(())
     }

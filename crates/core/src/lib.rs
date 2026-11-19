@@ -11,6 +11,7 @@
 //! * [`scan`]: folder walk, hashing and bounded EXIF reading for scanned collectors.
 //! * [`store`]: SQLite schema, migrations, batched writes and daily rollups.
 //! * [`engine`]: routes events, owns the flush policy, pause and settings.
+//! * [`recap`]: weekly / monthly / yearly recap slides from the stats engine.
 //! * [`stats`]: the stats engine: totals, series, top-N, comparisons and
 //!   records for any range of local dates (dashboard, recaps).
 
@@ -23,6 +24,7 @@ pub mod event;
 pub mod now;
 pub mod presence;
 pub mod probe;
+pub mod recap;
 pub mod scan;
 pub mod settings;
 pub mod stats;

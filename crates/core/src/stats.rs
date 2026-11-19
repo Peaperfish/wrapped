@@ -260,6 +260,31 @@ impl<'a> Stats<'a> {
         self.metrics.iter().any(|m| m.collector == collector)
     }
 
+    /// Collectors that are on, each once.
+    fn visible_collectors(&self) -> Vec<&'static str> {
+        let mut v: Vec<&'static str> = self.metrics.iter().map(|m| m.collector).collect();
+        v.dedup();
+        v
+    }
+
+    /// The earliest date with any metric of a collector that is on.
+    pub fn earliest_date(&self) -> StoreResult<Option<NaiveDate>> {
+        self.store.earliest_metric_date(&self.visible_collectors())
+    }
+
+    /// Dates in the range with any stored metric of a collector that is on
+    /// (the `data_days` of a summary). One index range scan.
+    pub fn data_dates(&self, r: DateRange) -> StoreResult<BTreeSet<NaiveDate>> {
+        let on = self.visible_collectors();
+        let mut out = BTreeSet::new();
+        self.store.each_metric_date(r.from, r.to, |date, c| {
+            if on.contains(&c) {
+                out.insert(date);
+            }
+        })?;
+        Ok(out)
+    }
+
     fn find(&self, collector: &str, metric: &str) -> Option<usize> {
         self.metrics
             .iter()
