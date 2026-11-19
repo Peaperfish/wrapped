@@ -59,12 +59,12 @@ The collector is a plain Rust process with a native tray icon (no web view) and 
 ## Roadmap
 
 - [x] **0.** Spike: front app, idle state, sleep/wake (see [spikes/README.md](spikes/README.md))
-- [ ] **1.** Collector, plugin system, SQLite, daily metrics, tracking settings, tray, launch at login (**next**)
-- [ ] **2.** Collectors: Git and Photos
-- [ ] **3.** Collector: Disk and Memory
-- [ ] **4.** Stats engine (any date range)
-- [ ] **5.** Dashboard: heatmap and cards
-- [ ] **6.** Onboarding and Settings
+- [x] **1.** Collector, plugin system, SQLite, daily metrics, tracking settings, tray, launch at login (**next**)
+- [x] **2.** Collectors: Git and Photos
+- [x] **3.** Collector: Disk and Memory
+- [x] **4.** Stats engine (any date range)
+- [x] **5.** Dashboard: heatmap and cards
+- [x] **6.** Onboarding and Settings
 - [ ] **7.** Now tab
 - [ ] **8.** Recap slides and notifications
 - [ ] **9.** Windows port
