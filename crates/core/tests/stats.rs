@@ -1005,8 +1005,8 @@ fn photo_lenses_get_friendly_names_and_merge() {
         &vec![
             ("Sigma 24-70mm F2.8 DG DN II Art".to_string(), 40.0),
             ("No lens info".to_string(), 16.0),
-            ("Air 3S tele".to_string(), 6.0),
-            ("Air 3S wide (24mm f/1.8)".to_string(), 5.0)
+            ("DJI Air 3S Tele 70mm F2.8".to_string(), 6.0),
+            ("DJI Air 3S Wide 24mm F1.8".to_string(), 5.0)
         ]
     );
     // Stored keys stay raw.
