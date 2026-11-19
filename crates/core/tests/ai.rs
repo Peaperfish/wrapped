@@ -433,6 +433,147 @@ fn antigravity_reads_only_the_full_transcript_and_takes_only_the_folder_name() {
     assert_eq!(totals(&e).requests, 2);
 }
 
+fn pb_varint(mut v: u64) -> Vec<u8> {
+    let mut o = Vec::new();
+    loop {
+        let c = (v & 0x7f) as u8;
+        v >>= 7;
+        if v == 0 {
+            o.push(c);
+            return o;
+        }
+        o.push(c | 0x80);
+    }
+}
+
+fn pb_field(n: u64, wire: u64, body: &[u8]) -> Vec<u8> {
+    let mut o = pb_varint((n << 3) | wire);
+    if wire == 2 {
+        o.extend(pb_varint(body.len() as u64));
+    }
+    o.extend(body);
+    o
+}
+
+/// A `gen_metadata` blob: field 1 holds usage (1.4.2 input, 1.4.3 output,
+/// 1.4.5 cache read) and the model id (1.19); the text is never read.
+fn gen_blob(model: &str, (i, o, c): (u64, u64, u64)) -> Vec<u8> {
+    let mut usage = pb_field(2, 0, &pb_varint(i));
+    usage.extend(pb_field(3, 0, &pb_varint(o)));
+    if c > 0 {
+        usage.extend(pb_field(5, 0, &pb_varint(c)));
+    }
+    let mut inner = pb_field(3, 2, b"SECRET-PROMPT-TEXT");
+    inner.extend(pb_field(4, 2, &usage));
+    inner.extend(pb_field(19, 2, model.as_bytes()));
+    pb_field(1, 2, &inner)
+}
+
+fn agy_models(root: &std::path::Path, conv: &str, rows: &[Vec<u8>]) {
+    let dir = root.join("conversations");
+    std::fs::create_dir_all(&dir).unwrap();
+    let db = rusqlite::Connection::open(dir.join(format!("{conv}.db"))).unwrap();
+    db.execute(
+        "CREATE TABLE gen_metadata (idx integer, data blob, size integer, PRIMARY KEY (idx))",
+        [],
+    )
+    .unwrap();
+    for (i, r) in rows.iter().enumerate() {
+        db.execute(
+            "INSERT INTO gen_metadata VALUES (?1, ?2, ?3)",
+            rusqlite::params![i as i64, r, r.len() as i64],
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn antigravity_takes_each_steps_model_from_the_conversation_database() {
+    let tmp = Tmp::new("agy-models");
+    let root = tmp.home().join(".gemini").join("antigravity-cli");
+    let conv = "11111111-2222-3333-4444-555555555555";
+    let step = |i: u32, t: (u64, u64, u64)| {
+        format!(
+            "{{\"step_index\":{i},\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-11-02T01:0{i}:00Z\",\"input_tokens\":{},\"output_tokens\":{},\"cache_read_tokens\":{}}}\n",
+            t.0, t.1, t.2
+        )
+    };
+    let a = (1000, 50, 800);
+    let b = (200, 20, 100);
+    let c = (300, 30, 0); // no row: the conversation's main model
+    let d = (400, 40, 0); // two rows with different models: ambiguous
+    let full = format!("{}{}{}{}", step(1, a), step(2, b), step(3, c), step(4, d));
+    write(
+        &root
+            .join("brain")
+            .join(conv)
+            .join(".system_generated/logs/transcript_full.jsonl"),
+        &full,
+    );
+    agy_models(
+        &root,
+        conv,
+        &[
+            gen_blob("claude-opus-5-5-medium", a),
+            gen_blob("gemini-3.8-flash-n", b),
+            gen_blob("claude-opus-5-5-medium", (9, 9, 9)),
+            gen_blob("claude-opus-5-5-medium", d),
+            gen_blob("gemini-3.8-flash-n", d),
+            vec![0xff, 0xff, 0xff], // garbage row
+        ],
+    );
+    let c = clock();
+    let mut e = engine(&c, tmp.env(), None);
+    scan(&mut e);
+    assert_eq!(totals(&e).requests, 4);
+    let mut st = e
+        .store()
+        .conn()
+        .prepare("SELECT model, SUM(input) FROM ai_usage GROUP BY model ORDER BY model")
+        .unwrap();
+    let got: Vec<(String, i64)> = st
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("claude-opus-5-5-medium".to_string(), 1000 + 300 + 400),
+            ("gemini-3.8-flash-n".to_string(), 200),
+        ]
+    );
+    assert_clean(&e);
+}
+
+#[test]
+fn antigravity_without_a_usable_database_stays_unknown() {
+    let tmp = Tmp::new("agy-nodb");
+    let root = tmp.home().join(".gemini").join("antigravity-cli");
+    let conv = "aaaaaaaa-2222-3333-4444-555555555555";
+    write(
+        &root
+            .join("brain")
+            .join(conv)
+            .join(".system_generated/logs/transcript_full.jsonl"),
+        "{\"step_index\":1,\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"2026-11-02T01:01:00Z\",\"input_tokens\":5,\"output_tokens\":1,\"cache_read_tokens\":0}\n",
+    );
+    // Not a database at all.
+    write(
+        &root.join("conversations").join(format!("{conv}.db")),
+        "garbage",
+    );
+    let c = clock();
+    let mut e = engine(&c, tmp.env(), None);
+    scan(&mut e);
+    let model: String = e
+        .store()
+        .conn()
+        .query_row("SELECT model FROM ai_usage", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(model, "unknown");
+}
+
 // ---------- sources: never forgotten, moved, detected ----------
 
 #[test]

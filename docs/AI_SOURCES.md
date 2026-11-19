@@ -87,9 +87,24 @@ Env vars checked on this Mac: none of `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
     cumulative (values go down as often as up). `input_tokens` excludes cache
     (cache read is larger than input in 650 of 694 steps).
   - cache write: **not recorded**
-  - model: **not in the transcript**. Model ids appear only inside protobuf
-    blobs in `conversations/<uuid>.db` (`gen_metadata.data`). `settings.json`
-    has `model` (the current default only, not per conversation).
+  - model: **not in the transcript.** It is in `conversations/<uuid>.db`
+    (SQLite, opened read-only and immutable): table `gen_metadata` (`idx`,
+    `data` protobuf blob, `size`), one row per model call. In each blob, field
+    1.19 is the model id (as written, e.g. `gemini-4-argon-trial`,
+    `gemini-3.8-flash-n`, `claude-opus-5-5-medium`) and 1.4.2 / 1.4.3 / 1.4.5
+    are that call's input / output / cache-read tokens. The blob also holds
+    prompt and response text, which is never read (a small protobuf walker
+    reads only those four fields). `idx` is the row order, **not** the
+    transcript `step_index`, and row counts differ from the token-step counts
+    by 0 to 1, so rows are joined to steps by their three token counts: of 637
+    steps here, 634 match a row and none match two rows with different models.
+    **Per step:** a matched step takes its row's model. A step with no match,
+    or whose counts match rows of different models, takes the conversation's
+    most used model (ties: first alphabetically); `unknown` when the database
+    is missing or has no model id. A conversation can mix models (one here
+    used Claude Opus and two Gemini models), so the split is per step.
+    `settings.json` has `model` (the current default only). Events counted
+    before this was added keep `unknown`.
   - session: the `brain/<uuid>` folder name (= `conversations/<uuid>.db`).
   - project: `history.jsonl` has `conversationId` + `workspace` (a path) per
     prompt. That record also holds the prompt text in `display`, which the

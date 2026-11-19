@@ -33,6 +33,7 @@ pub mod cursor;
 pub mod gemini;
 pub mod lines;
 pub mod opencode;
+pub mod proto;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
