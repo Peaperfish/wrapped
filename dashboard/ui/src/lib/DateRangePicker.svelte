@@ -218,7 +218,7 @@
     z-index: 30;
     padding: 12px 14px 10px;
     border-radius: var(--radius);
-    background: rgba(18, 21, 30, 0.88);
+    background: var(--popover-bg);
     border: 1px solid var(--card-border);
     box-shadow: var(--card-shadow);
     backdrop-filter: blur(var(--card-blur));

@@ -46,6 +46,7 @@
     height: 14px;
     border-radius: 50%;
     background: var(--switch-knob);
+    box-shadow: var(--switch-knob-shadow);
     transition: transform 0.15s ease;
   }
   .on .knob {

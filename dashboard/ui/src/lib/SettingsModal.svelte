@@ -6,9 +6,9 @@
   // back to the element that opened it (the gear button) on close.
   //
   // Every change is a request to the collector (the only writer); the dialog
-  // never edits the database. Room is left in `sections` for an "Appearance"
-  // section later (not built yet).
+  // never edits the database.
   import { onMount, tick } from "svelte";
+  import AppearanceSection from "./settings/AppearanceSection.svelte";
   import AiSourcesSection from "./settings/AiSourcesSection.svelte";
   import DataSection from "./settings/DataSection.svelte";
   import ExcludeSection from "./settings/ExcludeSection.svelte";
@@ -25,8 +25,7 @@
   }
   let { meta, onchanged, onclose }: Props = $props();
 
-  type SectionId = "tracking" | "exclude" | "folders" | "ai" | "data";
-  // Appearance would go between AI sources and Data.
+  type SectionId = "tracking" | "exclude" | "folders" | "ai" | "appearance" | "data";
   const sections = $derived<{ id: SectionId; title: string }[]>([
     { id: "tracking", title: "Tracking" },
     { id: "exclude", title: "Exclude list" },
@@ -34,6 +33,7 @@
     ...(meta.collectors.some((c) => c.name === "ai_usage")
       ? [{ id: "ai" as const, title: "AI sources" }]
       : []),
+    { id: "appearance", title: "Appearance" },
     { id: "data", title: "Data" },
   ]);
 
@@ -133,6 +133,8 @@
           <FoldersSection {meta} {onchanged} />
         {:else if current === "ai"}
           <AiSourcesSection {meta} {onchanged} />
+        {:else if current === "appearance"}
+          <AppearanceSection {meta} {onchanged} />
         {:else if current === "data"}
           <DataSection {meta} {onchanged} />
         {/if}

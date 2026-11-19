@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "The dashboard window: core defaults plus the native open / save dialogs (folder pickers, export). The app's own commands read the database read-only; changes go to the collector.",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "dialog:allow-save"]
+  "permissions": ["core:default", "core:window:allow-set-theme", "dialog:allow-open", "dialog:allow-save"]
 }
