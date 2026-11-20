@@ -324,6 +324,19 @@ impl Store {
             .unwrap_or_default())
     }
 
+    /// Most recent successful item emitted by a scanned collector.
+    pub fn latest_item(&self, collector: &str) -> Result<Option<(i64, String)>> {
+        Ok(self
+            .conn
+            .query_row(
+                "SELECT time_ms, attrs FROM items WHERE collector = ?1
+             ORDER BY time_ms DESC LIMIT 1",
+                [collector],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?)
+    }
+
     /// The per-file cache of a collector.
     pub fn scan_files(&self, collector: &str) -> Result<Vec<FileStamp>> {
         let mut st = self.conn.prepare(

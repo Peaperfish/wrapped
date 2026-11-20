@@ -4,13 +4,19 @@
 //! [`Collector`](crate::collector::Collector), then add `my_thing::MyThing` to
 //! the `register!` line below. Nothing else in the app needs to change.
 
+pub mod drive_health;
+
 macro_rules! register {
     ($($module:ident :: $ty:ident),* $(,)?) => {
         $(pub mod $module; pub use $module::$ty;)*
 
         /// One fresh instance of every built-in collector, in a stable order.
         pub fn builtin() -> Vec<Box<dyn crate::collector::Collector>> {
-            vec![$(Box::new($module::$ty::default())),*]
+            vec![
+                $(Box::new($module::$ty::default()),)*
+                #[cfg(target_os = "macos")]
+                Box::new(drive_health::DriveHealth),
+            ]
         }
     };
 }

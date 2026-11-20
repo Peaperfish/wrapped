@@ -16,8 +16,8 @@ use wrapped_core::stats::{DateRange, SUMMARY_TOP_N, Stats};
 use wrapped_core::{Clock, Pause, Settings, Store, collectors};
 
 use crate::types::{
-    AiMeta, AiSourceMeta, AiToolMeta, CollectorMeta, ExportResult, GitEmail, HeatmapMetric, Meta,
-    RangeJson, SettingsMeta, YearSeries,
+    AiMeta, AiSourceMeta, AiToolMeta, CollectorMeta, DriveHealthMeta, DriveHealthSnapshot,
+    ExportResult, GitEmail, HeatmapMetric, Meta, RangeJson, SettingsMeta, YearSeries,
 };
 
 pub type Result<T> = std::result::Result<T, String>;
@@ -155,6 +155,11 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
             .unwrap_or_else(|| "unknown".to_string()),
     };
     let ai = ai_meta(opened.as_ref().map(|(s, _)| s), &settings);
+    let drive_health = if enabled.contains(&collectors::drive_health::NAME) {
+        Some(drive_health_meta(opened.as_ref().map(|(s, _)| s))?)
+    } else {
+        None
+    };
     Ok(Meta {
         build: env!("WRAPPED_BUILD_ID").to_string(),
         db_path: db.map(|p| p.display().to_string()).unwrap_or_default(),
@@ -167,7 +172,31 @@ pub fn meta(db: Option<&Path>, today: NaiveDate) -> Result<Meta> {
         setup,
         settings: settings_meta,
         ai,
+        drive_health,
     })
+}
+
+fn drive_health_meta(store: Option<&Store>) -> Result<DriveHealthMeta> {
+    use collectors::drive_health::NAME;
+    let mut meta = DriveHealthMeta {
+        last_scan_ms: None,
+        status: None,
+        snapshot: None,
+    };
+    if let Some(store) = store {
+        let info = store.scan_info(NAME).map_err(|e| e.to_string())?;
+        meta.last_scan_ms = info.last_scanned_ms;
+        meta.status = info.state.and_then(|s| serde_json::from_str(&s).ok());
+        if let Some((time_ms, attrs)) = store.latest_item(NAME).map_err(|e| e.to_string())? {
+            meta.snapshot = serde_json::from_str::<DriveHealthSnapshot>(&attrs)
+                .ok()
+                .map(|snapshot| DriveHealthSnapshot {
+                    time_ms,
+                    ..snapshot
+                });
+        }
+    }
+    Ok(meta)
 }
 
 /// Supported AI tools (with what is detected on this machine) and the

@@ -40,7 +40,9 @@ fn meta_lists_collectors_metrics_and_data_bounds() {
             ("photos", false),
             ("disk_memory", false),
             // On unless turned off: a default-on collector appears for an old database too.
-            ("ai_usage", true)
+            ("ai_usage", true),
+            #[cfg(target_os = "macos")]
+            ("drive_health", false),
         ]
     );
     // Only metrics without keys of collectors that are on; screen time first.

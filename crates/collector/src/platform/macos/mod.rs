@@ -15,6 +15,7 @@
 
 mod bookmarks;
 mod counters;
+mod drive_health;
 mod lock;
 mod login;
 mod notify;

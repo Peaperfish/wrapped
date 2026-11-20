@@ -42,6 +42,7 @@ pub fn scan_hooks() -> ScanHooks {
         command_setup: Some(background_command),
         bookmark_create: Some(super::bookmarks::create),
         bookmark_resolve: Some(super::bookmarks::resolve),
+        drive_health: Some(super::drive_health::read),
     }
 }
 

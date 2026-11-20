@@ -1,0 +1,12 @@
+{
+  "serial_number": "fixture-only",
+  "nvme_smart_health_information_log": {
+    "nsid": -1,
+    "temperature": 33,
+    "percentage_used": 1,
+    "data_units_read": 100403167,
+    "data_units_written": 68734411,
+    "power_on_hours": 594,
+    "power_cycles": 707
+  }
+}
