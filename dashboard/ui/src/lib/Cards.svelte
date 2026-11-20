@@ -130,6 +130,13 @@
   const recordedDiskMetrics = $derived(diskMetrics.filter(([m]) => total("disk_memory", m) !== undefined));
   const showDisk = $derived(!!summary && !error && on.has("disk_memory"));
   const diskOnly = $derived(recordedDiskMetrics.length > 0 && total("disk_memory", "swap_in_bytes") === undefined);
+  const showRecords = $derived(on.has("app_usage") || on.has("git"));
+  const showGit = $derived(on.has("git"));
+  const showPhotos = $derived(on.has("photos"));
+  const mCardsCount = $derived(Number(showRecords) + Number(showGit) + Number(showPhotos));
+  const recordsWide = $derived(showRecords && !showGit && !showPhotos);
+  const gitWide = $derived(showGit && !showPhotos && mCardsCount % 2 === 1);
+  const photosWide = $derived(showPhotos && mCardsCount % 2 === 1);
 </script>
 
 {#if error || !summary}
@@ -224,8 +231,8 @@
 
 {#if summary && !error && (on.has("app_usage") || on.has("git") || on.has("photos") || on.has("ai_usage"))}
   <div class="grid" class:loading>
-    {#if on.has("app_usage") || on.has("git")}
-      <Card title="Records" size="M" empty={noRecords}>
+    {#if showRecords}
+      <Card title="Records" size={recordsWide ? "L" : "M"} empty={noRecords}>
         <dl class="records">
           {#if rec?.longest_session}
             <dt class="muted">Longest session</dt>
@@ -261,8 +268,8 @@
       </Card>
     {/if}
 
-    {#if on.has("git")}
-      <Card title="Git" size="M" empty={commits === undefined}>
+    {#if showGit}
+      <Card title="Git" size={gitWide ? "L" : "M"} empty={commits === undefined}>
         <BigNumber {thin} value={fmtValue(commits ?? 0, "count")} label="Commits" {soFar} cmp={cmp("git", "commits")} />
         <BarList items={repos} />
         {#if rec?.commit_streak}
@@ -274,19 +281,33 @@
       </Card>
     {/if}
 
-    {#if on.has("photos")}
-      <Card title="Photos" size="M" empty={shots === undefined}>
-        <BigNumber {thin} value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
-        <div class="two">
-          <div>
-            <h3 class="muted">Cameras</h3>
-            <BarList items={cameras} />
+    {#if showPhotos}
+      <Card title="Photos" size={photosWide ? "L" : "M"} empty={shots === undefined}>
+        {#if photosWide}
+          <div class="photos-wide">
+            <BigNumber {thin} value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
+            <div>
+              <h3 class="muted">Cameras</h3>
+              <BarList items={cameras} />
+            </div>
+            <div>
+              <h3 class="muted">Lenses</h3>
+              <BarList items={lenses} />
+            </div>
           </div>
-          <div>
-            <h3 class="muted">Lenses</h3>
-            <BarList items={lenses} />
+        {:else}
+          <BigNumber {thin} value={fmtValue(shots ?? 0, "count")} label="Shots" {soFar} cmp={cmp("photos", "shots")} />
+          <div class="two">
+            <div>
+              <h3 class="muted">Cameras</h3>
+              <BarList items={cameras} />
+            </div>
+            <div>
+              <h3 class="muted">Lenses</h3>
+              <BarList items={lenses} />
+            </div>
           </div>
-        </div>
+        {/if}
       </Card>
     {/if}
 
@@ -349,9 +370,6 @@
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 12px;
-  }
-  .grid > :global(.card:last-child:nth-child(odd)) {
-    grid-column: 1 / -1;
   }
   .split {
     display: grid;
@@ -495,6 +513,15 @@
   .two > div {
     min-width: 0;
   }
+  .photos-wide {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.65fr) minmax(0, 1fr) minmax(0, 1.35fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .photos-wide > div {
+    min-width: 0;
+  }
   h3 {
     margin: 0 0 8px;
     font-size: 12px;
@@ -521,6 +548,13 @@
   }
   .three > div {
     min-width: 0;
+  }
+  @media (max-width: 760px) {
+    .photos-wide,
+    .two,
+    .three {
+      grid-template-columns: 1fr;
+    }
   }
   .quad {
     display: grid;
