@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Contrast check for the dashboard themes: reads the variables from
-// dashboard/ui/src/app.css, and for every theme x accent measures text, muted
-// text and the accent on the card surface, plus the text on
-// accent buttons. Needs 4.5:1 for body text, muted text (held to 4.5, the ask
-// was 3), the accent and the button text. Faint text is decoration and only
-// reported. Exits 1 on any failure.
+// Contrast check for the dashboard themes and palettes: reads the variables
+// from dashboard/ui/src/app.css, and for every theme x palette x accent
+// measures text, muted text and the accent on the card surface, plus the text
+// on accent buttons. Needs 4.5:1 for body text, muted text (held to 4.5, the
+// ask was 3), the accent and the button text. Faint text is decoration and
+// only reported. Exits 1 on any failure.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -19,14 +19,17 @@ const blocks = [...css.replace(/\/\*[\s\S]*?\*\//g, "").matchAll(/([^{}]+)\{([^{
 const get = (sel) => Object.assign({}, ...blocks.filter((b) => b.sel === sel).map((b) => b.vars));
 
 const accents = ["green", "blue", "purple", "orange", "pink"];
+const palettes = ["graphite", "warm-paper", "forest"];
 const themes = {
-  dark: (a) => ({
+  dark: (p, a) => ({
     ...get(":root"),
+    ...(p === "graphite" ? {} : get(`:root[data-palette="${p}"]`)),
     ...(a === "green" ? {} : get(`:root[data-accent="${a}"]`)),
   }),
-  light: (a) => ({
+  light: (p, a) => ({
     ...get(":root"),
     ...get(':root[data-theme="light"]'),
+    ...(p === "graphite" ? {} : get(`:root[data-theme="light"][data-palette="${p}"]`)),
     ...(a === "green" ? {} : get(`:root[data-accent="${a}"]`)),
     ...(a === "green" ? {} : get(`:root[data-theme="light"][data-accent="${a}"]`)),
   }),
@@ -62,70 +65,74 @@ const ratio = (fg, bg) => {
 let failed = false;
 const lowest = {};
 for (const [theme, build] of Object.entries(themes)) {
-  for (const a of accents) {
-    const vars = build(a);
-    // The card sits on the page background (plus its accent glow).
-    const page = over(parse(vars["--bg-glow-1"], vars), parse(vars["--bg"], vars));
-    const card = over(parse(vars["--card-bg"], vars), page);
-    const accent = parse(vars["--accent"], vars);
-    const checks = [
-      ["text", parse(vars["--text"], vars), card, 4.5],
-      ["muted", parse(vars["--text-dim"], vars), card, 4.5],
-      // Faint text is decoration (hints, placeholders): reported, not enforced.
-      ["faint", parse(vars["--text-faint"], vars), card, 0],
-      ["accent", accent, card, 4.5],
-      // Text on a primary button (accent at 90% over the card).
-      ["on-accent", parse(vars["--accent-ink"], vars), over({ ...accent, a: 0.9 }, card), 4.5],
-      // Status colours as text on the card (memory pressure, errors) and on
-      // the stronger button background (.danger buttons).
-      ["warn", parse(vars["--warn"], vars), card, 4.5],
-      ["danger", parse(vars["--danger"], vars), card, 4.5],
-      ["danger-btn", parse(vars["--danger"], vars), over(parse(vars["--card-bg-strong"], vars), card), 4.5],
-    ];
-    for (const [name, fg, bg, min] of checks) {
-      const r = ratio(fg, bg);
-      const key = `${theme}/${name}`;
-      if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a };
-      if (r < min) {
-        failed = true;
-        console.log(`FAIL ${theme} ${a} ${name}: ${r.toFixed(2)} < ${min}`);
+  for (const p of palettes) {
+    for (const a of accents) {
+      const vars = build(p, a);
+      // The card sits on the page background (plus its accent glow).
+      const page = over(parse(vars["--bg-glow-1"], vars), parse(vars["--bg"], vars));
+      const card = over(parse(vars["--card-bg"], vars), page);
+      const accent = parse(vars["--accent"], vars);
+      const checks = [
+        ["text", parse(vars["--text"], vars), card, 4.5],
+        ["muted", parse(vars["--text-dim"], vars), card, 4.5],
+        // Faint text is decoration (hints, placeholders): reported, not enforced.
+        ["faint", parse(vars["--text-faint"], vars), card, 0],
+        ["accent", accent, card, 4.5],
+        // Text on a primary button (accent at 90% over the card).
+        ["on-accent", parse(vars["--accent-ink"], vars), over({ ...accent, a: 0.9 }, card), 4.5],
+        // Status colours as text on the card (memory pressure, errors) and on
+        // the stronger button background (.danger buttons).
+        ["warn", parse(vars["--warn"], vars), card, 4.5],
+        ["danger", parse(vars["--danger"], vars), card, 4.5],
+        ["danger-btn", parse(vars["--danger"], vars), over(parse(vars["--card-bg-strong"], vars), card), 4.5],
+      ];
+      for (const [name, fg, bg, min] of checks) {
+        const r = ratio(fg, bg);
+        const key = `${theme}/${name}`;
+        if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a: `${p}/${a}` };
+        if (r < min) {
+          failed = true;
+          console.log(`FAIL ${theme} ${p} ${a} ${name}: ${r.toFixed(2)} < ${min}`);
+        }
       }
     }
   }
 }
 // Recap slides (dashboard/ui/src/lib/recaps/palette.js): text, secondary
 // text and highlights on every background they can sit on, for every slide
-// kind, theme and accent; and the player's buttons on its letterbox.
+// kind, theme, palette and accent; and the player's buttons on its letterbox.
 const { allPalettes, contrast } = await import(
   new URL("../dashboard/ui/src/lib/recaps/palette.js", import.meta.url).href
 );
 const hex = ({ rgb }) => "#" + rgb.map((c) => Math.round(c).toString(16).padStart(2, "0")).join("");
 for (const [theme, build] of Object.entries(themes)) {
-  for (const a of accents) {
-    const vars = build(a);
-    for (const p of allPalettes(hex(parse(vars["--accent"], vars)), theme)) {
-      for (const role of ["ink", "dim", "hi"]) {
-        const r = Math.min(...p.bgs.map((bg) => contrast(p[role], bg)));
-        const key = `${theme}/slide-${role}`;
-        if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a: `${a} ${p.kind}` };
-        if (r < 4.5) {
-          failed = true;
-          console.log(`FAIL ${theme} ${a} slide ${p.kind} ${role}: ${r.toFixed(2)} < 4.5`);
+  for (const pal of palettes) {
+    for (const a of accents) {
+      const vars = build(pal, a);
+      for (const p of allPalettes(hex(parse(vars["--accent"], vars)), theme)) {
+        for (const role of ["ink", "dim", "hi"]) {
+          const r = Math.min(...p.bgs.map((bg) => contrast(p[role], bg)));
+          const key = `${theme}/slide-${role}`;
+          if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a: `${pal}/${a} ${p.kind}` };
+          if (r < 4.5) {
+            failed = true;
+            console.log(`FAIL ${theme} ${pal} ${a} slide ${p.kind} ${role}: ${r.toFixed(2)} < 4.5`);
+          }
         }
       }
-    }
-    const page = over(parse(vars["--bg-glow-1"], vars), parse(vars["--bg"], vars));
-    const letterbox = over(parse(vars["--player-bg"], vars), page);
-    const btn = over(parse(vars["--player-btn"], vars), letterbox);
-    const r = ratio(parse(vars["--player-ink"], vars), btn);
-    const key = `${theme}/player-btn`;
-    if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a };
-    if (r < 4.5) {
-      failed = true;
-      console.log(`FAIL ${theme} ${a} player-btn: ${r.toFixed(2)} < 4.5`);
+      const page = over(parse(vars["--bg-glow-1"], vars), parse(vars["--bg"], vars));
+      const letterbox = over(parse(vars["--player-bg"], vars), page);
+      const btn = over(parse(vars["--player-btn"], vars), letterbox);
+      const r = ratio(parse(vars["--player-ink"], vars), btn);
+      const key = `${theme}/player-btn`;
+      if (!lowest[key] || r < lowest[key].r) lowest[key] = { r, a: `${pal}/${a}` };
+      if (r < 4.5) {
+        failed = true;
+        console.log(`FAIL ${theme} ${pal} ${a} player-btn: ${r.toFixed(2)} < 4.5`);
+      }
     }
   }
 }
 for (const [k, { r, a }] of Object.entries(lowest))
-  console.log(`${k.padEnd(14)} lowest ${r.toFixed(2)} (${a})`);
+  console.log(`${k.padEnd(16)} lowest ${r.toFixed(2)} (${a})`);
 process.exit(failed ? 1 : 0);

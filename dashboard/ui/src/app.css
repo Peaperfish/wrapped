@@ -1,27 +1,27 @@
-/* Theme: glass cards, one accent colour, tabular / monospace numbers.
+/* Theme: restrained cards, three colour palettes (Graphite, Warm Paper, Forest)
+   each in dark and light mode, one accent colour, tabular numbers.
    Every colour the components use comes from these variables. `:root` is the
-   dark theme; `theme.ts` sets data-theme="light" | "dark" (System resolved)
-   and data-accent on <html>, and the blocks below override per theme / accent. */
+   dark Graphite theme; `theme.ts` sets data-theme="light" | "dark",
+   data-palette="graphite" | "warm-paper" | "forest" and data-accent on <html>. */
 :root {
   color-scheme: dark;
 
-  --bg: #0b0d12;
-  --bg-glow-1: rgba(61, 220, 151, 0.08);
-  --bg-glow-2: rgba(90, 120, 255, 0.07);
+  --bg: #0e0f11;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.05);
+  --bg-glow-2: rgba(90, 120, 255, 0.04);
 
   --card-bg: rgba(255, 255, 255, 0.035);
   --card-bg-strong: rgba(255, 255, 255, 0.06);
-  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border: rgba(255, 255, 255, 0.07);
   --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  /* Cards scroll with the page, so theirs is a small, cheap shadow. */
-  --card-shadow-flat: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --card-shadow-flat: none;
   --card-blur: 18px;
-  --radius: 14px;
-  --radius-sm: 8px;
+  --radius: 10px;
+  --radius-sm: 6px;
 
-  --text: #e8ebf2;
-  --text-dim: #9aa2b5;
-  --text-faint: #5f677a;
+  --text: #eceef2;
+  --text-dim: #9ca0a9;
+  --text-faint: #666a73;
   --divider: rgba(255, 255, 255, 0.07);
 
   --accent: #3ddc97;
@@ -33,24 +33,24 @@
   --warn-rgb: 242, 193, 78;
 
   /* Dialogs: the dimmed, blurred page behind and the glass panel. */
-  --overlay-bg: rgba(6, 8, 13, 0.55);
+  --overlay-bg: rgba(6, 7, 9, 0.55);
   --overlay-blur: 10px;
-  --modal-bg: rgba(20, 24, 33, 0.86);
-  --modal-border: rgba(255, 255, 255, 0.12);
+  --modal-bg: rgba(21, 23, 27, 0.9);
+  --modal-border: rgba(255, 255, 255, 0.1);
   --modal-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
-  --field-bg: rgba(255, 255, 255, 0.05);
+  --field-bg: rgba(255, 255, 255, 0.045);
   --hover-bg: rgba(255, 255, 255, 0.06);
-  --menu-bg: rgba(24, 28, 38, 0.97);
+  --menu-bg: rgba(24, 26, 31, 0.97);
   --switch-off: rgba(255, 255, 255, 0.16);
   --switch-knob: #f4f6fb;
   --switch-knob-shadow: none;
-  --tip-bg: rgba(18, 21, 30, 0.95);
-  --popover-bg: rgba(18, 21, 30, 0.88);
+  --tip-bg: rgba(19, 21, 25, 0.96);
+  --popover-bg: rgba(19, 21, 25, 0.92);
   /* Recap player: the letterbox around the 9:16 stage and its buttons. */
-  --player-bg: rgba(5, 6, 10, 0.94);
+  --player-bg: rgba(8, 9, 11, 0.94);
   --player-btn: rgba(255, 255, 255, 0.08);
   --player-btn-border: rgba(255, 255, 255, 0.14);
-  --player-ink: #e8ebf2;
+  --player-ink: #eceef2;
   --player-seg: rgba(255, 255, 255, 0.28);
   --player-seg-fill: #ffffff;
 
@@ -58,7 +58,7 @@
   --cell-empty: rgba(255, 255, 255, 0.055);
   /* Empty days inside a selected range, and the outline around the range. */
   --heat-empty-selected: rgba(255, 255, 255, 0.09);
-  --heat-outline: rgba(var(--accent-rgb), 0.5);
+  --heat-outline: rgba(var(--accent-rgb), 0.55);
   --cell-1: rgba(var(--accent-rgb), var(--heat-level-1));
   --cell-2: rgba(var(--accent-rgb), var(--heat-level-2));
   --cell-3: rgba(var(--accent-rgb), var(--heat-level-3));
@@ -80,51 +80,123 @@
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 }
 
-/* Light theme. */
+/* Warm Paper (dark). */
+:root[data-palette="warm-paper"] {
+  --bg: #14110e;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.06);
+  --bg-glow-2: rgba(210, 150, 90, 0.05);
+
+  --card-bg: rgba(255, 244, 230, 0.04);
+  --card-bg-strong: rgba(255, 244, 230, 0.07);
+  --card-border: rgba(255, 244, 230, 0.08);
+
+  --text: #f0e9df;
+  --text-dim: #b0a496;
+  --text-faint: #7a6f63;
+  --divider: rgba(255, 244, 230, 0.075);
+
+  --overlay-bg: rgba(10, 8, 6, 0.55);
+  --modal-bg: rgba(29, 25, 21, 0.92);
+  --modal-border: rgba(255, 244, 230, 0.11);
+  --field-bg: rgba(255, 244, 230, 0.05);
+  --hover-bg: rgba(255, 244, 230, 0.065);
+  --menu-bg: rgba(31, 27, 22, 0.97);
+  --switch-off: rgba(255, 244, 230, 0.16);
+  --switch-knob: #f8f3ec;
+  --tip-bg: rgba(25, 21, 18, 0.96);
+  --popover-bg: rgba(25, 21, 18, 0.93);
+  --player-bg: rgba(12, 10, 8, 0.94);
+  --player-btn: rgba(255, 244, 230, 0.08);
+  --player-btn-border: rgba(255, 244, 230, 0.14);
+  --player-ink: #f0e9df;
+  --player-seg: rgba(255, 244, 230, 0.28);
+
+  --cell-empty: rgba(255, 244, 230, 0.06);
+  --heat-empty-selected: rgba(255, 244, 230, 0.1);
+  --cell-future: rgba(255, 244, 230, 0.022);
+}
+
+/* Forest (dark). */
+:root[data-palette="forest"] {
+  --bg: #0b120e;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.07);
+  --bg-glow-2: rgba(50, 150, 105, 0.05);
+
+  --card-bg: rgba(225, 245, 232, 0.038);
+  --card-bg-strong: rgba(225, 245, 232, 0.065);
+  --card-border: rgba(225, 245, 232, 0.075);
+
+  --text: #e4efe8;
+  --text-dim: #96aba0;
+  --text-faint: #5e7368;
+  --divider: rgba(225, 245, 232, 0.072);
+
+  --overlay-bg: rgba(4, 8, 6, 0.55);
+  --modal-bg: rgba(16, 26, 20, 0.92);
+  --modal-border: rgba(225, 245, 232, 0.11);
+  --field-bg: rgba(225, 245, 232, 0.048);
+  --hover-bg: rgba(225, 245, 232, 0.065);
+  --menu-bg: rgba(18, 28, 22, 0.97);
+  --switch-off: rgba(225, 245, 232, 0.16);
+  --switch-knob: #f0f7f3;
+  --tip-bg: rgba(14, 23, 18, 0.96);
+  --popover-bg: rgba(14, 23, 18, 0.93);
+  --player-bg: rgba(6, 10, 8, 0.94);
+  --player-btn: rgba(225, 245, 232, 0.08);
+  --player-btn-border: rgba(225, 245, 232, 0.14);
+  --player-ink: #e4efe8;
+  --player-seg: rgba(225, 245, 232, 0.28);
+
+  --cell-empty: rgba(225, 245, 232, 0.058);
+  --heat-empty-selected: rgba(225, 245, 232, 0.095);
+  --cell-future: rgba(225, 245, 232, 0.022);
+}
+
+/* Light theme (Graphite default). */
 :root[data-theme="light"] {
   color-scheme: light;
 
-  --bg: #f1f3f8;
-  --bg-glow-1: rgba(var(--accent-rgb), 0.1);
-  --bg-glow-2: rgba(90, 120, 255, 0.07);
+  --bg: #f2f3f5;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.06);
+  --bg-glow-2: rgba(90, 120, 255, 0.04);
 
-  --card-bg: rgba(255, 255, 255, 0.72);
-  --card-bg-strong: rgba(15, 23, 42, 0.05);
-  --card-border: rgba(15, 23, 42, 0.12);
-  --card-shadow: 0 8px 24px rgba(30, 41, 59, 0.08);
-  --card-shadow-flat: 0 3px 10px rgba(30, 41, 59, 0.08);
+  --card-bg: rgba(255, 255, 255, 0.78);
+  --card-bg-strong: rgba(17, 19, 24, 0.05);
+  --card-border: rgba(17, 19, 24, 0.1);
+  --card-shadow: 0 8px 24px rgba(17, 19, 24, 0.08);
+  --card-shadow-flat: none;
 
-  --text: #141925;
-  --text-dim: #4a5367;
-  --text-faint: #6a7388;
-  --divider: rgba(15, 23, 42, 0.1);
+  --text: #16181d;
+  --text-dim: #50545e;
+  --text-faint: #6e737f;
+  --divider: rgba(17, 19, 24, 0.085);
 
   --danger: #c22d2d;
   --danger-rgb: 194, 45, 45;
   --warn: #8f5f00;
   --warn-rgb: 143, 95, 0;
 
-  --overlay-bg: rgba(226, 231, 241, 0.55);
-  --modal-bg: rgba(255, 255, 255, 0.9);
-  --modal-border: rgba(15, 23, 42, 0.14);
-  --modal-shadow: 0 24px 80px rgba(30, 41, 59, 0.22);
-  --field-bg: rgba(15, 23, 42, 0.05);
-  --hover-bg: rgba(15, 23, 42, 0.07);
+  --overlay-bg: rgba(228, 230, 235, 0.55);
+  --modal-bg: rgba(255, 255, 255, 0.92);
+  --modal-border: rgba(17, 19, 24, 0.12);
+  --modal-shadow: 0 24px 80px rgba(17, 19, 24, 0.2);
+  --field-bg: rgba(17, 19, 24, 0.045);
+  --hover-bg: rgba(17, 19, 24, 0.065);
   --menu-bg: rgba(255, 255, 255, 0.98);
-  --switch-off: rgba(15, 23, 42, 0.22);
+  --switch-off: rgba(17, 19, 24, 0.2);
   --switch-knob: #ffffff;
-  --switch-knob-shadow: 0 1px 2px rgba(15, 23, 42, 0.35);
+  --switch-knob-shadow: 0 1px 2px rgba(17, 19, 24, 0.3);
   --tip-bg: rgba(255, 255, 255, 0.97);
   --popover-bg: rgba(255, 255, 255, 0.95);
-  --player-bg: rgba(222, 227, 237, 0.96);
+  --player-bg: rgba(228, 230, 235, 0.96);
   --player-btn: rgba(255, 255, 255, 0.8);
-  --player-btn-border: rgba(15, 23, 42, 0.14);
-  --player-ink: #141925;
-  --player-seg: rgba(15, 23, 42, 0.16);
-  --player-seg-fill: #141925;
+  --player-btn-border: rgba(17, 19, 24, 0.14);
+  --player-ink: #16181d;
+  --player-seg: rgba(17, 19, 24, 0.16);
+  --player-seg-fill: #16181d;
 
-  --cell-empty: rgba(15, 23, 42, 0.075);
-  --heat-empty-selected: rgba(15, 23, 42, 0.15);
+  --cell-empty: rgba(17, 19, 24, 0.075);
+  --heat-empty-selected: rgba(17, 19, 24, 0.14);
   --heat-outline: rgba(var(--accent-rgb), 0.85);
   --sw-green: #096f43;
   --sw-blue: #1d5fd1;
@@ -135,7 +207,97 @@
   --heat-level-1: 0.26;
   --heat-level-2: 0.48;
   --heat-level-3: 0.74;
-  --cell-future: rgba(15, 23, 42, 0.03);
+  --cell-future: rgba(17, 19, 24, 0.03);
+}
+
+/* Warm Paper (light). */
+:root[data-theme="light"][data-palette="warm-paper"] {
+  --bg: #f5efe6;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.06);
+  --bg-glow-2: rgba(180, 125, 65, 0.05);
+
+  --card-bg: rgba(255, 252, 247, 0.78);
+  --card-bg-strong: rgba(42, 32, 21, 0.055);
+  --card-border: rgba(42, 32, 21, 0.11);
+  --card-shadow: 0 8px 24px rgba(42, 32, 21, 0.08);
+
+  --text: #221c15;
+  --text-dim: #5c5145;
+  --text-faint: #7a6d5f;
+  --divider: rgba(42, 32, 21, 0.09);
+
+  --danger: #bd2828;
+  --danger-rgb: 189, 40, 40;
+  --warn: #8a5a00;
+  --warn-rgb: 138, 90, 0;
+
+  --overlay-bg: rgba(235, 227, 215, 0.55);
+  --modal-bg: rgba(255, 251, 245, 0.93);
+  --modal-border: rgba(42, 32, 21, 0.13);
+  --modal-shadow: 0 24px 80px rgba(42, 32, 21, 0.2);
+  --field-bg: rgba(42, 32, 21, 0.05);
+  --hover-bg: rgba(42, 32, 21, 0.07);
+  --menu-bg: rgba(255, 251, 245, 0.98);
+  --switch-off: rgba(42, 32, 21, 0.22);
+  --switch-knob: #fffdf9;
+  --switch-knob-shadow: 0 1px 2px rgba(42, 32, 21, 0.3);
+  --tip-bg: rgba(255, 251, 245, 0.97);
+  --popover-bg: rgba(255, 251, 245, 0.95);
+  --player-bg: rgba(236, 229, 218, 0.96);
+  --player-btn: rgba(255, 252, 247, 0.82);
+  --player-btn-border: rgba(42, 32, 21, 0.14);
+  --player-ink: #221c15;
+  --player-seg: rgba(42, 32, 21, 0.16);
+  --player-seg-fill: #221c15;
+
+  --cell-empty: rgba(42, 32, 21, 0.075);
+  --heat-empty-selected: rgba(42, 32, 21, 0.14);
+  --cell-future: rgba(42, 32, 21, 0.03);
+}
+
+/* Forest (light). */
+:root[data-theme="light"][data-palette="forest"] {
+  --bg: #edf3ef;
+  --bg-glow-1: rgba(var(--accent-rgb), 0.07);
+  --bg-glow-2: rgba(35, 125, 80, 0.05);
+
+  --card-bg: rgba(252, 255, 253, 0.78);
+  --card-bg-strong: rgba(14, 34, 24, 0.055);
+  --card-border: rgba(14, 34, 24, 0.11);
+  --card-shadow: 0 8px 24px rgba(14, 34, 24, 0.08);
+
+  --text: #122018;
+  --text-dim: #43584c;
+  --text-faint: #63786c;
+  --divider: rgba(14, 34, 24, 0.09);
+
+  --danger: #bd2828;
+  --danger-rgb: 189, 40, 40;
+  --warn: #8a5a00;
+  --warn-rgb: 138, 90, 0;
+
+  --overlay-bg: rgba(220, 231, 224, 0.55);
+  --modal-bg: rgba(250, 254, 251, 0.93);
+  --modal-border: rgba(14, 34, 24, 0.13);
+  --modal-shadow: 0 24px 80px rgba(14, 34, 24, 0.2);
+  --field-bg: rgba(14, 34, 24, 0.05);
+  --hover-bg: rgba(14, 34, 24, 0.07);
+  --menu-bg: rgba(250, 254, 251, 0.98);
+  --switch-off: rgba(14, 34, 24, 0.22);
+  --switch-knob: #ffffff;
+  --switch-knob-shadow: 0 1px 2px rgba(14, 34, 24, 0.3);
+  --tip-bg: rgba(250, 254, 251, 0.97);
+  --popover-bg: rgba(250, 254, 251, 0.95);
+  --player-bg: rgba(221, 231, 224, 0.96);
+  --player-btn: rgba(252, 255, 253, 0.82);
+  --player-btn-border: rgba(14, 34, 24, 0.14);
+  --player-ink: #122018;
+  --player-seg: rgba(14, 34, 24, 0.16);
+  --player-seg-fill: #122018;
+
+  --cell-empty: rgba(14, 34, 24, 0.075);
+  --heat-empty-selected: rgba(14, 34, 24, 0.14);
+  --cell-future: rgba(14, 34, 24, 0.03);
 }
 
 /* Accents: [dark theme, light theme] shades; --accent-ink is the text on an
@@ -193,17 +355,19 @@
   box-sizing: border-box;
 }
 
-html,
-body {
+html {
   margin: 0;
   height: 100%;
+  scrollbar-gutter: stable;
 }
 
 body {
+  margin: 0;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -211,23 +375,8 @@ body {
   cursor: default;
 }
 
-/* The background glows: one fixed layer of its own on the GPU, so scrolling
-   never repaints them (no background-attachment: fixed). */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, var(--bg-glow-1), transparent 60%),
-    radial-gradient(900px 500px at 100% 0%, var(--bg-glow-2), transparent 60%);
-  transform: translateZ(0);
-}
-
-/* Numbers: tabular figures in the monospace face, so columns line up. */
+/* Numbers: tabular figures so columns line up cleanly. */
 .num {
-  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -237,10 +386,10 @@ body::before {
   border: 1px solid var(--card-border);
   border-radius: var(--radius);
   box-shadow: var(--card-shadow-flat);
-  padding: 18px 20px;
+  padding: 14px 16px;
 }
 /* Cards sit on a static background, so no live backdrop blur: the
-   semi-opaque --card-bg is the glass. Containment keeps a card's layout and
+   semi-opaque --card-bg is the surface. Containment keeps a card's layout and
    paint work to itself; the heatmap card is left out because its tooltip and
    menu reach outside it. */
 .card:not(.heatmap) {
@@ -249,11 +398,11 @@ body::before {
 
 .card h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-dim);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
 }
 
 .muted {
@@ -277,7 +426,7 @@ body::before {
   border-color: rgba(var(--danger-rgb), 0.8);
 }
 .faint {
-  color: var(--text-faint);
+  color: var(--text-dim);
 }
 .error {
   color: var(--danger);
@@ -308,7 +457,7 @@ button:focus-visible,
 select:focus-visible,
 input:focus-visible,
 svg:focus-visible {
-  outline: 2px solid rgba(var(--accent-rgb), 0.7);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

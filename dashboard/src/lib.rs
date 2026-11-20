@@ -336,7 +336,12 @@ fn open_wrapped(state: State<'_, AppState>) -> bool {
 /// window background in the theme's page colour (a dark background colour under
 /// the title bar would otherwise keep it dark).
 #[tauri::command]
-fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<String>) {
+fn set_window_theme(
+    app: tauri::AppHandle,
+    window: WebviewWindow,
+    theme: Option<String>,
+    palette: Option<String>,
+) {
     let forced = match theme.as_deref() {
         Some("light") => Some(tauri::Theme::Light),
         Some("dark") => Some(tauri::Theme::Dark),
@@ -345,9 +350,13 @@ fn set_window_theme(app: tauri::AppHandle, window: WebviewWindow, theme: Option<
     app.set_theme(forced);
     let _ = window.set_theme(forced);
     let effective = window.theme().unwrap_or(tauri::Theme::Dark);
-    let bg = match effective {
-        tauri::Theme::Light => tauri::window::Color(0xf1, 0xf3, 0xf8, 0xff),
-        _ => tauri::window::Color(0x0b, 0x0d, 0x12, 0xff),
+    let bg = match (effective, palette.as_deref()) {
+        (tauri::Theme::Light, Some("warm-paper")) => tauri::window::Color(0xf5, 0xef, 0xe6, 0xff),
+        (tauri::Theme::Light, Some("forest")) => tauri::window::Color(0xed, 0xf3, 0xef, 0xff),
+        (tauri::Theme::Light, _) => tauri::window::Color(0xf2, 0xf3, 0xf5, 0xff),
+        (_, Some("warm-paper")) => tauri::window::Color(0x14, 0x11, 0x0e, 0xff),
+        (_, Some("forest")) => tauri::window::Color(0x0b, 0x12, 0x0e, 0xff),
+        (_, _) => tauri::window::Color(0x0e, 0x0f, 0x11, 0xff),
     };
     let _ = window.set_background_color(Some(bg));
 }

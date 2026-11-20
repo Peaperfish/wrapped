@@ -425,12 +425,19 @@
     gap: 12px;
   }
   .year-nav {
-    gap: 3px;
+    gap: 2px;
   }
   .year-nav button {
-    padding: 0 7px;
+    padding: 0 6px;
     line-height: 20px;
     background: transparent;
+    border-color: transparent;
+    color: var(--text-dim);
+  }
+  .year-nav button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--hover-bg);
+    border-color: transparent;
   }
   .year {
     min-width: 3.2em;

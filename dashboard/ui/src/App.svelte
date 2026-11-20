@@ -355,7 +355,7 @@
     />
   </main>
 {:else}
-<main class:overview={tab === "overview"} inert={settingsOpen || recapOpen !== null}>
+<main inert={settingsOpen || recapOpen !== null}>
   <Header
     {selection}
     {preset}
@@ -441,31 +441,10 @@
   main {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 18px 24px 24px;
+    padding: 12px 20px 18px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
-  }
-  main.overview {
     gap: 12px;
-    padding: 12px 20px 18px;
-    font-size: 13px;
-    --radius: 10px;
-    --card-shadow-flat: none;
-    --text-faint: var(--text-dim);
-    --mono: var(--font);
-  }
-  :global(body:has(main.overview)::before) {
-    display: none;
-  }
-  .overview :global(:where(.card)) {
-    padding: 12px 16px;
-  }
-  .overview :global(.card h2) {
-    color: var(--text);
-    font-size: 14px;
-    letter-spacing: normal;
-    text-transform: none;
   }
   .empty {
     display: flex;

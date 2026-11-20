@@ -285,12 +285,16 @@
     justify-content: space-between;
     gap: 8px;
     min-width: 0;
-    background: var(--field-bg);
+    background: transparent;
     color: var(--text);
     border: 1px solid var(--card-border);
     border-radius: var(--radius-sm);
-    padding: 5px 8px;
+    padding: 3px 8px;
     text-align: left;
+  }
+  .sel:hover:not(:disabled) {
+    background: var(--hover-bg);
+    border-color: var(--card-border);
   }
   .sel.open {
     border-color: rgba(var(--accent-rgb), 0.5);

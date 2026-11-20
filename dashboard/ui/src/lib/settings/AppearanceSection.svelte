@@ -1,10 +1,21 @@
 <script lang="ts">
-  // Theme (System / Light / Dark) and accent colour. A choice is applied in
-  // the dashboard at once; the collector stores it. If it can't (Wrapped not
-  // running) the old look comes back and the usual note says why.
+  // Theme (System / Light / Dark), colour palette (Graphite / Warm Paper / Forest)
+  // and accent colour. A choice is applied in the dashboard at once; the
+  // collector stores theme and accent. If it can't (Wrapped not running) the
+  // old look comes back and the usual note says why.
   import { sendCtl } from "../api";
   import CtlNote from "../CtlNote.svelte";
-  import { ACCENTS, THEMES, applyAppearance, type Accent, type ThemeChoice } from "../theme";
+  import {
+    ACCENTS,
+    PALETTES,
+    THEMES,
+    applyAppearance,
+    applyPalette,
+    getPalette,
+    type Accent,
+    type PaletteChoice,
+    type ThemeChoice,
+  } from "../theme";
   import type { Meta } from "../types";
 
   interface Props {
@@ -17,8 +28,15 @@
   // What is on screen now (ahead of meta while a request is in flight).
   let theme = $state<string | null>(null);
   let accent = $state<string | null>(null);
+  let palette = $state<PaletteChoice>(getPalette());
   const shownTheme = $derived(theme ?? meta.settings.theme);
   const shownAccent = $derived(accent ?? meta.settings.accent);
+
+  function choosePalette(value: PaletteChoice) {
+    if (palette === value) return;
+    palette = value;
+    applyPalette(value);
+  }
 
   async function choose(key: "theme" | "accent", value: string) {
     const prev = { theme: shownTheme, accent: shownAccent };
@@ -26,13 +44,13 @@
     error = null;
     if (key === "theme") theme = value;
     else accent = value;
-    applyAppearance(key === "theme" ? value : prev.theme, key === "accent" ? value : prev.accent);
+    applyAppearance(key === "theme" ? value : prev.theme, key === "accent" ? value : prev.accent, palette);
     try {
       await sendCtl("set_settings", { settings: { [`appearance.${key}`]: value } });
       await onchanged();
     } catch (e) {
       error = e;
-      applyAppearance(meta.settings.theme, meta.settings.accent);
+      applyAppearance(meta.settings.theme, meta.settings.accent, palette);
     } finally {
       theme = null;
       accent = null;
@@ -40,18 +58,19 @@
   }
 
   /** Arrow keys move the choice (and focus) within a radio group. */
-  function arrows(e: KeyboardEvent, ids: readonly string[], current: string, key: "theme" | "accent") {
+  function arrows(e: KeyboardEvent, ids: readonly string[], current: string, onPick: (id: string) => void) {
     const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
     if (!d) return;
     e.preventDefault();
     const next = ids[(ids.indexOf(current) + d + ids.length) % ids.length];
     if (!next) return;
-    void choose(key, next);
+    onPick(next);
     const group = e.currentTarget as HTMLElement;
     group.querySelector<HTMLElement>(`[data-id="${next}"]`)?.focus();
   }
 
   const themeIds = THEMES.map((t) => t.id);
+  const paletteIds = PALETTES.map((p) => p.id);
   const cap = (s: string) => s[0]?.toUpperCase() + s.slice(1);
 </script>
 
@@ -67,7 +86,7 @@
     role="radiogroup"
     aria-labelledby="theme-label"
     tabindex="-1"
-    onkeydown={(e) => arrows(e, themeIds, shownTheme, "theme")}
+    onkeydown={(e) => arrows(e, themeIds, shownTheme, (next) => void choose("theme", next))}
   >
     {#each THEMES as t (t.id)}
       <button
@@ -83,13 +102,35 @@
 </section>
 
 <section>
+  <h4 id="palette-label">Palette</h4>
+  <div
+    class="segmented"
+    role="radiogroup"
+    aria-labelledby="palette-label"
+    tabindex="-1"
+    onkeydown={(e) => arrows(e, paletteIds, palette, (next) => choosePalette(next as PaletteChoice))}
+  >
+    {#each PALETTES as p (p.id)}
+      <button
+        role="radio"
+        aria-checked={palette === p.id}
+        tabindex={palette === p.id ? 0 : -1}
+        data-id={p.id}
+        class:on={palette === p.id}
+        onclick={() => choosePalette(p.id)}>{p.title}</button
+      >
+    {/each}
+  </div>
+</section>
+
+<section>
   <h4 id="accent-label">Accent</h4>
   <div
     class="swatches"
     role="radiogroup"
     aria-labelledby="accent-label"
     tabindex="-1"
-    onkeydown={(e) => arrows(e, ACCENTS, shownAccent, "accent")}
+    onkeydown={(e) => arrows(e, ACCENTS, shownAccent, (next) => void choose("accent", next))}
   >
     {#each ACCENTS as a (a)}
       <button
@@ -135,21 +176,24 @@
   .segmented {
     display: inline-flex;
     align-self: flex-start;
-    padding: 2px;
     gap: 2px;
-    background: var(--field-bg);
-    border: 1px solid var(--card-border);
-    border-radius: var(--radius-sm);
   }
   .segmented button {
     background: transparent;
     border-color: transparent;
+    border-radius: var(--radius-sm);
     color: var(--text-dim);
-    min-width: 76px;
+    padding: 4px 10px;
+    min-width: 72px;
+  }
+  .segmented button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--hover-bg);
+    border-color: transparent;
   }
   .segmented button.on {
-    background: rgba(var(--accent-rgb), 0.18);
-    border-color: rgba(var(--accent-rgb), 0.4);
+    background: rgba(var(--accent-rgb), 0.14);
+    border-color: transparent;
     color: var(--text);
   }
   .swatches {
