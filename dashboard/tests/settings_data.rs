@@ -108,3 +108,44 @@ fn recorded_apps_lists_bundle_ids_most_time_first() {
         .unwrap();
     assert_eq!(apps.len() as i64, n);
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn drive_health_is_opt_in_and_keeps_the_latest_reading_after_a_failed_scan() {
+    let dir = temp_dir("drive-health-meta");
+    let db = dir.join("wrapped.db");
+    let store = Store::open(&db).unwrap();
+    let today = d("2026-03-11");
+    let health = data::meta(Some(&db), today).unwrap();
+    assert!(health.drive_health.is_none());
+    assert!(
+        health
+            .collectors
+            .iter()
+            .any(|c| c.name == "drive_health" && !c.default_on)
+    );
+
+    store
+        .set_setting("collector.drive_health.enabled", "true")
+        .unwrap();
+    let empty = data::meta(Some(&db), today).unwrap().drive_health.unwrap();
+    assert!(empty.snapshot.is_none() && empty.status.is_none());
+
+    store
+        .conn()
+        .execute_batch(
+            r#"INSERT INTO items VALUES ('drive_health', '1000', 1000, 0, '{"temperature_c":31}');
+           INSERT INTO items VALUES ('drive_health', '2000', 2000, 0, '{"temperature_c":33}');
+           INSERT INTO scan_state VALUES ('drive_health', 3000, '"helper_missing"');"#,
+        )
+        .unwrap();
+    let meta = data::meta(Some(&db), today).unwrap();
+    assert!(!meta.metrics.iter().any(|m| m.collector == "drive_health"));
+    let health = meta.drive_health.unwrap();
+    assert_eq!(health.last_scan_ms, Some(3000));
+    assert_eq!(health.status.as_deref(), Some("helper_missing"));
+    let snapshot = health.snapshot.unwrap();
+    assert_eq!(snapshot.time_ms, 2000);
+    assert_eq!(snapshot.temperature_c, Some(33));
+    assert_eq!(snapshot.host_bytes_read, None);
+}

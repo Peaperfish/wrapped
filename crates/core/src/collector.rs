@@ -430,6 +430,8 @@ pub struct ScanHooks {
     pub bookmark_create: Option<BookmarkCreate>,
     /// Where a bookmark points now, and a refreshed bookmark if it went stale.
     pub bookmark_resolve: Option<BookmarkResolve>,
+    /// Read the internal SSD health log on platforms that support it.
+    pub drive_health: Option<crate::collectors::drive_health::Probe>,
 }
 
 pub type BookmarkCreate = fn(&std::path::Path) -> Option<Vec<u8>>;
@@ -628,6 +630,15 @@ impl Sink {
         if let Some(f) = self.scan.as_ref().and_then(|c| c.hooks.command_setup) {
             f(cmd);
         }
+    }
+
+    /// Read the internal SSD health log through the platform scan hook.
+    pub fn read_drive_health(&self) -> crate::collectors::drive_health::ProbeResult {
+        use crate::collectors::drive_health::Unavailable;
+        self.scan
+            .as_ref()
+            .and_then(|c| c.hooks.drive_health)
+            .ok_or(Unavailable::HealthData)?(self)
     }
 
     /// Add to a counter shown in the scan report.

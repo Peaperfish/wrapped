@@ -11,6 +11,7 @@
   import Heatmap from "./lib/Heatmap.svelte";
   import { applyAppearance } from "./lib/theme";
   import Cards from "./lib/Cards.svelte";
+  import DriveHealthCard from "./lib/DriveHealthCard.svelte";
   import NowTab from "./lib/now/NowTab.svelte";
   import RecapsTab from "./lib/recaps/RecapsTab.svelte";
   import StoryPlayer from "./lib/recaps/StoryPlayer.svelte";
@@ -137,6 +138,12 @@
       metric =
         meta.metrics.find((m) => m.id === DEFAULT_METRIC)?.id ?? meta.metrics[0]?.id ?? DEFAULT_METRIC;
     }
+  }
+
+  async function reloadDriveHealth() {
+    const current = (await getMeta()).drive_health;
+    if (meta?.drive_health && current) meta = { ...meta, drive_health: current };
+    return current;
   }
 
   async function loadSeries() {
@@ -385,12 +392,12 @@
       </p>
     </section>
   {:else if meta}
-    {#if meta.metrics.length === 0}
+    {#if meta.metrics.length === 0 && !meta.drive_health}
       <section class="card empty">
         <h2>All collectors are off</h2>
         <p class="muted">Turn a collector on to see its data here. Data kept from before stays hidden while it is off.</p>
       </section>
-    {:else}
+    {:else if meta.metrics.length > 0}
       <Heatmap
         {year}
         {minYear}
@@ -408,6 +415,9 @@
       />
     {/if}
     <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError} />
+    {#if meta.drive_health}
+      <DriveHealthCard health={meta.drive_health} reload={reloadDriveHealth} paused={meta.settings.pause !== "off"} />
+    {/if}
     <p class="build faint">
       <span class="num">{meta.db_path}</span> · build <span class="num">{meta.build}</span>
     </p>

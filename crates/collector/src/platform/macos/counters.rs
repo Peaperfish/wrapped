@@ -20,7 +20,7 @@ use std::ffi::{CStr, c_char, c_void};
 use objc2::msg_send;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2::runtime::AnyObject;
-use objc2_foundation::NSString;
+use objc2_foundation::{NSNumber, NSString};
 use wrapped_core::probe::{DiskMemoryReading, PressureLevel, SystemProbe};
 
 type IoObject = u32;
@@ -34,6 +34,11 @@ unsafe extern "C" {
         main_port: u32,
         matching: *mut c_void,
         existing: *mut IoObject,
+    ) -> i32;
+    fn IORegistryEntryGetChildIterator(
+        entry: IoObject,
+        plane: *const c_char,
+        iterator: *mut IoObject,
     ) -> i32;
     fn IOIteratorNext(iterator: IoObject) -> IoObject;
     fn IOObjectRelease(object: IoObject) -> i32;
@@ -118,6 +123,75 @@ fn is_internal(driver: IoObject) -> bool {
     let location = dict_string(&pc, "Physical Interconnect Location");
     let interconnect = dict_string(&pc, "Physical Interconnect");
     location.as_deref() == Some("Internal") && interconnect.as_deref() != Some("Secure Digital")
+}
+
+/// The first whole media node attached to an internal NVMe block device.
+pub fn internal_nvme_device() -> Option<std::path::PathBuf> {
+    autoreleasepool(|_| {
+        let matching = unsafe { IOServiceMatching(c"IONVMeBlockStorageDevice".as_ptr()) };
+        if matching.is_null() {
+            return None;
+        }
+        let mut devices = 0;
+        if unsafe { IOServiceGetMatchingServices(IO_MAIN_PORT_DEFAULT, matching, &mut devices) }
+            != 0
+        {
+            return None;
+        }
+        let devices = Io(devices);
+        while let Some(device) = next(&devices) {
+            let Some(protocol) = property(device.0, "Protocol Characteristics") else {
+                continue;
+            };
+            if dict_string(&protocol, "Physical Interconnect Location").as_deref()
+                != Some("Internal")
+            {
+                continue;
+            }
+            let Some(drivers) = children(&device) else {
+                continue;
+            };
+            while let Some(driver) = next(&drivers) {
+                let Some(media) = children(&driver) else {
+                    continue;
+                };
+                while let Some(entry) = next(&media) {
+                    let Some(whole) = property(entry.0, "Whole") else {
+                        continue;
+                    };
+                    if !whole
+                        .downcast_ref::<NSNumber>()
+                        .is_some_and(NSNumber::boolValue)
+                    {
+                        continue;
+                    }
+                    let Some(name) = property(entry.0, "BSD Name")
+                        .and_then(|v| Some(v.downcast_ref::<NSString>()?.to_string()))
+                    else {
+                        continue;
+                    };
+                    if name
+                        .strip_prefix("disk")
+                        .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                    {
+                        return Some(std::path::Path::new("/dev").join(name));
+                    }
+                }
+            }
+        }
+        None
+    })
+}
+
+fn children(entry: &Io) -> Option<Io> {
+    let mut iter = 0;
+    let rc = unsafe { IORegistryEntryGetChildIterator(entry.0, c"IOService".as_ptr(), &mut iter) };
+    (rc == 0 && iter != 0).then_some(Io(iter))
+}
+
+fn next(iter: &Io) -> Option<Io> {
+    let entry = unsafe { IOIteratorNext(iter.0) };
+    (entry != 0).then_some(Io(entry))
 }
 
 /// (bytes read, bytes written) since boot, summed over internal drives.

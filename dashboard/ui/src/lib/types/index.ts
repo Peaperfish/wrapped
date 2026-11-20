@@ -10,6 +10,8 @@ export type { GitEmail } from "./GitEmail";
 export type { ExportResult } from "./ExportResult";
 export type { HeatmapMetric } from "./HeatmapMetric";
 export type { Meta } from "./Meta";
+export type { DriveHealthMeta } from "./DriveHealthMeta";
+export type { DriveHealthSnapshot } from "./DriveHealthSnapshot";
 export type { RangeJson } from "./RangeJson";
 export type { YearSeries } from "./YearSeries";
 export type { TotalJson } from "./TotalJson";

@@ -1,0 +1,9 @@
+{
+  "nvme_smart_health_information_log": {
+    "temperature": -2,
+    "percentage_used": 0,
+    "data_units_read": 0,
+    "data_units_written": 18446744073709551615,
+    "power_on_hours": "unavailable"
+  }
+}

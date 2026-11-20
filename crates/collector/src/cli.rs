@@ -37,7 +37,8 @@ USAGE
   wrapped-collector export --json <file>    everything, one JSON file
   wrapped-collector export --csv <dir>      everything, one CSV per table
   wrapped-collector --version               print crate version and build (git hash)
-  wrapped-collector scan [git|photos|all]   scan now (enabled scanned collectors; default all)
+  wrapped-collector scan [git|photos|ai|drive_health|all]
+                                            scan now (Drive Health is macOS only; default all)
   wrapped-collector scan ai --rebuild --yes  clear AI usage and rescan every log (not while Wrapped runs;
                                             usage whose logs are already gone is lost)
   wrapped-collector git emails             list author emails in git.folders (read-only)

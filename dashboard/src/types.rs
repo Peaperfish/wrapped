@@ -187,6 +187,26 @@ pub struct Meta {
     pub setup: bool,
     pub settings: SettingsMeta,
     pub ai: AiMeta,
+    pub drive_health: Option<DriveHealthMeta>,
+}
+
+/// The outcome of the latest attempt and the latest usable snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct DriveHealthMeta {
+    pub last_scan_ms: Option<i64>,
+    pub status: Option<String>,
+    pub snapshot: Option<DriveHealthSnapshot>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct DriveHealthSnapshot {
+    #[serde(default)]
+    pub time_ms: i64,
+    pub host_bytes_read: Option<u64>,
+    pub host_bytes_written: Option<u64>,
+    pub endurance_used_percent: Option<u8>,
+    pub temperature_c: Option<i32>,
+    pub power_on_hours: Option<u64>,
 }
 
 // ---------- series(year, metric) ----------
@@ -597,6 +617,8 @@ pub fn typescript_files() -> Vec<(String, String)> {
         ExportResult,
         HeatmapMetric,
         Meta,
+        DriveHealthMeta,
+        DriveHealthSnapshot,
         RangeJson,
         YearSeries,
         TotalJson,
