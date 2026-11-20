@@ -8,8 +8,10 @@ double counting. This covers local files only; no tool is asked or queried.
 inspected with scripts that print only key names, JSON types, record-type
 labels and counts, never values. No prompt, response, path or title text was
 printed or stored. Tools not installed: official docs first, then well-known
-third-party parsers where the docs say nothing. Those adapters are marked
-**untested** here and in code.
+third-party parsers where the docs say nothing. Those adapters were initially
+marked **untested** here and in code.
+
+Codex CLI was subsequently tested against real logs on Brian’s Mac.
 
 Field names below are the on-disk names. "Normalised" means what Wrapped
 stores: `input` = uncached input, `output` (incl. reasoning / thinking),
@@ -23,7 +25,7 @@ stores: `input` = uncached input, `output` (incl. reasoning / thinking),
 | Google Antigravity (CLI `agy`) | **yes**: 13 conversations, 2026-11-02 → 11-12 | yes, per step (no cache write) | tested |
 | GitHub Copilot CLI | folder only: `~/.copilot` has `config.json` and 8 process logs, no sessions | uncertain (see below) | untested |
 | Gemini CLI | no (`~/.gemini` exists but holds only Antigravity) | yes, per message | untested |
-| Codex CLI | no | yes, cumulative per session | untested |
+| Codex CLI | **yes** | yes, cumulative per session | tested |
 | Cursor CLI (`cursor-agent`) | no | **no** (sessions, time and model only) | untested |
 | opencode | no | yes, per message | untested |
 
@@ -164,7 +166,7 @@ Env vars checked on this Mac: none of `CLAUDE_CONFIG_DIR`, `CODEX_HOME`,
   file, so it is re-read whole when its size or mtime changes, relying on the
   id dedupe.
 
-## Codex CLI (untested)
+## Codex CLI (tested)
 
 - **Location.** `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`,
   `CODEX_HOME` default `~/.codex` (Windows `%USERPROFILE%\.codex`). Some

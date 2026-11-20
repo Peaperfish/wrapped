@@ -120,9 +120,8 @@ read-only.
 
 - `crates/core/src/collectors/ai_usage.rs` (collector `ai_usage`, Scanned,
   default **on**, no permission) and `crates/core/src/ai/` with one file per
-  adapter: `claude.rs`, `antigravity.rs` (tested), `codex.rs`, `gemini.rs`,
-  `copilot.rs`, `cursor.rs`, `opencode.rs` (each with
-  `pub const TESTED: bool = false` and a doc comment saying so).
+  adapter. `claude.rs`, `antigravity.rs` and `codex.rs` have `tested: true`.
+  `gemini.rs`, `copilot.rs`, `cursor.rs` and `opencode.rs` have `tested: false`.
 - **When:** at startup, daily (the existing scan scheduler), on dashboard
   Refresh (refresh sends `scan ai_usage` then flush; the scan is incremental,
   so this is cheap), and `wrapped-collector scan ai` (alias of `ai_usage`).
@@ -256,7 +255,7 @@ Status: **done**, except the hand checks that need the installed app.
 
 **Done**
 - ctl channel, setup mode, Settings modal, Tauri dialog plugin.
-- AI backend: schema v4, `ai` module, 7 adapters (Claude Code and Antigravity tested on real logs), `ai_usage` collector, sources / bookmarks, ctl requests, export.
+- AI backend: schema v4, `ai` module, 7 adapters (Claude Code, Codex CLI and Antigravity tested on real logs), `ai_usage` collector, sources / bookmarks, ctl requests, export.
 - Adapter tests (`crates/core/tests/ai.rs`) compile and pass; lint and format clean. Fixed on the way: Antigravity session id taken from the wrong path level.
 - AI usage card (tokens in + out, cache separate, by tool / model / project) and "AI tokens" in the heatmap picker. The Delete-all confirmation already says that usage whose logs are gone cannot be re-imported.
 
@@ -274,4 +273,4 @@ The second scan read 1 changed file (the live session log) and saw 3 new request
 
 - `meta.ai` (tools, detected folders, source status), Settings → AI sources (status, per-folder switch, Scan now, custom folders) and the setup screen's detected-tools list.
 
-**Not tested**: Codex, Gemini CLI, Copilot CLI, Cursor CLI and opencode adapters (no logs on this Mac).
+Real-log testing remains pending for Gemini CLI, Copilot CLI, Cursor CLI and opencode.

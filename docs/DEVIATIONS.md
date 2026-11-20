@@ -215,9 +215,9 @@ design doc itself is left as written.
 - **Delete all data** keeps settings and `onboarding.done` and resets AI file
   positions; AI usage whose logs are gone cannot be re-imported (the
   confirmation says so).
-- **Five of seven AI adapters are untested** (Codex, Gemini CLI, Copilot CLI,
-  Cursor CLI, opencode): no logs on this Mac. Each is marked `TESTED = false`
-  and covered only by made-up fixtures.
+- **Four of seven AI adapters are untested** (Gemini CLI, Copilot CLI,
+  Cursor CLI, opencode). Each has `tested: false` and is covered by synthetic
+  fixtures.
 - New dependency in the dashboard only: `tauri-plugin-dialog` (folder picker,
   export dialog).
 - The AI card is a full-width (L) card, not tied to a collector's `items`.
