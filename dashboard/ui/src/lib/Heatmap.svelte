@@ -407,14 +407,15 @@
   .heatmap {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
   }
   header,
   footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
+    gap: 8px 16px;
+    flex-wrap: wrap;
   }
   .title,
   .controls,
@@ -424,23 +425,27 @@
     gap: 12px;
   }
   .year-nav {
-    gap: 6px;
+    gap: 2px;
   }
   .year-nav button {
-    padding: 0 9px;
-    line-height: 22px;
+    padding: 0 6px;
+    line-height: 20px;
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-dim);
+  }
+  .year-nav button:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--hover-bg);
+    border-color: transparent;
   }
   .year {
     min-width: 3.2em;
     text-align: center;
-    font-size: 15px;
+    font-size: 12px;
   }
   .summary {
     font-size: 12px;
-  }
-  /* Proportional digits here: the mono space in "22h 27m" looks like two. */
-  .summary .num {
-    font-family: var(--font);
   }
   .grid-wrap {
     position: relative;
@@ -457,7 +462,7 @@
     border-radius: 4px;
   }
   .label {
-    fill: var(--text-faint);
+    fill: var(--text-dim);
     font-size: 9px;
     font-family: var(--font);
   }
@@ -473,7 +478,7 @@
     transition: opacity 0.12s;
   }
   rect.dim {
-    opacity: 0.28;
+    opacity: 0.5;
   }
   /* The selected range's outer edge. */
   .outline {

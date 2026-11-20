@@ -224,7 +224,7 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 16px;
+    gap: 12px;
   }
   .cpu-top {
     display: grid;

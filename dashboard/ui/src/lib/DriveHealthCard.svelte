@@ -1,6 +1,5 @@
 <script lang="ts">
   import { errorText, sendCtl } from "./api";
-  import Card from "./Card.svelte";
   import { fmtBytes } from "./format";
   import type { DriveHealthMeta } from "./types";
 
@@ -58,46 +57,72 @@
   }
 </script>
 
-<div class="drive-health">
-  <Card title="Drive Health" size="S">
-    {#if snapshot}
-      <p class="muted">Recorded {new Date(snapshot.time_ms).toLocaleString()}</p>
-      <dl>
+<section class="drive-health">
+  <header>
+    <h3>Drive Health</h3>
+    <button disabled={busy || paused} onclick={scan}>{busy ? "Scanning…" : "Scan now"}</button>
+  </header>
+  {#if snapshot}
+    <p class="muted">Recorded {new Date(snapshot.time_ms).toLocaleString()}</p>
+    <dl>
+      <div>
         <dt>Lifetime host reads</dt>
         <dd>{snapshot.host_bytes_read == null ? "Unavailable" : fmtBytes(snapshot.host_bytes_read)}</dd>
+      </div>
+      <div>
         <dt>Lifetime host writes</dt>
         <dd>{snapshot.host_bytes_written == null ? "Unavailable" : fmtBytes(snapshot.host_bytes_written)}</dd>
-        <dt>Endurance used</dt><dd>{format(snapshot.endurance_used_percent, "%")}</dd>
-        <dt>SSD temperature</dt><dd>{format(snapshot.temperature_c, " °C")}</dd>
-        <dt>Power-on hours</dt><dd>{format(snapshot.power_on_hours, " h")}</dd>
-      </dl>
-    {/if}
-    {#if status}<p class="muted">{status}</p>{/if}
-    <div class="scan">
-      <button disabled={busy || paused} onclick={scan}>{busy ? "Scanning…" : "Scan now"}</button>
-      {#if message}<p role="status" class="muted">{message}</p>{/if}
-    </div>
-  </Card>
-</div>
+      </div>
+      <div><dt>Endurance used</dt><dd>{format(snapshot.endurance_used_percent, "%")}</dd></div>
+      <div><dt>SSD temperature</dt><dd>{format(snapshot.temperature_c, " °C")}</dd></div>
+      <div><dt>Power-on hours</dt><dd>{format(snapshot.power_on_hours, " h")}</dd></div>
+    </dl>
+  {/if}
+  {#if status}<p class="muted">{status}</p>{/if}
+  {#if message}<p role="status" class="muted">{message}</p>{/if}
+</section>
 
 <style>
   .drive-health {
-    display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    min-width: 0;
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  p, dl, dd {
+  header,
+  dl > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  h3, p, dl, dd {
     margin: 0;
   }
-  dl {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 4px 12px;
+  h3 {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  button {
+    font-size: 12px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  p, dl {
+    font-size: 12px;
+  }
+  dl > div {
+    padding-block: 4px;
+  }
+  dl > div + div {
+    border-top: 1px solid var(--divider);
+  }
+  dt {
+    color: var(--text-dim);
   }
   dd {
     text-align: right;
     font-variant-numeric: tabular-nums;
-  }
-  .scan p {
-    margin-top: 8px;
   }
 </style>

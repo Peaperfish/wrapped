@@ -40,8 +40,8 @@
 
 <style>
   svg {
-    width: 132px;
-    height: 132px;
+    width: var(--ring-size, 132px);
+    height: var(--ring-size, 132px);
     flex: none;
   }
   @media (prefers-reduced-motion: no-preference) {

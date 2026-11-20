@@ -397,27 +397,33 @@
         <h2>All collectors are off</h2>
         <p class="muted">Turn a collector on to see its data here. Data kept from before stays hidden while it is off.</p>
       </section>
-    {:else if meta.metrics.length > 0}
-      <Heatmap
-        {year}
-        {minYear}
-        {maxYear}
-        {today}
-        metrics={meta.metrics}
-        {metric}
-        {series}
-        loading={seriesLoading}
-        error={seriesError}
-        {selection}
-        onselect={(r, final) => select(r, final, false)}
-        onyear={setYear}
-        onmetric={setMetric}
-      />
     {/if}
-    <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError} />
-    {#if meta.drive_health}
-      <DriveHealthCard health={meta.drive_health} reload={reloadDriveHealth} paused={meta.settings.pause !== "off"} />
-    {/if}
+    <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError}>
+      {#snippet activity()}
+        {#if meta && meta.metrics.length > 0}
+          <Heatmap
+            {year}
+            {minYear}
+            {maxYear}
+            {today}
+            metrics={meta.metrics}
+            {metric}
+            {series}
+            loading={seriesLoading}
+            error={seriesError}
+            {selection}
+            onselect={(r, final) => select(r, final, false)}
+            onyear={setYear}
+            onmetric={setMetric}
+          />
+        {/if}
+      {/snippet}
+      {#snippet driveHealth()}
+        {#if meta?.drive_health}
+          <DriveHealthCard health={meta.drive_health} reload={reloadDriveHealth} paused={meta.settings.pause !== "off"} />
+        {/if}
+      {/snippet}
+    </Cards>
     <p class="build faint">
       <span class="num">{meta.db_path}</span> · build <span class="num">{meta.build}</span>
     </p>
@@ -435,10 +441,10 @@
   main {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 18px 24px 24px;
+    padding: 12px 20px 18px;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
   }
   .empty {
     display: flex;

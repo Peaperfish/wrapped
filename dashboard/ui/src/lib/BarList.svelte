@@ -11,12 +11,13 @@
   }
   interface Props {
     items: BarItem[];
+    compact?: boolean;
   }
-  let { items }: Props = $props();
+  let { items, compact = false }: Props = $props();
   const max = $derived(Math.max(...items.map((i) => i.value), 0));
 </script>
 
-<ul>
+<ul class:compact>
   {#each items as it (it.label)}
     <li title={it.title ?? `${it.label}: ${it.text}`}>
       <span class="label">{it.label}</span>
@@ -51,6 +52,25 @@
     grid-template-columns: 1fr auto;
     gap: 3px 12px;
     min-width: 0;
+  }
+  .compact {
+    gap: 0;
+  }
+  .compact li {
+    grid-template-columns: minmax(0, 1fr) minmax(30px, 24%) 5.5em;
+    gap: 10px;
+    align-items: center;
+    padding-block: 3px;
+  }
+  .compact li + li {
+    border-top: 1px solid var(--divider);
+  }
+  .compact .bar {
+    grid-area: 1 / 2;
+  }
+  .compact .val {
+    grid-area: 1 / 3;
+    text-align: right;
   }
   .label {
     overflow: hidden;
