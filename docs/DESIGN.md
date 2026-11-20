@@ -126,8 +126,8 @@ Live CPU/GPU/RAM, temps, fans, disk read/write speed, network speed, swap. Updat
 
 - Reads the local logs of Claude Code, Codex, Gemini CLI, Google Antigravity,
   Copilot CLI, Cursor CLI and opencode (research and per-tool formats:
-  [AI_SOURCES.md](AI_SOURCES.md)). Only Claude Code and Antigravity are tested
-  against real logs; the rest are written from documentation.
+  [AI_SOURCES.md](AI_SOURCES.md)). Claude Code, Codex CLI and Antigravity are
+  tested against real logs.
 - Stored per UTC hour, tool, session, model and project folder name: input,
   output, cache read and cache write tokens and a request count (table
   `ai_usage`). A small `ai_seen` table of 64-bit hashes stops a request that

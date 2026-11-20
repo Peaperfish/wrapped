@@ -1050,7 +1050,7 @@ fn tool_registry_matches_the_adapters() {
         .filter(|t| t.tested)
         .map(|t| t.id)
         .collect();
-    assert_eq!(tested, ["claude", "antigravity"]);
+    assert_eq!(tested, ["claude", "codex", "antigravity"]);
     assert!(!ai::tool("cursor").unwrap().tokens);
     let _ = AiSource {
         id: String::new(),

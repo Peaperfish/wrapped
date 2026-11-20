@@ -1,5 +1,4 @@
-//! Codex CLI. UNTESTED: written from public documentation and third-party
-//! parsers (no Codex logs were available); see docs/AI_SOURCES.md.
+//! Codex CLI.
 //!
 //! `$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`
 //! (`CODEX_HOME` may be a comma-separated list; default `~/.codex`). Lines are
@@ -24,8 +23,8 @@ pub const INFO: ToolInfo = ToolInfo {
     id: "codex",
     title: "Codex CLI",
     tokens: true,
-    tested: false,
-    note: "Untested: written from documentation, no Codex logs were available.",
+    tested: true,
+    note: "Token counts are derived from cumulative session totals.",
 };
 
 pub struct Codex;
