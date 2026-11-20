@@ -182,16 +182,18 @@ fn reveal_export(path: String) -> data::Result<()> {
     let home = data::home_dir().ok_or("no home folder")?;
     let p = data::inside_export(&data::export_base(&home), Path::new(&path))?;
     let status = if cfg!(target_os = "macos") {
-        std::process::Command::new("/usr/bin/open")
+        wrapped_core::background_command("/usr/bin/open")
             .arg("-R")
             .arg(&p)
             .status()
     } else if cfg!(windows) {
         let mut arg = std::ffi::OsString::from("/select,");
         arg.push(p.as_os_str());
-        std::process::Command::new("explorer").arg(arg).status()
+        wrapped_core::background_command("explorer")
+            .arg(arg)
+            .status()
     } else {
-        std::process::Command::new("xdg-open")
+        wrapped_core::background_command("xdg-open")
             .arg(p.parent().unwrap_or(&p))
             .status()
     };
@@ -253,7 +255,7 @@ fn flush_collector(state: State<'_, AppState>) -> bool {
     let (Some(exe), Ok(db)) = (collector_exe(), state.db()) else {
         return false;
     };
-    let asked = std::process::Command::new(exe)
+    let asked = wrapped_core::background_command(exe)
         .arg("flush")
         .env("WRAPPED_DB", db)
         .stdin(std::process::Stdio::null())
@@ -278,7 +280,7 @@ fn ctl(state: State<'_, AppState>, cmd: String, args: Option<Value>) -> Value {
             "The Wrapped collector was not found next to the dashboard.".into(),
         );
     };
-    let out = std::process::Command::new(exe)
+    let out = wrapped_core::background_command(exe)
         .arg("ctl")
         .arg(&cmd)
         .arg(args.unwrap_or(Value::Null).to_string())
@@ -308,13 +310,13 @@ fn open_wrapped(state: State<'_, AppState>) -> bool {
         .and_then(Path::parent)
         .filter(|p| p.extension().is_some_and(|e| e == "app"));
     let ok = match (bundle, cfg!(target_os = "macos")) {
-        (Some(b), true) => std::process::Command::new("/usr/bin/open")
+        (Some(b), true) => wrapped_core::background_command("/usr/bin/open")
             .arg(b)
             .status()
             .is_ok_and(|s| s.success()),
         _ => {
             // A bare binary: start it detached, with the same database.
-            let mut c = std::process::Command::new(&exe);
+            let mut c = wrapped_core::background_command(&exe);
             if let Ok(db) = state.db() {
                 c.env("WRAPPED_DB", db);
             }
@@ -461,8 +463,42 @@ pub fn main() -> i32 {
             _ => {}
         }
     }
+    let db = db.or_else(data::default_db_path);
+    #[cfg(windows)]
+    let instance = if let Some(db) = db.as_deref() {
+        use wrapped_core::windows_ipc::{Event, focus_dashboard, lock};
+        let endpoint = db.with_added_extension("dashboard.lock");
+        match lock(&endpoint) {
+            Ok(mut file) => match Event::publish(&mut file) {
+                Ok(event) => Some((file, event)),
+                Err(e) => {
+                    eprintln!("dashboard event: {e}");
+                    return 1;
+                }
+            },
+            Err(error) => {
+                if let Some(id) = &start_recap
+                    && let Err(e) = std::fs::create_dir_all(wrapped_core::ctl::dir_for(db))
+                        .and_then(|_| std::fs::write(wrapped_core::ctl::open_recap_flag(db), id))
+                {
+                    eprintln!("recap request: {e}");
+                    return 1;
+                }
+                for _ in 0..20 {
+                    if focus_dashboard(db) {
+                        return 0;
+                    }
+                    std::thread::sleep(Duration::from_millis(25));
+                }
+                eprintln!("dashboard lock: {error}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
     let state = AppState {
-        db: db.or_else(data::default_db_path),
+        db,
         debug,
         started,
         shown: AtomicBool::new(false),
@@ -502,7 +538,22 @@ pub fn main() -> i32 {
             debug_log,
             set_window_theme
         ])
-        .setup(|app| {
+        .setup(move |app| {
+            #[cfg(windows)]
+            if let Some((_owner, event)) = instance {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let _owner = _owner;
+                    while event.wait() {
+                        if let Some(window) = handle.get_webview_window("main") {
+                            let _ = window.unminimize();
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            let _ = window.eval("window.dispatchEvent(new Event('focus'))");
+                        }
+                    }
+                });
+            }
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 std::thread::sleep(SHOW_FALLBACK);

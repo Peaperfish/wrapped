@@ -1,7 +1,6 @@
 //! Platform layer: everything OS-specific lives below this module.
 //!
-//! Each platform provides the same functions (macOS now, Windows in
-//! Milestone 9):
+//! Each platform provides the same functions:
 //! * `data_dir()`: where `wrapped.db` lives.
 //! * `run_collector(db, debug)`: the tray app. Turns OS signals into
 //!   [`wrapped_core::SystemEvent`]s and feeds them to the engine on one thread.
@@ -23,7 +22,12 @@ mod macos;
 #[cfg(target_os = "macos")]
 pub use macos::*;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(windows, target_os = "macos")))]
 mod unsupported;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub use unsupported::*;
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::*;

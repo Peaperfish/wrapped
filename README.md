@@ -54,7 +54,7 @@ The collector is a plain Rust process with a native tray icon (no web view) and 
 ## Platform support
 
 - macOS: in development (the spike runs here).
-- Windows: planned (Milestone 9).
+- Windows x64: collector, tray and dashboard implemented. Native verification is pending. See [Windows setup and validation](docs/MILESTONE9.md).
 
 ## Roadmap
 
@@ -72,7 +72,7 @@ The collector is a plain Rust process with a native tray icon (no web view) and 
 
 ## Build from source
 
-Requires Rust stable (via rustup) and macOS 13+ for the collector.
+For Windows, see the [PowerShell build and launch instructions](docs/MILESTONE9.md). The macOS commands below require Rust stable (via rustup) and macOS 13+.
 
 ```sh
 cargo build --release -p wrapped-collector

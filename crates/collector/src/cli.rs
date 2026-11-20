@@ -136,6 +136,14 @@ pub fn main() -> i32 {
         ["recompute", from, to, "--collector", name] => recompute(&db, from, to, Some(name)),
         ["export", "--json", path] => export(&db, true, path),
         ["export", "--csv", path] => export(&db, false, path),
+        #[cfg(windows)]
+        ["launch"] if platform::running_pid(&db).is_none() => {
+            return platform::run_collector(&db, debug);
+        }
+        #[cfg(windows)]
+        ["launch"] => platform::open_dashboard(&db).map_err(Into::into),
+        #[cfg(windows)]
+        ["activate", uri] => platform::activate(uri).map_err(Into::into),
         ["dashboard"] => platform::open_dashboard(&db).map_err(Into::into),
         ["flush"] => match platform::request_flush(&db) {
             Some(pid) => {
@@ -180,8 +188,22 @@ pub fn db_path() -> Option<PathBuf> {
     }
 }
 
+fn store_for_read(db: &std::path::Path) -> Result<Store, Box<dyn std::error::Error>> {
+    #[cfg(windows)]
+    {
+        if db.exists() {
+            return Ok(Store::open_read_only(db)?);
+        }
+        let _writer = platform::hold_db_lock(db)?;
+        Store::open(db)?;
+        Ok(Store::open_read_only(db)?)
+    }
+    #[cfg(not(windows))]
+    Ok(Store::open(db)?)
+}
+
 fn settings_get(db: &std::path::Path, key: Option<&str>) -> CliResult {
-    let store = Store::open(db)?;
+    let store = store_for_read(db)?;
     let (s, skipped) = store.load_settings()?;
     for msg in skipped {
         eprintln!("warning: ignored stored setting: {msg}");
@@ -272,6 +294,8 @@ fn settings_set(db: &std::path::Path, key: &str, value: &str) -> CliResult {
     {
         return Err(format!("unknown collector `{name}`").into());
     }
+    #[cfg(windows)]
+    let _lock = platform::hold_db_lock(db)?;
     let store = Store::open(db)?;
     let stored = store.set_setting(key, value)?;
     println!("{key} = {stored}");
@@ -393,7 +417,7 @@ fn fresh_store(db: &std::path::Path) -> Result<Store, Box<dyn std::error::Error>
     if platform::request_flush(db).is_some() {
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
-    Ok(Store::open(db)?)
+    store_for_read(db)
 }
 
 fn fmt_secs(v: f64) -> String {
@@ -789,7 +813,7 @@ fn print_summary(
 /// Every author email in the configured git folders, for choosing
 /// `git.author_emails`. Prints only; stores nothing.
 fn git_emails(db: &std::path::Path) -> CliResult {
-    let (s, _) = Store::open(db)?.load_settings()?;
+    let (s, _) = store_for_read(db)?.load_settings()?;
     let mine = s.git_author_emails.clone().unwrap_or_default();
     println!(
         "author emails in {} (* = in git.author_emails; commits counted as scans count them)",
@@ -860,15 +884,34 @@ fn scan(db: &std::path::Path, what: &str) -> CliResult {
         },
     };
     if let Some(pid) = platform::running_pid(db) {
-        let store = Store::open(db)?;
-        for n in &names {
-            store.request_scan(n, SystemClock.now())?;
+        #[cfg(windows)]
+        {
+            let req = wrapped_core::ctl::Request::new("scan", serde_json::json!({"what":what}));
+            match wrapped_core::ctl::call(
+                db,
+                &req,
+                &|| platform::wake_for_ctl(db),
+                wrapped_core::ctl::REPLY_TIMEOUT,
+            )? {
+                wrapped_core::ctl::Reply::Ok(data) => {
+                    println!("collector {pid}: {data}");
+                    return Ok(());
+                }
+                wrapped_core::ctl::Reply::Err { error, .. } => return Err(error.into()),
+            }
         }
-        println!(
-            "a collector is running on this database (pid {pid}); it starts the scan at its next \
+        #[cfg(not(windows))]
+        {
+            let store = Store::open(db)?;
+            for n in &names {
+                store.request_scan(n, SystemClock.now())?;
+            }
+            println!(
+                "a collector is running on this database (pid {pid}); it starts the scan at its next \
              minute tick and logs the result"
-        );
-        return Ok(());
+            );
+            return Ok(());
+        }
     }
     let _lock = platform::hold_db_lock(db)?;
     let mut engine = Engine::new(
@@ -1090,7 +1133,13 @@ fn probe_disk_memory() -> CliResult {
                 ("swap in bytes", si),
                 ("swap out bytes", so),
             ] {
+                if b.disk_only && k.starts_with("swap") {
+                    continue;
+                }
                 println!("  {k:<22} {v:>16}  {}", fmt_bytes(v as f64));
+            }
+            if b.disk_only {
+                return Ok(());
             }
             let dc = b.compressed_bytes as i64 - a.compressed_bytes as i64;
             println!("  {:<22} {dc:>+16}", "compressed bytes");
@@ -1110,7 +1159,13 @@ fn print_reading(r: &wrapped_core::probe::DiskMemoryReading) {
         ("swap out bytes", r.swap_out_bytes),
         ("compressed bytes", r.compressed_bytes),
     ] {
+        if r.disk_only && !k.starts_with("disk") {
+            continue;
+        }
         println!("  {k:<22} {v:>16}  {}", fmt_bytes(v as f64));
+    }
+    if r.disk_only {
+        return;
     }
     println!("  {:<22} {:>16}", "memory pressure", r.pressure.key());
 }

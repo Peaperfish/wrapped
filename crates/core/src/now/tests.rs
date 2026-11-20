@@ -69,8 +69,8 @@ fn first_call_has_no_rates() {
     raw.mem = Some(RawMem {
         used: 4,
         total: 8,
-        compressed: 1,
-        pressure: 2,
+        compressed: Some(1),
+        pressure: Some(2),
     });
     let s = sampler(vec![raw]).sample();
     assert_eq!(s.cpu_percent, None);

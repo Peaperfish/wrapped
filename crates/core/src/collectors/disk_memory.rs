@@ -75,6 +75,7 @@ pub mod key {
 /// One recorded reading: the deltas since the previous one and the state now.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Tick {
+    pub disk_only: bool,
     pub time: Timestamp,
     /// Awake seconds this sample covers (the window `[time - secs, time]`).
     pub secs: f64,
@@ -103,10 +104,14 @@ impl Tick {
         };
         put(key::READ, self.bytes_read);
         put(key::WRITTEN, self.bytes_written);
-        put(key::SWAP_IN, self.swap_in);
-        put(key::SWAP_OUT, self.swap_out);
-        put(key::COMPRESSED, self.compressed);
-        data.insert(key::PRESSURE.into(), self.pressure.key().into());
+        if !self.disk_only {
+            put(key::SWAP_IN, self.swap_in);
+            put(key::SWAP_OUT, self.swap_out);
+            put(key::COMPRESSED, self.compressed);
+            data.insert(key::PRESSURE.into(), self.pressure.key().into());
+        } else {
+            data.insert("disk_only".into(), true.into());
+        }
         out.sample_with(
             SAMPLE_METRIC,
             self.time,
@@ -124,8 +129,14 @@ impl Tick {
             .filter_map(|s| {
                 let d = &s.data;
                 let g = |k: &str| d.get(k).and_then(serde_json::Value::as_f64).unwrap_or(0.0);
-                let pressure = PressureLevel::from_key(d.get(key::PRESSURE)?.as_str()?)?;
+                let disk_only = d.get("disk_only").and_then(|v| v.as_bool()) == Some(true);
+                let pressure = if disk_only {
+                    PressureLevel::Normal
+                } else {
+                    PressureLevel::from_key(d.get(key::PRESSURE)?.as_str()?)?
+                };
                 Some(Tick {
+                    disk_only,
                     time: s.time,
                     secs: s.value,
                     bytes_read: g(key::READ),
@@ -166,7 +177,8 @@ pub fn deltas(prev: &DiskMemoryReading, cur: &DiskMemoryReading, wall_ms: i64) -
     }
     let d = [
         cur.disk_bytes_read.checked_sub(prev.disk_bytes_read)?,
-        cur.disk_bytes_written.checked_sub(prev.disk_bytes_written)?,
+        cur.disk_bytes_written
+            .checked_sub(prev.disk_bytes_written)?,
         cur.swap_in_bytes.checked_sub(prev.swap_in_bytes)?,
         cur.swap_out_bytes.checked_sub(prev.swap_out_bytes)?,
     ];
@@ -225,6 +237,7 @@ impl DiskMemory {
             .min(MAX_SAMPLE_WINDOW_MS);
         if let Some([read, written, swap_in, swap_out]) = deltas(&base.reading, &cur, wall) {
             Tick {
+                disk_only: cur.disk_only,
                 time: now,
                 secs: awake as f64 / MS_PER_SEC as f64,
                 bytes_read: read as f64,
@@ -353,7 +366,10 @@ impl Collector for DiskMemory {
     }
 
     fn rollup(&self, day: &DayInput<'_>) -> Vec<MetricValue> {
-        rollup_ticks(&Tick::from_samples(day.samples), local_midnight_ms(day.date))
+        rollup_ticks(
+            &Tick::from_samples(day.samples),
+            local_midnight_ms(day.date),
+        )
     }
 }
 
@@ -391,14 +407,16 @@ pub fn rollup_ticks(ticks: &[Tick], day0: i64) -> Vec<MetricValue> {
         };
         read += t.bytes_read * frac;
         written += t.bytes_written * frac;
-        swap_in += t.swap_in * frac;
-        swap_out += t.swap_out * frac;
-        *pressure.entry(t.pressure.key()).or_default() += overlap_secs;
-        peak = peak.max(t.compressed);
-        weighted += t.compressed * overlap_secs;
-        weight += overlap_secs;
-        sum += t.compressed;
-        n += 1;
+        if !t.disk_only {
+            swap_in += t.swap_in * frac;
+            swap_out += t.swap_out * frac;
+            *pressure.entry(t.pressure.key()).or_default() += overlap_secs;
+            peak = peak.max(t.compressed);
+            weighted += t.compressed * overlap_secs;
+            weight += overlap_secs;
+            sum += t.compressed;
+            n += 1;
+        }
         if win <= 0 {
             let h = (we.rem_euclid(MS_PER_DAY) / MS_PER_HOUR) as u32;
             *by_hour.entry(h).or_default() += t.bytes_written;
@@ -407,13 +425,12 @@ pub fn rollup_ticks(ticks: &[Tick], day0: i64) -> Vec<MetricValue> {
             while a < ce {
                 let next = (a - a.rem_euclid(MS_PER_HOUR) + MS_PER_HOUR).min(ce);
                 let h = (a.rem_euclid(MS_PER_DAY) / MS_PER_HOUR) as u32;
-                *by_hour.entry(h).or_default() +=
-                    t.bytes_written * (next - a) as f64 / win as f64;
+                *by_hour.entry(h).or_default() += t.bytes_written * (next - a) as f64 / win as f64;
                 a = next;
             }
         }
     }
-    if n == 0 {
+    if by_hour.is_empty() {
         return Vec::new();
     }
     let avg = if weight > 0.0 {
@@ -424,11 +441,15 @@ pub fn rollup_ticks(ticks: &[Tick], day0: i64) -> Vec<MetricValue> {
     let mut out = vec![
         MetricValue::new("bytes_read", "", read),
         MetricValue::new("bytes_written", "", written),
-        MetricValue::new("swap_in_bytes", "", swap_in),
-        MetricValue::new("swap_out_bytes", "", swap_out),
-        MetricValue::new("compressed_peak_bytes", "", peak),
-        MetricValue::new("compressed_avg_bytes", "", avg),
     ];
+    if n > 0 {
+        out.extend([
+            MetricValue::new("swap_in_bytes", "", swap_in),
+            MetricValue::new("swap_out_bytes", "", swap_out),
+            MetricValue::new("compressed_peak_bytes", "", peak),
+            MetricValue::new("compressed_avg_bytes", "", avg),
+        ]);
+    }
     out.extend(
         pressure
             .into_iter()

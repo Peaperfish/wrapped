@@ -4632,6 +4632,9 @@ dependencies = [
  "objc2-foundation",
  "objc2-service-management",
  "serde_json",
+ "windows",
+ "windows-sys 0.61.2",
+ "winreg",
  "wrapped-core",
  "wrapped-dashboard",
 ]
@@ -4645,6 +4648,7 @@ dependencies = [
  "libc",
  "rusqlite",
  "serde_json",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

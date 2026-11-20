@@ -37,3 +37,27 @@ pub use event::{DisplayAssertion, SystemEvent};
 pub use settings::{Pause, Settings};
 pub use store::Store;
 pub use time::{Clock, ManualClock, SystemClock, Timestamp};
+
+/// Windows clients and the writer share the current user's local app data.
+#[cfg(windows)]
+pub fn windows_data_dir() -> Option<std::path::PathBuf> {
+    std::env::var_os("LOCALAPPDATA")
+        .filter(|p| !p.is_empty())
+        .map(|p| std::path::PathBuf::from(p).join("Wrapped"))
+}
+
+/// Spawn a helper without allocating a Windows console for a GUI parent.
+pub fn background_command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let mut command = std::process::Command::new(program);
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        command
+    }
+    #[cfg(not(windows))]
+    std::process::Command::new(program)
+}
+
+#[cfg(windows)]
+pub mod windows_ipc;

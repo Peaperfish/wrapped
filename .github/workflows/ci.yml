@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -46,8 +47,24 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - name: cargo fmt
-        run: cargo fmt --all --check
+        run: cargo fmt -q --all --check
       - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -q --workspace --all-targets -- -D warnings
       - name: cargo test
-        run: cargo test --workspace --no-fail-fast
+        run: cargo test -q --workspace --no-fail-fast
+      - name: Dashboard contrast
+        run: node scripts/check-contrast.mjs
+      - name: Package Windows release and report sizes
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/windows/build.ps1 -FrontendBuilt
+      - name: Smoke test packaged Windows collector
+        if: runner.os == 'Windows'
+        timeout-minutes: 4
+        run: python scripts/windows/smoke.py target/windows-package
+      - name: Upload Windows package
+        if: runner.os == 'Windows' && success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wrapped-Windows-x64
+          path: target/windows-package/

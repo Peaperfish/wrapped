@@ -187,8 +187,7 @@ design doc itself is left as written.
   month = the 1st to the last day, This year = Jan 1 to Dec 31), so future
   days of the period count as zero and the comparison is with the previous
   period of equal length.
-- `wrapped-collector dashboard` opens the dashboard from a shell (the only
-  launcher on Windows until the tray exists there).
+- `wrapped-collector dashboard` opens the dashboard from a shell. On Windows the tray opens or focuses the dashboard for its database.
 - The dashboard's Away card counts time away minus the "sleep" reason. An idle
   period that turns into sleep is split at the sleep moment (see the Active /
   idle section), so this is exact going forward; older data can still overcount
@@ -205,9 +204,7 @@ design doc itself is left as written.
   not count twice; ~5 MB a year).
 - **Dashboard to collector commands** (`ctl`): the dashboard stays read-only on
   the database and sends requests to the running collector as small files in
-  `<data dir>/ctl/` plus a **SIGUSR2** wake-up. SIGUSR2 is macOS-only; Windows
-  gets a named event in Milestone 9 and `ctl` answers "not running" there
-  until then. The CLI `settings set` goes through the same channel when a
+  `<data dir>/ctl/` plus a **SIGUSR2** wake-up. SIGUSR2 is macOS-only; Windows uses a per-run named event and a request directory named by appending `.ctl` to the full database filename. The CLI `settings set` goes through the same channel when a
   collector is running.
 - **Setup mode.** A fresh install records nothing until the first-launch
   checklist is confirmed; existing databases get `onboarding.done = true` and

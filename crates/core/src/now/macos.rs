@@ -422,8 +422,8 @@ fn read_vm(total: u64) -> Option<VmInfo> {
         mem: RawMem {
             used: used.min(total),
             total,
-            compressed: u64::from(st.compressor_page_count) * page,
-            pressure: pressure.clamp(1, 4) as u8,
+            compressed: Some(u64::from(st.compressor_page_count) * page),
+            pressure: Some(pressure.clamp(1, 4) as u8),
         },
         swap_in: st.swapins * page,
         swap_out: st.swapouts * page,

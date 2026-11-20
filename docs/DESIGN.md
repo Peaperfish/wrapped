@@ -1,8 +1,8 @@
 # Wrapped — Design Doc
 
-| Status | *milestones 0–8 built (collector, stats engine, dashboard, setup, Now tab, recaps); 9–10 open* |
+| Status | *milestones 0–8 built (collector, stats engine, dashboard, setup, Now tab, recaps); 9 implemented pending Windows verification; 10 open* |
 | :---- | :---- |
-| **Platforms** | *macOS first, Windows later* |
+| **Platforms** | *macOS and Windows* |
 
 ## 1\. Overview
 
@@ -162,7 +162,7 @@ Live CPU/GPU/RAM, temps, fans, disk read/write speed, network speed, swap. Updat
 
 **Windows**
 
-- Front window via out-of-context `SetWinEventHook` (never injects into games — anti-cheat safe).  
+- Front window via out-of-context `SetWinEventHook` (gaming impact requires measurement).
 - Idle via `GetLastInputInfo`. Collector runs at below-normal priority.  
 - UWP apps appear as `ApplicationFrameHost.exe` → resolve real app.  
 - No keyboard hooks (avoids antivirus flags).  

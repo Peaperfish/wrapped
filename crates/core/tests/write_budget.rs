@@ -132,6 +132,7 @@ fn simulate(hours: i64, disk_memory: bool) -> Run {
     }
     let mut e = Engine::new(store, Arc::new(c.clone()), collectors::builtin_hermetic()).unwrap();
     e.set_probe(Arc::new(GrowingCounters(Mutex::new(DiskMemoryReading {
+        disk_only: false,
         boot_time_ms: 1_790_000_000_000,
         disk_bytes_read: 10_000_000_000,
         disk_bytes_written: 5_000_000_000,

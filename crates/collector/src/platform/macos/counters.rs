@@ -223,6 +223,7 @@ pub fn disk_memory() -> Option<DiskMemoryReading> {
         let (disk_bytes_read, disk_bytes_written) = disk_bytes()?;
         let (swap_in_bytes, swap_out_bytes, compressed_bytes) = vm_bytes()?;
         Some(DiskMemoryReading {
+            disk_only: false,
             boot_time_ms: boot_time_ms()?,
             disk_bytes_read,
             disk_bytes_written,

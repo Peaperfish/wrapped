@@ -4,7 +4,7 @@
 //! Platform-neutral: a request is a small JSON file in `<db>.ctl/`, the reply
 //! another JSON file next to it. Nothing here knows how the collector is
 //! woken up: the client passes a `wake` function (macOS: SIGUSR2 to the pid in
-//! the lock file; Windows will need its own, see DEVIATIONS.md). The
+//! the lock file; Windows: a named event). The
 //! collector also looks for requests at every minute tick, so a lost wake-up
 //! delays a request by up to a minute instead of losing it.
 //!
@@ -47,6 +47,9 @@ pub const DELETE_CONFIRMATION: &str = "delete";
 
 /// The folder holding requests and replies for database `db`.
 pub fn dir_for(db: &Path) -> PathBuf {
+    #[cfg(windows)]
+    return db.with_added_extension("ctl");
+    #[cfg(not(windows))]
     db.with_extension("ctl")
 }
 

@@ -68,7 +68,7 @@
   <header>
     <h1 id="setup-title">Welcome to Wrapped</h1>
     <p class="muted">
-      Choose what Wrapped records. Everything stays on this Mac, and <strong>nothing is recorded until
+      Choose what Wrapped records. Everything stays on this computer, and <strong>nothing is recorded until
       you press Start recording</strong>. You can change any of this later in Settings.
     </p>
   </header>
@@ -102,7 +102,7 @@
         {:else if c.name === "ai_usage" && ticked.ai_usage}
           <div class="more">
             {#if detectedAi.length === 0}
-              <p class="muted small">No AI coding tools found on this Mac yet. Wrapped picks them up later when they appear.</p>
+              <p class="muted small">No AI coding tools found on this computer yet. Wrapped picks them up later when they appear.</p>
             {:else}
               <ul class="tools">
                 {#each detectedAi as t (t.id)}

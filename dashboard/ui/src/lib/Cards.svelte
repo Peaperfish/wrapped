@@ -125,6 +125,8 @@
     ["swap_in_bytes", "Swapped in"],
     ["swap_out_bytes", "Swapped out"],
   ] as const;
+  const recordedDiskMetrics = $derived(diskMetrics.filter(([m]) => total("disk_memory", m) !== undefined));
+  const diskOnly = $derived(recordedDiskMetrics.length > 0 && total("disk_memory", "swap_in_bytes") === undefined);
 </script>
 
 {#if error}
@@ -294,18 +296,19 @@
 
     {#if on.has("disk_memory")}
       <Card
-        title="Disk & Swap"
+        title={diskOnly ? "Disk" : "Disk & Swap"}
         subtitle="Includes background system activity"
         size="M"
-        empty={!diskMetrics.some(([m]) => total("disk_memory", m) !== undefined)}
+        empty={recordedDiskMetrics.length === 0}
       >
         <div class="quad">
-          {#each diskMetrics as [m, label] (m)}
+          {#each recordedDiskMetrics as [m, label] (m)}
             <BigNumber {thin} small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
           {/each}
         </div>
       </Card>
 
+      {#if !diskOnly}
       <Card
         title="Memory pressure"
         subtitle="Includes background system activity"
@@ -319,6 +322,7 @@
           <span class="num">{fmtBytes(total("disk_memory", "compressed_avg_bytes") ?? 0)}</span>
         </p>
       </Card>
+      {/if}
     {/if}
   </div>
 {/if}

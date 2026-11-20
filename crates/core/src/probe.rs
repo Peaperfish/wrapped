@@ -36,6 +36,8 @@ impl PressureLevel {
 /// reboot); `pressure` and `compressed_bytes` are the state right now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DiskMemoryReading {
+    /// This source only exposes physical disk totals.
+    pub disk_only: bool,
     /// When the system booted (UTC ms). A different value means the
     /// cumulative counters restarted.
     pub boot_time_ms: i64,
