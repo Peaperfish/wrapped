@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The cards for the selected range, in a 12-column grid. Cards of
-  // collectors that are off are not shown.
+  // Overview sections for the selected range, gated by enabled collectors.
+  import type { Snippet } from "svelte";
   import BarList, { type BarItem } from "./BarList.svelte";
   import BigNumber from "./BigNumber.svelte";
   import Card from "./Card.svelte";
@@ -19,8 +19,10 @@
     preset: Preset;
     loading: boolean;
     error: string | null;
+    activity: Snippet;
+    driveHealth: Snippet;
   }
-  let { meta, summary, names, preset, loading, error }: Props = $props();
+  let { meta, summary, names, preset, loading, error, activity, driveHealth }: Props = $props();
 
   const appName = (id: string): string => names[id] ?? id;
   // Today is part of a day compared with all of yesterday.
@@ -126,17 +128,16 @@
     ["swap_out_bytes", "Swapped out"],
   ] as const;
   const recordedDiskMetrics = $derived(diskMetrics.filter(([m]) => total("disk_memory", m) !== undefined));
+  const showDisk = $derived(!!summary && !error && on.has("disk_memory"));
   const diskOnly = $derived(recordedDiskMetrics.length > 0 && total("disk_memory", "swap_in_bytes") === undefined);
 </script>
 
-{#if error}
-  <section class="card"><p class="error">{error}</p></section>
-{:else if !summary}
-  <section class="card"><p class="muted">Loading…</p></section>
-{:else}
-  <div class="grid" class:loading>
+{#if error || !summary}
+  <section class="card"><p class="line {error ? 'error' : 'muted'}" role="status">{error ?? "Loading…"}</p></section>
+{:else if on.has("app_usage") || on.has("active_idle")}
+  <section class="card split key-stats" class:loading aria-label="Key stats">
     {#if on.has("app_usage")}
-      <Card title="Screen time" subtitle={vsLabel} size="S" empty={screen === undefined}>
+      <Card title="Screen time" subtitle={vsLabel} size="M" empty={screen === undefined}>
         <BigNumber {thin} {soFar} value={fmtSecs(screen ?? 0)} cmp={cmp("app_usage", "screen_time_secs")} />
         <p class="line muted">
           <span class="num">{activeDays > 0 ? fmtSecs((screen ?? 0) / activeDays) : "–"}</span> per active day
@@ -146,18 +147,18 @@
     {/if}
 
     {#if on.has("active_idle")}
-      <Card title="Away (awake)" subtitle="Screen time vs time away, not asleep" size="S" empty={away === undefined && screen === undefined}>
+      <Card title="Away (awake)" size="M" empty={away === undefined && screen === undefined}>
         {@const s = screen ?? 0}
         {@const a = away ?? 0}
         <div class="ringrow">
           <Ring
+            --ring-size="78px"
             fraction={s + a > 0 ? s / (s + a) : 0}
             center={s + a > 0 ? `${Math.round((s / (s + a)) * 100)}%` : "–"}
-            caption="at screen"
             title="Screen time {fmtSecs(s)}, away while awake {fmtSecs(a)}"
           />
           <dl>
-            <dt class="muted"><i class="sw on"></i>Screen</dt>
+            <dt class="muted"><i class="sw on"></i>At screen</dt>
             <dd class="num">{fmtSecs(s)}</dd>
             <dt class="muted"><i class="sw"></i>Away (awake)</dt>
             <dd class="num">{fmtSecs(a)}</dd>
@@ -165,17 +166,64 @@
         </div>
       </Card>
     {/if}
+  </section>
+{/if}
 
-    {#if on.has("app_usage")}
-      <Card title="Time of day" subtitle="Screen time by local hour" size="M" empty={hours.every((h) => h === 0)}>
-        <HourBars {hours} format={fmtSecs} />
-      </Card>
+{@render activity()}
 
-      <Card title="Top apps" subtitle="By screen time" size="M" empty={apps.length === 0}>
-        <BarList items={apps} />
-      </Card>
-    {/if}
+{#if summary && !error && on.has("app_usage")}
+  <div class="card split app-activity" class:loading>
+    <Card title="Top Apps" subtitle="By screen time" size="M" empty={apps.length === 0}>
+      <BarList items={apps} compact />
+    </Card>
+    <Card title="Time of Day" subtitle="Screen time by local hour" size="M" empty={hours.every((h) => h === 0)}>
+      <HourBars {hours} format={fmtSecs} />
+    </Card>
+  </div>
+{/if}
 
+{#if showDisk || meta.drive_health}
+  <section class="card storage" aria-labelledby="storage-heading">
+    <header class="storage-heading">
+      <h2 id="storage-heading">{showDisk && !diskOnly ? "Storage & Memory" : "Storage"}</h2>
+      {#if showDisk}<p class="line muted">Includes background system activity</p>{/if}
+    </header>
+    <div class="split">
+      {#if showDisk}
+        <Card
+          title={diskOnly ? "Disk" : "Disk & Swap"}
+          size="M"
+          empty={recordedDiskMetrics.length === 0}
+        >
+          <div class="quad">
+            {#each recordedDiskMetrics as [m, label] (m)}
+              <BigNumber {thin} small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
+            {/each}
+          </div>
+        </Card>
+
+        {#if !diskOnly}
+          <Card
+            title="Memory pressure"
+            size="M"
+            empty={pressure.length === 0}
+          >
+            <BarList items={pressure} />
+            <p class="line muted">
+              Compressed memory: peak
+              <span class="num">{fmtBytes(total("disk_memory", "compressed_peak_bytes") ?? 0)}</span>, average
+              <span class="num">{fmtBytes(total("disk_memory", "compressed_avg_bytes") ?? 0)}</span>
+            </p>
+          </Card>
+        {/if}
+      {/if}
+      {@render driveHealth()}
+    </div>
+  </section>
+{/if}
+
+{#if summary && !error && (on.has("app_usage") || on.has("git") || on.has("photos") || on.has("ai_usage"))}
+  <div class="grid" class:loading>
     {#if on.has("app_usage") || on.has("git")}
       <Card title="Records" size="M" empty={noRecords}>
         <dl class="records">
@@ -293,37 +341,6 @@
         </div>
       </Card>
     {/if}
-
-    {#if on.has("disk_memory")}
-      <Card
-        title={diskOnly ? "Disk" : "Disk & Swap"}
-        subtitle="Includes background system activity"
-        size="M"
-        empty={recordedDiskMetrics.length === 0}
-      >
-        <div class="quad">
-          {#each recordedDiskMetrics as [m, label] (m)}
-            <BigNumber {thin} small {label} value={fmtBytes(total("disk_memory", m) ?? 0)} {soFar} cmp={cmp("disk_memory", m)} />
-          {/each}
-        </div>
-      </Card>
-
-      {#if !diskOnly}
-      <Card
-        title="Memory pressure"
-        subtitle="Includes background system activity"
-        size="M"
-        empty={pressure.length === 0}
-      >
-        <BarList items={pressure} />
-        <p class="line muted">
-          Compressed memory: peak
-          <span class="num">{fmtBytes(total("disk_memory", "compressed_peak_bytes") ?? 0)}</span>, average
-          <span class="num">{fmtBytes(total("disk_memory", "compressed_avg_bytes") ?? 0)}</span>
-        </p>
-      </Card>
-      {/if}
-    {/if}
   </div>
 {/if}
 
@@ -331,25 +348,104 @@
   .grid {
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
-    gap: 16px;
+    gap: 12px;
+  }
+  .grid > :global(.card:last-child:nth-child(odd)) {
+    grid-column: 1 / -1;
+  }
+  .split {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+  }
+  .card.split {
+    padding-block: 0;
+  }
+  .split > :global(.card) {
+    grid-column: auto;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    padding: 12px 0;
+    gap: 8px;
+  }
+  .split > :global(.card:not(:last-child)) {
+    padding-inline-end: 16px;
+  }
+  .split > :global(.card + .card),
+  .split > :global(.card + .drive-health) {
+    border-inline-start: 1px solid var(--divider);
+    padding-inline-start: 16px;
+  }
+  .split :global(.none) {
+    padding: 0;
+    text-align: left;
+    font-size: 12px;
+  }
+  .key-stats :global(.value) {
+    font-size: 27px;
+    letter-spacing: -0.035em;
+  }
+  .key-stats > :global(.card) {
+    justify-content: center;
+  }
+  .key-stats :global(.body) {
+    flex: initial;
+    gap: 5px;
+  }
+  .storage-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 4px 16px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .storage .split > :global(.card) {
+    padding-block: 12px 0;
+  }
+  .storage .split :global(.card h2) {
+    font-size: 13px;
+  }
+  .loading {
+    opacity: 0.7;
     transition: opacity 0.2s;
   }
-  .grid.loading {
-    opacity: 0.7;
+  @media (max-width: 760px) {
+    .split {
+      grid-auto-flow: row;
+    }
+    .split > :global(.card:not(:last-child)),
+    .split > :global(.card + .card),
+    .split > :global(.card + .drive-health) {
+      padding-inline: 0;
+      border-inline: 0;
+    }
+    .split > :global(.card + .card),
+    .split > :global(.card + .drive-health) {
+      border-top: 1px solid var(--divider);
+    }
+    .storage .split > :global(.card:not(:last-child)) {
+      padding-bottom: 12px;
+    }
+    .grid > :global(.card) {
+      grid-column: 1 / -1;
+    }
   }
   .line {
     margin: 0;
-    font-size: 13px;
+    font-size: 12px;
   }
   .ringrow {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 10px;
     flex-wrap: wrap;
   }
   .ringrow dl {
-    gap: 10px 14px;
-    font-size: 14px;
+    gap: 4px 14px;
+    font-size: 12px;
   }
   /* Colour key matching the ring: accent = at screen, grey = away. */
   .sw {
@@ -378,8 +474,7 @@
   }
   .records {
     grid-template-columns: auto 1fr;
-    gap: 10px 18px;
-    font-size: 14px;
+    gap: 6px 16px;
   }
   .records dd {
     text-align: left;
@@ -430,6 +525,6 @@
   .quad {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px 18px;
+    gap: 10px 14px;
   }
 </style>

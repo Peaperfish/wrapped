@@ -53,109 +53,163 @@
   }
 </script>
 
-<header class="bar">
-  <div class="range">
-    <span class="brand">Wrapped</span>
-    <span class="label">{tab === "now" ? "Now" : tab === "recaps" ? "Recaps" : rangeLabel(selection)}</span>
-  </div>
-
-  <div class="right">
-    <div class="presets" role="group" aria-label="View">
-      {#each [["overview", "Overview"], ["now", "Now"], ["recaps", "Recaps"]] as const as [t, title] (t)}
-        <button class:active={tab === t} aria-pressed={tab === t} onclick={() => ontab(t)}>{title}</button>
-      {/each}
+<header class="bar" class:overview={tab === "overview"}>
+  <div class="toolbar">
+    <div class="range">
+      <span class="brand">Wrapped</span>
+      {#if tab !== "overview"}
+        <span class="label">{tab === "now" ? "Now" : "Recaps"}</span>
+      {/if}
     </div>
-
-    {#if tab === "overview"}
-    <div class="presets" role="group" aria-label="Range">
-      {#each presets as [p, title] (p)}
-        <button
-          class:active={preset === p && !customOpen}
-          aria-pressed={preset === p && !customOpen}
-          onclick={() => {
-            customOpen = false;
-            pickerOpen = false;
-            onpreset(p);
-          }}>{title}</button
-        >
-      {/each}
-      <button
-        class:active={showCustom}
-        aria-pressed={showCustom}
-        onclick={() => {
-          customOpen = true;
-          pickerOpen = true;
-        }}>Custom</button
-      >
-    </div>
-    {/if}
-
-    {#if tab === "overview" && showCustom}
-      <div class="dates">
-        <button
-          class="range-btn num"
-          class:open={pickerOpen}
-          aria-haspopup="dialog"
-          aria-expanded={pickerOpen}
-          bind:this={rangeBtn}
-          onclick={() => (pickerOpen = !pickerOpen)}>{rangeButtonLabel(selection)}</button
-        >
-        {#if pickerOpen}
-          <DateRangePicker
-            {selection}
-            {today}
-            trigger={rangeBtn}
-            onapply={(r) => {
-              oncustom(r);
-              closePicker();
-            }}
-            onclose={closePicker}
-          />
-        {/if}
+    <div class="right">
+      <div class="presets" role="group" aria-label="View">
+        {#each [["overview", "Overview"], ["now", "Now"], ["recaps", "Recaps"]] as const as [t, title] (t)}
+          <button class:active={tab === t} aria-pressed={tab === t} onclick={() => ontab(t)}>{title}</button>
+        {/each}
       </div>
-    {/if}
-
-    {#if tab === "overview"}
-    <span class="asof muted" class:flash={asOfFlash}>
-      {#if asOf}as of <span class="num">{asOf}</span>{:else}no data yet{/if}
-    </span>
-    <button class="refresh" class:spinning={refreshing} aria-label="Refresh" title="Refresh" onclick={onrefresh}>
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path
-          d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
-    </button>
-    {/if}
-    <button
-      id="settings-gear"
-      class="refresh"
-      aria-label="Settings"
-      aria-haspopup="dialog"
-      title="Settings"
-      onclick={(e) => onsettings(e.currentTarget)}
-    >
-      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
-        <path
-          d="M6.7 1.6h2.6l.4 1.7c.4.15.8.35 1.1.6l1.6-.6 1.3 2.2-1.3 1.2c.05.25.08.5.08.75s-.03.5-.08.75l1.3 1.2-1.3 2.2-1.6-.6c-.35.25-.7.45-1.1.6l-.4 1.7H6.7l-.4-1.7c-.4-.15-.8-.35-1.1-.6l-1.6.6-1.3-2.2 1.3-1.2A4 4 0 0 1 3.5 8c0-.25.03-.5.08-.75l-1.3-1.2 1.3-2.2 1.6.6c.35-.25.7-.45 1.1-.6z"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.2"
-          stroke-linejoin="round"
-        />
-        <circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2" />
-      </svg>
-    </button>
+      <button
+        id="settings-gear"
+        class="refresh"
+        aria-label="Settings"
+        aria-haspopup="dialog"
+        title="Settings"
+        onclick={(e) => onsettings(e.currentTarget)}
+      >
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true">
+          <path
+            d="M6.7 1.6h2.6l.4 1.7c.4.15.8.35 1.1.6l1.6-.6 1.3 2.2-1.3 1.2c.05.25.08.5.08.75s-.03.5-.08.75l1.3 1.2-1.3 2.2-1.6-.6c-.35.25-.7.45-1.1.6l-.4 1.7H6.7l-.4-1.7c-.4-.15-.8-.35-1.1-.6l-1.6.6-1.3-2.2 1.3-1.2A4 4 0 0 1 3.5 8c0-.25.03-.5.08-.75l-1.3-1.2 1.3-2.2 1.6.6c.35-.25.7-.45 1.1-.6z"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.2"
+            stroke-linejoin="round"
+          />
+          <circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.2" />
+        </svg>
+      </button>
+    </div>
   </div>
+
+  {#if tab === "overview"}
+    <div class="date-toolbar">
+      <h1 class="label">{rangeLabel(selection)}</h1>
+      <div class="right">
+        <div class="presets" role="group" aria-label="Range">
+          {#each presets as [p, title] (p)}
+            <button
+              class:active={preset === p && !customOpen}
+              aria-pressed={preset === p && !customOpen}
+              onclick={() => {
+                customOpen = false;
+                pickerOpen = false;
+                onpreset(p);
+              }}>{title}</button
+            >
+          {/each}
+          <button
+            class:active={showCustom}
+            aria-pressed={showCustom}
+            onclick={() => {
+              customOpen = true;
+              pickerOpen = true;
+            }}>Custom</button
+          >
+        </div>
+
+        {#if showCustom}
+          <div class="dates">
+            <button
+              class="range-btn num"
+              class:open={pickerOpen}
+              aria-haspopup="dialog"
+              aria-expanded={pickerOpen}
+              bind:this={rangeBtn}
+              onclick={() => (pickerOpen = !pickerOpen)}>{rangeButtonLabel(selection)}</button
+            >
+            {#if pickerOpen}
+              <DateRangePicker
+                {selection}
+                {today}
+                trigger={rangeBtn}
+                onapply={(r) => {
+                  oncustom(r);
+                  closePicker();
+                }}
+                onclose={closePicker}
+              />
+            {/if}
+          </div>
+        {/if}
+
+        <span class="asof muted" class:flash={asOfFlash}>
+          {#if asOf}as of <span class="num">{asOf}</span>{:else}no data yet{/if}
+        </span>
+        <button class="refresh" class:spinning={refreshing} aria-label="Refresh" title="Refresh" onclick={onrefresh}>
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path
+              d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 2.5v3h-3"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+  {/if}
 </header>
 
 <style>
-  .bar {
+  .bar.overview {
+    display: grid;
+    gap: 12px;
+  }
+  .overview .toolbar {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .overview .brand {
+    color: var(--text);
+  }
+  .overview .toolbar .right {
+    display: contents;
+  }
+  .overview .toolbar .refresh {
+    justify-self: end;
+  }
+  .date-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 16px;
+  }
+  .date-toolbar h1 {
+    margin: 0;
+    font-size: 23px;
+    line-height: 1.2;
+    letter-spacing: -0.025em;
+    white-space: normal;
+  }
+  .date-toolbar .right {
+    gap: 7px;
+  }
+  .overview .presets {
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .overview .presets button {
+    padding: 3px 9px;
+    border-radius: 6px;
+  }
+  .date-toolbar .asof {
+    margin-inline-start: 2px;
+  }
+  .toolbar {
     display: flex;
     align-items: center;
     justify-content: space-between;

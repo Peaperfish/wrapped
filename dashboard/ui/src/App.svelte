@@ -355,7 +355,7 @@
     />
   </main>
 {:else}
-<main inert={settingsOpen || recapOpen !== null}>
+<main class:overview={tab === "overview"} inert={settingsOpen || recapOpen !== null}>
   <Header
     {selection}
     {preset}
@@ -397,27 +397,33 @@
         <h2>All collectors are off</h2>
         <p class="muted">Turn a collector on to see its data here. Data kept from before stays hidden while it is off.</p>
       </section>
-    {:else if meta.metrics.length > 0}
-      <Heatmap
-        {year}
-        {minYear}
-        {maxYear}
-        {today}
-        metrics={meta.metrics}
-        {metric}
-        {series}
-        loading={seriesLoading}
-        error={seriesError}
-        {selection}
-        onselect={(r, final) => select(r, final, false)}
-        onyear={setYear}
-        onmetric={setMetric}
-      />
     {/if}
-    <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError} />
-    {#if meta.drive_health}
-      <DriveHealthCard health={meta.drive_health} reload={reloadDriveHealth} paused={meta.settings.pause !== "off"} />
-    {/if}
+    <Cards {meta} {summary} {names} {preset} loading={summaryLoading} error={summaryError}>
+      {#snippet activity()}
+        {#if meta && meta.metrics.length > 0}
+          <Heatmap
+            {year}
+            {minYear}
+            {maxYear}
+            {today}
+            metrics={meta.metrics}
+            {metric}
+            {series}
+            loading={seriesLoading}
+            error={seriesError}
+            {selection}
+            onselect={(r, final) => select(r, final, false)}
+            onyear={setYear}
+            onmetric={setMetric}
+          />
+        {/if}
+      {/snippet}
+      {#snippet driveHealth()}
+        {#if meta?.drive_health}
+          <DriveHealthCard health={meta.drive_health} reload={reloadDriveHealth} paused={meta.settings.pause !== "off"} />
+        {/if}
+      {/snippet}
+    </Cards>
     <p class="build faint">
       <span class="num">{meta.db_path}</span> · build <span class="num">{meta.build}</span>
     </p>
@@ -439,6 +445,27 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+  main.overview {
+    gap: 12px;
+    padding: 12px 20px 18px;
+    font-size: 13px;
+    --radius: 10px;
+    --card-shadow-flat: none;
+    --text-faint: var(--text-dim);
+    --mono: var(--font);
+  }
+  :global(body:has(main.overview)::before) {
+    display: none;
+  }
+  .overview :global(:where(.card)) {
+    padding: 12px 16px;
+  }
+  .overview :global(.card h2) {
+    color: var(--text);
+    font-size: 14px;
+    letter-spacing: normal;
+    text-transform: none;
   }
   .empty {
     display: flex;
