@@ -2,13 +2,14 @@
   // An SVG arc: `fraction` (0..1) of the circle in the accent colour.
   interface Props {
     fraction: number;
+    animate?: boolean;
     /** Big text in the middle. */
     center: string;
     /** Small text under it. */
     caption?: string;
     title?: string;
   }
-  let { fraction, center, caption, title }: Props = $props();
+  let { fraction, animate = false, center, caption, title }: Props = $props();
   const R = 52;
   const C = 2 * Math.PI * R;
   const f = $derived(Math.min(Math.max(fraction, 0), 1));
@@ -18,6 +19,7 @@
   <title>{title ?? center}</title>
   <circle cx="70" cy="70" r={R} fill="none" stroke="var(--cell-empty)" stroke-width="12" />
   <circle
+    class:animate
     cx="70"
     cy="70"
     r={R}
@@ -41,5 +43,10 @@
     width: 132px;
     height: 132px;
     flex: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .animate {
+      transition: stroke-dasharray 300ms ease-out;
+    }
   }
 </style>

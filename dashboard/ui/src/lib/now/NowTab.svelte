@@ -93,7 +93,12 @@
     {#if showCpu}
       <Card title="CPU" subtitle={snap.chip ?? undefined} size="M" empty={false}>
         <div class="cpu-top">
-          <Ring fraction={(snap.cpu_percent ?? 0) / 100} center={snap.cpu_percent == null ? DASH : `${pct(snap.cpu_percent)}%`} caption="total" />
+          <Ring
+            animate={snap.cpu_percent != null}
+            fraction={(snap.cpu_percent ?? 0) / 100}
+            center={snap.cpu_percent == null ? DASH : `${pct(snap.cpu_percent)}%`}
+            caption="total"
+          />
           <dl class="split">
             <dt>Performance</dt>
             <dd class="num">{pct(snap.cpu_p_percent)}<span class="u">%</span></dd>
@@ -148,7 +153,12 @@
     {#if showGpu}
       <Card title="GPU" size="S" empty={false}>
         <div class="gpu">
-          <Ring fraction={(snap.gpu_percent ?? 0) / 100} center={snap.gpu_percent == null ? DASH : `${pct(snap.gpu_percent)}%`} caption="busy" />
+          <Ring
+            animate
+            fraction={(snap.gpu_percent ?? 0) / 100}
+            center={snap.gpu_percent == null ? DASH : `${pct(snap.gpu_percent)}%`}
+            caption="busy"
+          />
         </div>
         <Spark series={[hist.gpu]} max={100} label="GPU, last 60 seconds" />
       </Card>
