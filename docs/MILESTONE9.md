@@ -1,6 +1,6 @@
 # Milestone 9 · Windows port
 
-The Windows x64 collector, tray, CLI and dashboard cross-build on macOS. Native Windows CI and interactive desktop verification are pending.
+Wrapped 0.1.0 shipped the Windows x64 collector, tray, CLI and dashboard. See [Verification](#verification) for the release checks and the checklist for future runs.
 
 ## Build and launch
 
@@ -45,7 +45,7 @@ Foreground changes arrive through an out-of-context WinEvent hook. Wrapped asks 
 | GPU | PDH GPU Engine utilization where the driver publishes it. Sum process contributions per engine and show the busiest engine. |
 | Other sensors | Temperature, fan speed, compressed memory, memory pressure and swap readings remain absent. The port has no validated portable source for these measurements. |
 
-Drive Health remains Milestone 10.
+Drive Health shipped in 0.1.0 on macOS with an existing `smartctl` installation. Windows Drive Health remains [deferred](ROADMAP.md#later) until there is a practical approach that keeps the collector running without administrator privileges.
 
 ## Recaps
 
@@ -53,14 +53,20 @@ The same core scheduler determines which periods qualify. Opting in registers Wr
 
 ## Verification
 
+The native Windows build and smoke tests passed for 0.1.0. [Release commit’s CI run](https://github.com/Peaperfish/wrapped/actions/runs/44686803585)
+
+Wrapped 0.1.0 passed a manual Windows check in Parallels. [0.1.0 release notes](https://github.com/Peaperfish/wrapped/releases/tag/v0.1.0)
+
+Brian Wang also completed a check on a physical Windows PC.
+
 On the Mac, the frontend checks, production build and contrast checks passed. Rust formatting, native workspace Clippy and tests, and Windows GNU cross-target Clippy were run. The GNU release collector, dashboard and launcher linked. A local strip comparison on an intermediate GNU release reduced the dashboard from 28,837,279 to 18,097,664 bytes and the collector from 7,346,830 to 5,205,504 bytes. The Windows package build enables stripping. CI reports the native MSVC file sizes independently.
 
 Windows CI builds the MSVC release, runs the Rust tests, and exercises the packaged collector with `scripts/windows/smoke.py`. The smoke test uses temporary app data, two same-stem databases including a Unicode override, competing writers, pause isolation, flush, clean shutdown, forced termination, restart, SQLite integrity checks and two live hardware samples. Each subprocess has a timeout or an owned cleanup path. Native regression tests check auto-reset events and verify the selected recap flag and dashboard wake without requiring a toast UI. A successful Windows job publishes the package as a workflow artifact.
 
-Interactive verification still needs a Windows desktop:
+Use this checklist for future Windows desktop validation:
 
 - Open the tray and Settings, exercise each timed pause, restore a minimized dashboard, and restart Explorer. Enable login and sign out and in.
 - Switch among Win32 and hosted UWP apps. Check exclusions, active-without-input timeout, lock and unlock, monitor power, suspend and resume, and shutdown while data is buffered.
 - Deliver and click a real recap toast with the dashboard closed, already open, and after restarting the collector. Check notification permissions and Focus Assist.
 - Compare CPU, disk, network and GPU readings with local counters on representative hardware, including after changing disks or interfaces.
-- Measure steady-state memory, writes and CPU. Run paired gaming benchmarks with the collector enabled and disabled. Windows gaming impact and long-run overhead have not been measured.
+- Measure steady-state memory, writes and CPU. Run paired gaming benchmarks with the collector enabled and disabled.
