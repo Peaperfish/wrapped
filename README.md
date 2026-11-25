@@ -11,7 +11,7 @@ Wrapped is a local-only desktop app that shows how you spend time on your comput
 | macOS | `wrapped-0.1.0-macos-arm64.zip` | Apple Silicon (M-series) and macOS 13 or later |
 | Windows | `wrapped-0.1.0-windows-x64.zip` | Windows 10 or 11 on x64 and the Microsoft Edge WebView2 Runtime |
 
-**macOS.** Extract the ZIP, move `Wrapped.app` to `~/Applications`, and open it from Finder. Use the Wrapped menu bar icon to open the dashboard again. The app is ad hoc signed and the release has no notarization.
+**macOS.** Extract the ZIP, move `Wrapped.app` to `~/Applications`, and open it from Finder. Use the Wrapped menu bar icon to open the dashboard. The app is ad hoc signed and the release has no notarization.
 
 **Windows.** Extract the entire ZIP into a folder you plan to keep, such as `%LOCALAPPDATA%\Programs\Wrapped`. Keep the extracted files together and run `Wrapped.exe`. Use the Wrapped icon in the system tray to reopen the dashboard.
 
