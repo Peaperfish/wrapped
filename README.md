@@ -1,90 +1,56 @@
 # Wrapped
 
-A local-only desktop app that tracks how you use your computer and turns it into a dashboard, a live hardware tab, and Spotify-Wrapped-style recaps.
+Wrapped is a local-only desktop app that shows how you spend time on your computer, displays live hardware stats, and turns your activity into recaps.
 
-> **Status: early development.** The collector runs on macOS (tray icon): app usage, active / idle, git, photos and disk & memory, plus a stats engine for any date range and a first dashboard window (year heatmap, range presets; cards to come); see [docs/MILESTONE1.md](docs/MILESTONE1.md) to [docs/MILESTONE5.md](docs/MILESTONE5.md).
+**Download [Wrapped 0.1.0](https://github.com/Peaperfish/wrapped/releases/tag/v0.1.0).** Choose the ZIP for your operating system and processor. The release page also includes SHA-256 checksums.
 
-*Wrapped is a working name and may change. This project is not affiliated with Spotify.*
+## Download and launch
 
-<!-- TODO: screenshots (dashboard heatmap, Now tab, recap slides) once the UI exists. -->
+| Platform | Download | Requirements |
+| --- | --- | --- |
+| macOS | `wrapped-0.1.0-macos-arm64.zip` | Apple Silicon (M-series) and macOS 13 or later |
+| Windows | `wrapped-0.1.0-windows-x64.zip` | Windows 10 or 11 on x64 and the Microsoft Edge WebView2 Runtime |
 
-## Features (planned for v1)
+**macOS.** Extract the ZIP, move `Wrapped.app` to `~/Applications`, and open it from Finder. Use the Wrapped menu bar icon to open the dashboard again. The app is ad hoc signed and the release has no notarization.
 
-- **Dashboard** for any date range, with a year heatmap.
-- **Now tab** with live hardware stats.
-- **Weekly, monthly and yearly recaps** as story slides.
-- **Collectors** (each one opt-in and can be turned off or deleted at any time):
-  - App usage: front app plus start/end times (on by default)
-  - Active / idle: away periods (on by default)
-  - Git: commit times and repo names for folders you pick (off by default)
-  - Photos: EXIF only (date, camera, lens, settings) for folders you pick (off by default)
-  - Disk and memory: disk GB read/written, swap, memory pressure (off by default)
+**Windows.** Extract the entire ZIP into a folder you plan to keep, such as `%LOCALAPPDATA%\Programs\Wrapped`. Keep the extracted files together and run `Wrapped.exe`. Use the Wrapped icon in the system tray to reopen the dashboard.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for the full design.
+On first launch, choose which collectors to enable in the setup checklist, then select **Start recording**.
+
+## What shipped in 0.1.0
+
+- **Overview** shows screen time, top apps, and daily activity. Pick a preset or custom date range and explore the year heatmap.
+- **Now** shows live CPU, memory, disk, network, and other readings exposed by your hardware. The live readings stay in memory while the tab is visible.
+- **Recaps** turns weekly, monthly, and yearly activity into story slides. Export individual slides as 1080 × 1920 portrait PNGs or opt in to recap notifications in Settings.
+- **Drive Health** is an opt-in macOS collector for supported internal NVMe drives. It uses an existing `smartctl` installation from smartmontools.
+
+The Windows build and smoke tests passed in native Windows CI, and 0.1.0 passed a manual check in Parallels. Brian Wang also completed a check on a physical Windows PC. Windows Drive Health remains deferred. See [Windows setup and validation](docs/MILESTONE9.md).
 
 ## Privacy
 
-**Everything stays on your machine.**
+Activity data is stored in a SQLite database on your device. Wrapped has no accounts, cloud sync, uploads, or telemetry. It does not record keystrokes, clipboard contents, screenshots, or URLs.
 
-- Local-only: no accounts, no cloud, no uploading.
-- **No network access** by the collector or the app.
-- **No telemetry**, analytics or crash reporting.
-
-**Never tracked:**
-
-- Keystrokes, neither content nor counts. No keyboard hooks of any kind.
-- Clipboard contents
-- Screenshots
-- URLs
-- File contents
-
-You can pause tracking from the tray, exclude apps, export everything, or delete everything.
-
-## Performance budgets
-
-| Area | Budget |
-| :-- | :-- |
-| Battery (Mac, unplugged) | Energy impact ~0 |
-| Gaming (Windows) | No FPS impact |
-| RAM (collector) | < 20 MB |
-| SSD writes | ~1-2 MB/day |
-
-The collector is a plain Rust process with a native tray icon (no web view) and is event-driven rather than polling. The dashboard is a separate Tauri window that only runs while open.
-
-## Platform support
-
-- macOS: in development (the spike runs here).
-- Windows x64: collector, tray and dashboard implemented. Native verification is pending. See [Windows setup and validation](docs/MILESTONE9.md).
+Choose what to collect during setup or in Settings. You can pause collection from the menu bar or system tray, exclude apps, and export your data as JSON or CSV or delete it from Settings.
 
 ## Roadmap
 
-- [x] **0.** Spike: front app, idle state, sleep/wake (see [spikes/README.md](spikes/README.md))
-- [x] **1.** Collector, plugin system, SQLite, daily metrics, tracking settings, tray, launch at login (**next**)
-- [x] **2.** Collectors: Git and Photos
-- [x] **3.** Collector: Disk and Memory
-- [x] **4.** Stats engine (any date range)
-- [x] **5.** Dashboard: heatmap and cards
-- [x] **6.** Onboarding and Settings
-- [x] **7.** Now tab
-- [x] **8.** Recap slides and notifications
-- [ ] **9.** Windows port
-- [ ] **10.** Collector: Drive Health
+See the [roadmap and project history](docs/ROADMAP.md) for the proposed releases and original milestones. For background on the project, see the [design notes](docs/DESIGN.md).
 
 ## Build from source
 
-For Windows, see the [PowerShell build and launch instructions](docs/MILESTONE9.md). The macOS commands below require Rust stable (via rustup) and macOS 13+.
+For Windows, see the [PowerShell build and launch instructions](docs/MILESTONE9.md#build-and-launch). The macOS commands below require Rust stable (via rustup) and macOS 13+.
 
 ```sh
 cargo build --release -p wrapped-collector
 ./target/release/wrapped-collector            # tray icon; records to ~/Library/Application Support/Wrapped
-./target/release/wrapped-collector help       # temporary CLI: settings, stats, sessions, export
+./target/release/wrapped-collector help       # CLI: settings, stats, sessions, export
 ```
 
-To install with launch at login, see [docs/MILESTONE1.md](docs/MILESTONE1.md#install-with-launch-at-login).
+To install with launch at login, see [the collector setup instructions](docs/MILESTONE1.md#install-with-launch-at-login).
 
-The dashboard (`dashboard/`, Tauri + Svelte) also needs Node.js 20.19+; see [docs/MILESTONE5.md](docs/MILESTONE5.md#develop).
+The dashboard (`dashboard/`, Tauri + Svelte) also needs Node.js 20.19+. See the [dashboard development instructions](docs/MILESTONE5.md#develop).
 
-To try the Milestone 0 spike (macOS only), see [spikes/README.md](spikes/README.md).
+To try the Milestone 0 spike (macOS only), see the [spike README](spikes/README.md).
 
 ## Contributing
 
@@ -94,8 +60,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Please also read the [Code of Conduct](C
 
 Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license ([LICENSE-MIT](LICENSE-MIT) or <http://opensource.org/licenses/MIT>)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or <https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or <https://opensource.org/license/mit>)
 
 at your option.
 
